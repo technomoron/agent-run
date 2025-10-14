@@ -51,6 +51,7 @@
 ## Coding Style & Conventions
 - Tabs for indentation; keep files ASCII; ESLint disables the default `no-tabs` rule.
 - Semicolons required (`semi: 'always'`); trailing commas discouraged (`comma-dangle: never`).
+- Always run 'cleanbuild' target to check for errors and format source.
 - Imports must be ordered and grouped (`import/order` rule); place third-party packages before relative paths, leave a blank line between groups.
 - Prefer `async/await` and return Promises explicitly; handlers must resolve to tuple responses.
 - Keep types explicit when exposing surfaces (interfaces, `export type`) but internal implementations may use `any` sparingly (rule relaxed).

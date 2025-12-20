@@ -1,0 +1,7 @@
+{
+  "name": "agents",
+  "private": true,
+  "scripts": {
+    "test": "echo 'No tests for agents meta-repo'"
+  }
+}

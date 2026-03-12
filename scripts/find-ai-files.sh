@@ -38,4 +38,16 @@ check_claude_files() {
 		done
 }
 
+check_gitignore_files() {
+	find "$BASE_DIR" \
+		\( -type d \( -name .git -o -name node_modules -o -name .pnpm-store -o -name dist -o -name build \) -prune \) -o \
+		-type f -name .gitignore -print | sort | while IFS= read -r gitignore_file; do
+			if rg -n '^[[:space:]]*([./]*)(AGENTS\.md|CLAUDE\.md|codex\.md|\.claude/?|\.codex/?)$' "$gitignore_file" >/dev/null 2>&1; then
+				printf 'WARN AI ignore entry in .gitignore: %s\n' "$gitignore_file" >&2
+				rg -n '^[[:space:]]*([./]*)(AGENTS\.md|CLAUDE\.md|codex\.md|\.claude/?|\.codex/?)$' "$gitignore_file" >&2
+			fi
+		done
+}
+
 check_claude_files
+check_gitignore_files

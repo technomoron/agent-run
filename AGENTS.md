@@ -119,6 +119,60 @@ Rules:
 [`scripts/find-ai-files.sh`](/home/bjorn/work/agents/scripts/find-ai-files.sh)
 reports local `CLAUDE.md` files that do not follow this convention.
 
+## Source Checks
+
+This repo includes maintenance scripts intended for broad source-tree checks and
+fixes across the configured project-agent directories in this repo.
+
+Available scripts:
+
+- [`scripts/find-ai-files.sh`](/home/bjorn/work/agents/scripts/find-ai-files.sh)
+  scans for AI-related files such as `AGENTS.md`, `CLAUDE.md`, `.claude`, and
+  `.codex`, and warns when `.gitignore` files hide AI-related files.
+- [`scripts/ensure-licenses.sh`](/home/bjorn/work/agents/scripts/ensure-licenses.sh)
+  ensures configured directories have a `LICENSE` file and that local
+  `package.json` license metadata is set when missing.
+
+License rules enforced by `ensure-licenses.sh`:
+
+- Every configured project directory should have a `LICENSE` file.
+- If a directory has a `package.json` with no `license` field, set
+  `"license": "UNLICENSED"`.
+- If `package.json` says `"license": "MIT"` and there is no `LICENSE` file,
+  create it from
+  [`templates/LICENSE-MIT`](/home/bjorn/work/agents/templates/LICENSE-MIT).
+- When creating an MIT `LICENSE`, use `package.json.copyright` if present.
+- If no package copyright exists, use the fallback line:
+  `Copyright (c) 2026 Bjørn Erik Jacobsen`
+- For non-MIT or unlicensed projects, create `LICENSE` from
+  [`templates/LICENSE`](/home/bjorn/work/agents/templates/LICENSE).
+
+Templates:
+
+- [`templates/LICENSE`](/home/bjorn/work/agents/templates/LICENSE)
+- [`templates/LICENSE-MIT`](/home/bjorn/work/agents/templates/LICENSE-MIT)
+
+Git ignore rules checked by `find-ai-files.sh`:
+
+- `.gitignore` should not contain entries for `AGENTS.md`
+- `.gitignore` should not contain entries for `CLAUDE.md`
+- `.gitignore` should not contain entries for `codex.md`
+- `.gitignore` should not contain entries for `.claude`
+- `.gitignore` should not contain entries for `.codex`
+
+## CHANGES
+
+If project contains CHANGES or CHANGES.md:
+- Rename CHANGES.md to CHANGES and format it as text.
+- Use the following style with CHANGES:
+
+CHANGES
+=======
+
+vX.Y.Z (yyyy-mm-dd)
+-------------------
+* [change]
+
 ## Non-Goals
 
 - This repo does not currently manage `.claude` or `.codex` state directories.
@@ -133,3 +187,5 @@ reports local `CLAUDE.md` files that do not follow this convention.
 - If you change the mapping rules, update
   [`bin/agent-wrapper-common.sh`](/home/bjorn/work/agents/bin/agent-wrapper-common.sh)
   and keep this file in sync.
+
+

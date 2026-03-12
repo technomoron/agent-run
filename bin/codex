@@ -1,0 +1,26 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/agent-wrapper-common.sh"
+
+REAL_CODEX=$(find_real_binary "codex" "$SCRIPT_PATH")
+AGENTS=$(resolve_config_path "AGENTS.md")
+CODEX_PERMISSION_ARGS=""
+
+if is_force_permissive; then
+	debug_log "force permissive enabled for codex"
+	CODEX_PERMISSION_ARGS="-a never -s danger-full-access"
+else
+	debug_log "using default codex approval and sandbox modes"
+fi
+
+if [ -f "$AGENTS" ]; then
+	exec "$REAL_CODEX" \
+		$CODEX_PERMISSION_ARGS \
+		--config "system_prompt_file=\"$AGENTS\"" \
+		"$@"
+fi
+
+exec "$REAL_CODEX" $CODEX_PERMISSION_ARGS "$@"

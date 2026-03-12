@@ -1,0 +1,30 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/agent-wrapper-common.sh"
+
+REAL_CLAUDE=$(find_real_binary "claude" "$SCRIPT_PATH")
+CONFIG=$(resolve_config_path "CLAUDE.md")
+CLAUDE_PERMISSION_ARGS=""
+
+if is_force_permissive; then
+	if is_root_user; then
+		debug_log "force permissive requested, but skipped for root claude session"
+	else
+		debug_log "force permissive enabled for claude"
+		CLAUDE_PERMISSION_ARGS="--permission-mode bypassPermissions"
+	fi
+else
+	debug_log "using default claude permission mode"
+fi
+
+if [ -f "$CONFIG" ]; then
+	exec "$REAL_CLAUDE" \
+		$CLAUDE_PERMISSION_ARGS \
+		--add-dir "$(dirname -- "$CONFIG")" \
+		"$@"
+fi
+
+exec "$REAL_CLAUDE" $CLAUDE_PERMISSION_ARGS "$@"

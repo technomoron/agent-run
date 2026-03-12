@@ -2,6 +2,9 @@
   "name": "agents",
   "private": true,
   "scripts": {
+    "ensure-licenses": "./scripts/ensure-licenses.sh",
+    "find-ai-files": "./scripts/find-ai-files.sh",
     "test": "echo 'No tests for agents meta-repo'"
-  }
+  },
+  "license": "UNLICENSED"
 }

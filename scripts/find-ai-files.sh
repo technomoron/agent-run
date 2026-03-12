@@ -15,7 +15,7 @@ find "$BASE_DIR" \
 	\( -type d \( -name .git -o -name node_modules -o -name .pnpm-store -o -name dist -o -name build \) -prune \) -o \
 	\( \
 		-type d \( -name .claude -o -name .codex \) -o \
-		-type f \( -name AGENTS.md -o -name CLAUDE.md -o -name codex.md \) \
+		-type f \( -name AGENTS.md -o -name AGENTS-MODS.md -o -name CLAUDE.md -o -name codex.md \) \
 	\) \
 	-print | sort
 
@@ -24,15 +24,15 @@ check_claude_files() {
 		\( -type d \( -name .git -o -name node_modules -o -name .pnpm-store -o -name dist -o -name build -o -name bin -o -name scripts \) -prune \) -o \
 		-type f -name CLAUDE.md -print | sort | while IFS= read -r claude_file; do
 			claude_dir=$(dirname -- "$claude_file")
-			agents_file="$claude_dir/AGENTS.md"
+			agents_mods_file="$claude_dir/AGENTS-MODS.md"
 			claude_text=$(tr -d '\r' < "$claude_file")
 
-			if [ ! -f "$agents_file" ]; then
-				printf 'WARN missing sibling AGENTS.md: %s\n' "$claude_file" >&2
+			if [ ! -f "$agents_mods_file" ]; then
+				printf 'WARN missing sibling AGENTS-MODS.md: %s\n' "$claude_file" >&2
 				continue
 			fi
 
-			if [ "$claude_text" != "@AGENTS.md" ]; then
+			if [ "$claude_text" != "@AGENTS-MODS.md" ]; then
 				printf 'WARN non-pointer CLAUDE.md: %s\n' "$claude_file" >&2
 			fi
 		done
@@ -42,9 +42,9 @@ check_gitignore_files() {
 	find "$BASE_DIR" \
 		\( -type d \( -name .git -o -name node_modules -o -name .pnpm-store -o -name dist -o -name build \) -prune \) -o \
 		-type f -name .gitignore -print | sort | while IFS= read -r gitignore_file; do
-			if rg -n '^[[:space:]]*([./]*)(AGENTS\.md|CLAUDE\.md|codex\.md|\.claude/?|\.codex/?)$' "$gitignore_file" >/dev/null 2>&1; then
+			if rg -n '^[[:space:]]*([./]*)(AGENTS\.md|AGENTS-MODS\.md|CLAUDE\.md|codex\.md|\.claude/?|\.codex/?)$' "$gitignore_file" >/dev/null 2>&1; then
 				printf 'WARN AI ignore entry in .gitignore: %s\n' "$gitignore_file" >&2
-				rg -n '^[[:space:]]*([./]*)(AGENTS\.md|CLAUDE\.md|codex\.md|\.claude/?|\.codex/?)$' "$gitignore_file" >&2
+				rg -n '^[[:space:]]*([./]*)(AGENTS\.md|AGENTS-MODS\.md|CLAUDE\.md|codex\.md|\.claude/?|\.codex/?)$' "$gitignore_file" >&2
 			fi
 		done
 }

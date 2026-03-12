@@ -1,4 +1,4 @@
-@../../../templates/AGENTS-CODE.md
+@../../../../templates/AGENTS-CODE.md
 
 # API Server Base – Agent Notes
 

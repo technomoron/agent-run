@@ -6,10 +6,10 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/agent-wrapper-common.sh"
 
 REAL_CLAUDE=$(find_real_binary "claude" "$SCRIPT_PATH")
-CONFIG=$(resolve_config_path "CLAUDE.md")
+AGENT_DIR=$(resolve_agent_dir)
 CLAUDE_PERMISSION_ARGS=""
 
-warn_missing_config_dir "$CONFIG"
+warn_missing_config_dir "$AGENT_DIR/CLAUDE.md"
 
 if is_force_permissive; then
 	if is_root_user; then
@@ -22,10 +22,20 @@ else
 	debug_log "using default claude permission mode"
 fi
 
-if [ -f "$CONFIG" ]; then
+if [ -f "$AGENT_DIR/AGENTS-MODS.md" ] || [ -f "$AGENT_DIR/AGENTS.md" ]; then
+	RUNTIME_DIR=$(materialize_agent_runtime_dir "$AGENT_DIR")
+	trap 'rm -rf "$RUNTIME_DIR"' EXIT INT TERM
+
 	exec "$REAL_CLAUDE" \
 		$CLAUDE_PERMISSION_ARGS \
-		--add-dir "$(dirname -- "$CONFIG")" \
+		--add-dir "$RUNTIME_DIR" \
+		"$@"
+fi
+
+if [ -f "$AGENT_DIR/CLAUDE.md" ]; then
+	exec "$REAL_CLAUDE" \
+		$CLAUDE_PERMISSION_ARGS \
+		--add-dir "$AGENT_DIR" \
 		"$@"
 fi
 

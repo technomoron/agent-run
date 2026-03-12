@@ -6,10 +6,10 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/agent-wrapper-common.sh"
 
 REAL_CODEX=$(find_real_binary "codex" "$SCRIPT_PATH")
-AGENTS=$(resolve_config_path "AGENTS.md")
+AGENT_DIR=$(resolve_agent_dir)
 CODEX_PERMISSION_ARGS=""
 
-warn_missing_config_dir "$AGENTS"
+warn_missing_config_dir "$AGENT_DIR/AGENTS-MODS.md"
 
 if is_force_permissive; then
 	debug_log "force permissive enabled for codex"
@@ -18,10 +18,13 @@ else
 	debug_log "using default codex approval and sandbox modes"
 fi
 
-if [ -f "$AGENTS" ]; then
+if [ -f "$AGENT_DIR/AGENTS-MODS.md" ] || [ -f "$AGENT_DIR/AGENTS.md" ]; then
+	RUNTIME_DIR=$(materialize_agent_runtime_dir "$AGENT_DIR")
+	trap 'rm -rf "$RUNTIME_DIR"' EXIT INT TERM
+
 	exec "$REAL_CODEX" \
 		$CODEX_PERMISSION_ARGS \
-		--config "system_prompt_file=\"$AGENTS\"" \
+		--config "system_prompt_file=\"$RUNTIME_DIR/AGENTS.md\"" \
 		"$@"
 fi
 

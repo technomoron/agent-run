@@ -1,4 +1,4 @@
-@../../../templates/AGENTS-CODE.md
+@../../../../templates/AGENTS-CODE.md
 
 # Listmonk Minimcal Client Interface
 
@@ -15,7 +15,7 @@
   in CHANGES.
 - We never push to git automatically.
 - If commiting, just use plain decription, no chore: etc.
-- If we have an AGENTS.md file, copy it to
+- If we have an AGENTS-MODS.md file, copy it to
   ../agents/technomoron/listmonk-client/agent/
   when you modify it.
 

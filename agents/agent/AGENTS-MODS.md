@@ -20,10 +20,17 @@ specific agent instructions can live outside the working repository.
 - Default config root: `$HOME/work/agent-configs`
 - Override with: `AGENT_CONFIG_ROOT`
 
-Expected files:
+Source files:
 
 - `$AGENT_CONFIG_ROOT/<mapped-path>/agent/CLAUDE.md`
-- `$AGENT_CONFIG_ROOT/<mapped-path>/agent/AGENTS.md`
+- `$AGENT_CONFIG_ROOT/<mapped-path>/agent/AGENTS-MODS.md`
+
+Runtime-generated files:
+
+- The wrappers build a temporary `AGENTS.md` from `AGENTS-MODS.md`
+- Included files are expanded before launch
+- If local content below the include block conflicts with included content
+  above, the later local content takes precedence
 
 ## Shell Setup
 
@@ -81,24 +88,28 @@ Path mapping from `package.json`:
 Examples:
 
 - `@technomoron/apicore` ->
-  `$HOME/work/agent-configs/technomoron/apicore/agent/AGENTS.md`
+  `$HOME/work/agent-configs/technomoron/apicore/agent/AGENTS-MODS.md`
 - `@technomoron/apicore` ->
   `$HOME/work/agent-configs/technomoron/apicore/agent/CLAUDE.md`
-- `apicore` -> `$HOME/work/agent-configs/apicore/agent/AGENTS.md`
+- `apicore` -> `$HOME/work/agent-configs/apicore/agent/AGENTS-MODS.md`
 - `/home/user/work/my-website` with no package ->
   `$HOME/work/agent-configs/my-website/agent/CLAUDE.md`
 
 ## Wrapper Behavior
 
 - `bin/claude`
-  - If a mapped `CLAUDE.md` exists, runs Claude with `--add-dir` pointing at
-    that config directory.
+  - If a mapped `AGENTS-MODS.md` exists, builds a temporary merged
+    `AGENTS.md` plus `CLAUDE.md`, then runs Claude with `--add-dir` pointing
+    at that temporary directory.
+  - If only a mapped `CLAUDE.md` exists, runs Claude with `--add-dir`
+    pointing at that config directory.
   - Uses Claude's normal permission behavior by default.
   - If `AGENT_WRAPPER_FORCE_PERMISSIVE=1` is set for a non-root user, adds
     `--permission-mode bypassPermissions`.
   - Otherwise runs the real `claude` binary unchanged.
 - `bin/codex`
-  - If a mapped `AGENTS.md` exists, runs Codex with
+  - If a mapped `AGENTS-MODS.md` exists, builds a temporary merged
+    `AGENTS.md` and runs Codex with
     `--config system_prompt_file="<file>"`.
   - Uses Codex's normal approval and sandbox behavior by default.
   - If `AGENT_WRAPPER_FORCE_PERMISSIVE=1` is set, adds
@@ -109,15 +120,17 @@ The wrappers locate the real binaries and avoid recursing into themselves.
 
 ## Local Agent Files
 
-Inside this repository's project-agent folders, keep the full instructions in
-`agent/AGENTS.md`.
+Inside this repository's project-agent folders, keep the source instructions in
+`agent/AGENTS-MODS.md`.
 
 Rules:
 
 - `agent/CLAUDE.md` must not contain separate instructions.
-- `agent/CLAUDE.md` must contain exactly one line: `@AGENTS.md`
+- `agent/CLAUDE.md` must contain exactly one line: `@AGENTS-MODS.md`
 - A directory with `agent/CLAUDE.md` should also have a sibling
-  `agent/AGENTS.md`
+  `agent/AGENTS-MODS.md`
+- Use leading `@path/to/file.md` lines in `agent/AGENTS-MODS.md` to include
+  shared instruction files.
 
 [`scripts/find-ai-files.sh`](/home/bjorn/work/agents/scripts/find-ai-files.sh)
 reports local `CLAUDE.md` files that do not follow this convention.
@@ -130,8 +143,8 @@ fixes across the configured project-agent directories in this repo.
 Available scripts:
 
 - [`scripts/find-ai-files.sh`](/home/bjorn/work/agents/scripts/find-ai-files.sh)
-  scans for AI-related files such as `AGENTS.md`, `CLAUDE.md`, `.claude`, and
-  `.codex`, and warns when `.gitignore` files hide AI-related files.
+  scans for AI-related files such as `AGENTS-MODS.md`, `CLAUDE.md`, `.claude`,
+  and `.codex`, and warns when `.gitignore` files hide AI-related files.
 - [`scripts/ensure-licenses.sh`](/home/bjorn/work/agents/scripts/ensure-licenses.sh)
   ensures configured directories have a `LICENSE` file and that local
   `package.json` license metadata is set when missing.
@@ -158,6 +171,7 @@ Templates:
 Git ignore rules checked by `find-ai-files.sh`:
 
 - `.gitignore` should not contain entries for `AGENTS.md`
+- `.gitignore` should not contain entries for `AGENTS-MODS.md`
 - `.gitignore` should not contain entries for `CLAUDE.md`
 - `.gitignore` should not contain entries for `codex.md`
 - `.gitignore` should not contain entries for `.claude`
@@ -190,4 +204,3 @@ vX.Y.Z (yyyy-mm-dd)
 - If you change the mapping rules, update
   [`bin/agent-wrapper-common.sh`](/home/bjorn/work/agents/bin/agent-wrapper-common.sh)
   and keep this file in sync.
-

@@ -113,6 +113,106 @@ resolve_config_path() {
 	printf '%s\n' "$config_root/$profile/agent/$filename"
 }
 
+resolve_agent_dir() {
+	project_root=$(find_project_root)
+	profile=$(resolve_profile "$project_root")
+	config_root="${AGENT_CONFIG_ROOT:-$HOME/work/agent-configs}"
+
+	debug_log "agent dir: $config_root/$profile/agent"
+	printf '%s\n' "$config_root/$profile/agent"
+}
+
+warn_missing_config_dir() {
+	config_path="$1"
+	config_dir=$(dirname -- "$config_path")
+
+	if [ -d "$config_dir" ]; then
+		return 0
+	fi
+
+	printf 'agent-wrapper: config directory not found: %s\n' "$config_dir" >&2
+}
+
+materialize_agent_runtime_dir() {
+	agent_dir="$1"
+	temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/agent-wrapper.XXXXXX")
+	mods_file="$agent_dir/AGENTS-MODS.md"
+	legacy_agents_file="$agent_dir/AGENTS.md"
+
+	if [ -f "$mods_file" ]; then
+		node - "$mods_file" "$temp_dir/AGENTS.md" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const sourceFile = path.resolve(process.argv[2]);
+const outputFile = path.resolve(process.argv[3]);
+
+function readLines(file) {
+	return fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').split('\n');
+}
+
+function renderFile(file, stack = []) {
+	if (stack.includes(file)) {
+		throw new Error(`Include cycle detected: ${[...stack, file].join(' -> ')}`);
+	}
+
+	const lines = readLines(file);
+	const output = [];
+	const nextStack = [...stack, file];
+	let sawLeadingInclude = false;
+	let insertedOverrideNote = false;
+	let contentStarted = false;
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!contentStarted && trimmed === '') {
+			continue;
+		}
+
+		if (trimmed.startsWith('@')) {
+			const includePath = trimmed.slice(1).trim();
+			if (!includePath) {
+				continue;
+			}
+			const resolved = path.isAbsolute(includePath)
+				? includePath
+				: path.resolve(path.dirname(file), includePath);
+			output.push(renderFile(resolved, nextStack));
+			if (!contentStarted) {
+				sawLeadingInclude = true;
+			}
+			continue;
+		}
+
+		if (sawLeadingInclude && !insertedOverrideNote) {
+			output.push('');
+			output.push('If anything below this point conflicts with anything included above,');
+			output.push('the later instructions below take precedence.');
+			output.push('');
+			insertedOverrideNote = true;
+		}
+
+		output.push(line);
+		contentStarted = true;
+	}
+
+	return output.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+}
+
+const rendered = renderFile(sourceFile);
+fs.writeFileSync(outputFile, rendered);
+NODE
+	elif [ -f "$legacy_agents_file" ]; then
+		cp "$legacy_agents_file" "$temp_dir/AGENTS.md"
+	else
+		rm -rf "$temp_dir"
+		return 1
+	fi
+
+	printf '@AGENTS.md\n' > "$temp_dir/CLAUDE.md"
+	printf '%s\n' "$temp_dir"
+}
+
 warn_missing_config_dir() {
 	config_file="$1"
 	config_dir=$(dirname -- "$config_file")

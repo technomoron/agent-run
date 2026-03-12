@@ -3,6 +3,7 @@
 set -eu
 
 SCRIPT_PATH=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
+WRAPPER_ROOT=$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")/.." && pwd)
 
 debug_log() {
 	if [ "${AGENT_WRAPPER_DEBUG:-0}" = "1" ]; then
@@ -107,7 +108,7 @@ resolve_config_path() {
 	filename="$1"
 	project_root=$(find_project_root)
 	profile=$(resolve_profile "$project_root")
-	config_root="${AGENT_CONFIG_ROOT:-$HOME/work/agent-configs}"
+	config_root=$(default_config_root)
 
 	debug_log "config path for $filename: $config_root/$profile/agent/$filename"
 	printf '%s\n' "$config_root/$profile/agent/$filename"
@@ -116,21 +117,24 @@ resolve_config_path() {
 resolve_agent_dir() {
 	project_root=$(find_project_root)
 	profile=$(resolve_profile "$project_root")
-	config_root="${AGENT_CONFIG_ROOT:-$HOME/work/agent-configs}"
+	config_root=$(default_config_root)
 
 	debug_log "agent dir: $config_root/$profile/agent"
 	printf '%s\n' "$config_root/$profile/agent"
 }
 
-warn_missing_config_dir() {
-	config_path="$1"
-	config_dir=$(dirname -- "$config_path")
-
-	if [ -d "$config_dir" ]; then
+default_config_root() {
+	if [ -n "${AGENT_CONFIG_ROOT:-}" ]; then
+		printf '%s\n' "$AGENT_CONFIG_ROOT"
 		return 0
 	fi
 
-	printf 'agent-wrapper: config directory not found: %s\n' "$config_dir" >&2
+	if [ -d "$WRAPPER_ROOT/agents" ]; then
+		printf '%s\n' "$WRAPPER_ROOT/agents"
+		return 0
+	fi
+
+	printf '%s\n' "$HOME/work/agent-configs"
 }
 
 materialize_agent_runtime_dir() {

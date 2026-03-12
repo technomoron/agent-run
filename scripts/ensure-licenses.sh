@@ -4,18 +4,13 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+WORK_ROOT=$(CDPATH= cd -- "$REPO_ROOT/.." && pwd)
 LICENSE_TEMPLATE="$REPO_ROOT/templates/LICENSE"
 LICENSE_MIT_TEMPLATE="$REPO_ROOT/templates/LICENSE-MIT"
 DEFAULT_COPYRIGHT="Copyright (c) 2026 Bjørn Erik Jacobsen"
 
-list_configured_dirs() {
-	find "$REPO_ROOT" \
-		\( -type d \( -name .git -o -name node_modules -o -name .pnpm-store -o -name dist -o -name build -o -name bin -o -name scripts \) -prune \) -o \
-		-type f \( -name AGENTS.md -o -name CLAUDE.md \) -print |
-		while IFS= read -r file; do
-			dir=$(dirname -- "$file")
-			printf '%s\n' "$dir"
-		done | sort -u
+list_source_repos() {
+	find "$WORK_ROOT" -mindepth 1 -maxdepth 2 -type d -name .git -printf '%h\n' | sort -u
 }
 
 ensure_license_file() {
@@ -80,7 +75,7 @@ ensure_package_license() {
 	printf 'UPDATED package license to UNLICENSED: %s\n' "$package_file"
 }
 
-list_configured_dirs | while IFS= read -r dir; do
+list_source_repos | while IFS= read -r dir; do
 	[ -n "$dir" ] || continue
 	ensure_license_file "$dir"
 	ensure_package_license "$dir"

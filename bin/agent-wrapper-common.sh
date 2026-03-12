@@ -93,8 +93,8 @@ resolve_profile() {
 				printf '%s\n' "${pkg_name#@}"
 				return 0
 			fi
-			debug_log "profile from unscoped package name: ."
-			printf '.\n'
+			debug_log "profile from unscoped package name: $pkg_name"
+			printf '%s\n' "$pkg_name"
 			return 0
 		fi
 	fi
@@ -109,12 +109,15 @@ resolve_config_path() {
 	profile=$(resolve_profile "$project_root")
 	config_root="${AGENT_CONFIG_ROOT:-$HOME/work/agent-configs}"
 
-	if [ "$profile" = "." ]; then
-		debug_log "config path for $filename: $config_root/$filename"
-		printf '%s\n' "$config_root/$filename"
-		return 0
-	fi
+	debug_log "config path for $filename: $config_root/$profile/agent/$filename"
+	printf '%s\n' "$config_root/$profile/agent/$filename"
+}
 
-	debug_log "config path for $filename: $config_root/$profile/$filename"
-	printf '%s\n' "$config_root/$profile/$filename"
+warn_missing_config_dir() {
+	config_file="$1"
+	config_dir=$(dirname -- "$config_file")
+
+	if [ ! -d "$config_dir" ]; then
+		printf 'agent-wrapper: warning: project config dir missing: %s\n' "$config_dir" >&2
+	fi
 }

@@ -9,6 +9,8 @@ REAL_CODEX=$(find_real_binary "codex" "$SCRIPT_PATH")
 AGENTS=$(resolve_config_path "AGENTS.md")
 CODEX_PERMISSION_ARGS=""
 
+warn_missing_config_dir "$AGENTS"
+
 if is_force_permissive; then
 	debug_log "force permissive enabled for codex"
 	CODEX_PERMISSION_ARGS="-a never -s danger-full-access"

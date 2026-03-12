@@ -66,18 +66,65 @@ find_real_binary() {
 
 find_project_root() {
 	dir="$PWD"
+	nearest_package_root=""
+	workspace_root=""
+	git_root=""
 
 	while [ "$dir" != "/" ]; do
-		if [ -f "$dir/package.json" ] || [ -d "$dir/.git" ]; then
-			debug_log "project root: $dir"
-			printf '%s\n' "$dir"
-			return 0
+		if [ -f "$dir/package.json" ]; then
+			if [ -z "$nearest_package_root" ]; then
+				nearest_package_root="$dir"
+			fi
+			if is_workspace_root "$dir"; then
+				workspace_root="$dir"
+			fi
+		fi
+		if [ -d "$dir/.git" ]; then
+			git_root="$dir"
+			break
 		fi
 		dir=$(dirname -- "$dir")
 	done
 
+	if [ -n "$workspace_root" ]; then
+		debug_log "project root (workspace): $workspace_root"
+		printf '%s\n' "$workspace_root"
+		return 0
+	fi
+
+	if [ -n "$nearest_package_root" ]; then
+		debug_log "project root (package): $nearest_package_root"
+		printf '%s\n' "$nearest_package_root"
+		return 0
+	fi
+
+	if [ -n "$git_root" ]; then
+		debug_log "project root (git): $git_root"
+		printf '%s\n' "$git_root"
+		return 0
+	fi
+
 	debug_log "project root fallback: $PWD"
 	printf '%s\n' "$PWD"
+}
+
+is_workspace_root() {
+	dir="$1"
+
+	if [ -f "$dir/pnpm-workspace.yaml" ]; then
+		return 0
+	fi
+
+	if [ ! -f "$dir/package.json" ] || ! command -v node >/dev/null 2>&1; then
+		return 1
+	fi
+
+	cd "$dir" &&
+	node -e '
+		const pkg = require("./package.json");
+		const workspaces = pkg && pkg.workspaces;
+		process.exit(Array.isArray(workspaces) || typeof workspaces === "object" ? 0 : 1);
+	' >/dev/null 2>&1
 }
 
 resolve_profile() {

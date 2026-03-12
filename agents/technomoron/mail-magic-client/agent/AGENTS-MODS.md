@@ -1,1 +1,0 @@
-@../../../../templates/AGENTS-CODE.md

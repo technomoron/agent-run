@@ -74,9 +74,12 @@ After editing the startup file, reload it or start a new shell.
 
 ## Mapping Rules
 
-The wrappers walk upward from the current directory until they find the nearest
-directory containing `package.json` or `.git`. That directory is treated as the
-project root.
+The wrappers walk upward from the current directory and resolve roots in this
+order:
+
+- workspace root (`package.json.workspaces` or `pnpm-workspace.yaml`)
+- nearest directory containing `package.json`
+- nearest directory containing `.git`
 
 Path mapping from `package.json`:
 

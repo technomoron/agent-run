@@ -16,15 +16,12 @@
 - If there is no CHANGES file, warn and ask to create it.
 - The CHANGES file format is as follows:
 
---- BEGIN FILE ---
-CHANGES
-=======
+    CHANGES
+    =======
 
-vX.Y.Z (yyyy-mm-dd)
--------------------
-* [change]
-
---- /END FILE ---
+    vX.Y.Z (yyyy-mm-dd)
+    -------------------
+    * [change 1 ...]
 
 ## Linting
 
@@ -35,6 +32,14 @@ vX.Y.Z (yyyy-mm-dd)
 
 - Before committing, if there are tests to run, run them and make sure they
   pass.
+
+## Code Reviews
+
+- If asked for a code review, always save the review report in the current
+  project's mapped agent directory.
+- Write review reports as Markdown files named `REVIEW.md`.
+- Include the review date in the contents of `REVIEW.md`.
+- Put the findings in the saved report as well as in the user-facing reply.
 
 ## LICENSE
 

@@ -10,7 +10,7 @@ LICENSE_MIT_TEMPLATE="$REPO_ROOT/templates/LICENSE-MIT"
 DEFAULT_COPYRIGHT="Copyright (c) 2026 Bjørn Erik Jacobsen"
 
 list_source_repos() {
-	find "$WORK_ROOT" -mindepth 1 -maxdepth 2 -type d -name .git -printf '%h\n' | sort -u
+	find "$WORK_ROOT" -mindepth 1 -maxdepth 3 -type d -name .git -printf '%h\n' | sort -u
 }
 
 ensure_license_file() {

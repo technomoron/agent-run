@@ -1,0 +1,10 @@
+[Unit]
+Description=Update global Codex and Claude CLI packages
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/bjorn
+Environment=XDG_CONFIG_HOME=/home/bjorn/.config
+ExecStart=/usr/bin/pnpm add -g @openai/codex@latest @anthropic-ai/claude-code@latest --reporter=append-only

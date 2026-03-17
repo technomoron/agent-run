@@ -19,6 +19,29 @@ is_force_permissive() {
 	[ "${AGENT_WRAPPER_FORCE_PERMISSIVE:-0}" = "1" ]
 }
 
+use_local_ai_files() {
+	if [ -f "$PWD/.agents-ignore" ]; then
+		debug_log "local AI files enabled via $PWD/.agents-ignore"
+		return 0
+	fi
+
+	return 1
+}
+
+create_blank_agent_files() {
+	agent_dir="$1"
+
+	mkdir -p "$agent_dir"
+
+	if [ ! -f "$agent_dir/AGENTS-MODS.md" ]; then
+		printf '\n' > "$agent_dir/AGENTS-MODS.md"
+	fi
+
+	if [ ! -f "$agent_dir/CLAUDE.md" ]; then
+		printf '@AGENTS-MODS.md\n' > "$agent_dir/CLAUDE.md"
+	fi
+}
+
 find_real_binary() {
 	tool="$1"
 	self_path="$2"
@@ -157,8 +180,8 @@ resolve_config_path() {
 	profile=$(resolve_profile "$project_root")
 	config_root=$(default_config_root)
 
-	debug_log "config path for $filename: $config_root/$profile/agent/$filename"
-	printf '%s\n' "$config_root/$profile/agent/$filename"
+	debug_log "config path for $filename: $config_root/$profile/$filename"
+	printf '%s\n' "$config_root/$profile/$filename"
 }
 
 resolve_agent_dir() {
@@ -166,8 +189,8 @@ resolve_agent_dir() {
 	profile=$(resolve_profile "$project_root")
 	config_root=$(default_config_root)
 
-	debug_log "agent dir: $config_root/$profile/agent"
-	printf '%s\n' "$config_root/$profile/agent"
+	debug_log "agent dir: $config_root/$profile"
+	printf '%s\n' "$config_root/$profile"
 }
 
 default_config_root() {

@@ -51,16 +51,16 @@ the later instructions below take precedence.
 
 # Agents Wrapper Repo
 
-This repository provides wrapper binaries for `claude` and `codex` so project-
-specific agent instructions can live outside the working repository.
+This repository provides a Node-based `agent-run` wrapper so project-specific
+agent instructions can live outside the working repository.
 
 ## Purpose
 
 - Keep agent instruction files in a separate private tree, not in the target
   project.
-- Let users alias or prepend `PATH` so `claude` and `codex` resolve to
-  [`bin/claude`](/home/bjorn/work/agents/bin/claude) and
-  [`bin/codex`](/home/bjorn/work/agents/bin/codex).
+- Let users alias or prepend `PATH` so `agent-run` resolves to the local
+  wrapper in `bin/`.
+- [`bin/agent-run.js`](/home/bjorn/work/agents/bin/agent-run.js)
 - Support both Claude (`CLAUDE.md`) and Codex (`AGENTS.md`) from one config
   root.
 
@@ -90,17 +90,17 @@ Source files:
 - `$AGENT_CONFIG_ROOT/<mapped-path>/agent/CLAUDE.md`
 - `$AGENT_CONFIG_ROOT/<mapped-path>/agent/AGENTS-MODS.md`
 
-Runtime-generated files:
+Generated files:
 
-- The wrappers build a temporary `AGENTS.md` from `AGENTS-MODS.md`
+- The wrapper regenerates `AGENTS.md` from `AGENTS-MODS.md`
 - Included files are expanded before launch
 - If local content below the include block conflicts with included content
   above, the later local content takes precedence
 
 ## Shell Setup
 
-Put this repo's `bin` directory before the rest of `PATH` so the wrapper
-scripts are found first.
+Put this repo's `bin` directory before the rest of `PATH` so `agent-run` is
+found first.
 
 Bash:
 
@@ -165,59 +165,62 @@ Examples:
 
 ## Wrapper Behavior
 
-- `bin/claude`
-  - If a mapped `AGENTS-MODS.md` exists, builds a temporary merged
-    `AGENTS.md` plus `CLAUDE.md`, then runs Claude with `--add-dir` pointing
-    at that temporary directory.
-  - If only a mapped `CLAUDE.md` exists, runs Claude with `--add-dir`
-    pointing at that config directory.
+- `agent-run claude`
+  - If a mapped `AGENTS-MODS.md` exists, regenerates `AGENTS.md` in the mapped
+    config directory and runs Claude with `--add-dir` pointing at that
+    directory.
+  - If local AI files are found in the project tree, warns and exits instead
+    of using them.
   - Uses Claude's normal permission behavior by default.
   - If `AGENT_WRAPPER_FORCE_PERMISSIVE=1` is set for a non-root user, adds
     `--permission-mode bypassPermissions`.
-  - Otherwise runs the real `claude` binary unchanged.
-- `bin/codex`
-  - If a mapped `AGENTS-MODS.md` exists, builds a temporary merged
-    `AGENTS.md` and runs Codex with
-    `--config system_prompt_file="<file>"`.
+  - `agent-run claude --none` bypasses the wrapper for that invocation.
+- `agent-run codex`
+  - If a mapped `AGENTS-MODS.md` exists, regenerates `AGENTS.md` in the mapped
+    config directory and runs Codex with `--config
+    system_prompt_file="<file>"`.
+  - If local AI files are found in the project tree, warns and exits instead
+    of using them.
   - Uses Codex's normal approval and sandbox behavior by default.
   - If `AGENT_WRAPPER_FORCE_PERMISSIVE=1` is set, adds
     `--ask-for-approval never --sandbox danger-full-access`.
-  - Otherwise runs the real `codex` binary unchanged.
+  - `agent-run codex --none` bypasses the wrapper for that invocation.
 
 The wrappers locate the real binaries and avoid recursing into themselves.
 
 ## Local Agent Files
 
-Inside this repository's project-agent folders, keep the source instructions in
-`agent/AGENTS-MODS.md`.
+Inside the mapped project folders under the separate `agent-configs` tree, keep
+the source instructions in `agent/AGENTS-MODS.md`.
 
 Rules:
 
 - `agent/CLAUDE.md` must not contain separate instructions.
-- `agent/CLAUDE.md` must contain exactly one line: `@AGENTS-MODS.md`
-- A directory with `agent/CLAUDE.md` should also have a sibling
-  `agent/AGENTS-MODS.md`
+- `agent/CLAUDE.md` must contain exactly one line: `@AGENTS.md`
+- A directory with `agent/CLAUDE.md` should also have sibling
+  `agent/AGENTS-MODS.md` and generated `agent/AGENTS.md`
 - Use leading `@path/to/file.md` lines in `agent/AGENTS-MODS.md` to include
   shared instruction files.
 
-[`scripts/find-ai-files.sh`](/home/bjorn/work/agents/scripts/find-ai-files.sh)
+[`scripts/find-ai-files.js`](/home/bjorn/work/agents/scripts/find-ai-files.js)
 reports local `CLAUDE.md` files that do not follow this convention.
 
 ## Source Checks
 
 This repo includes maintenance scripts intended for broad source-tree checks and
-fixes across the configured project-agent directories in this repo.
+fixes across the configured project-agent directories under the separate
+`agent-configs` tree.
 
 Available scripts:
 
-- [`scripts/find-ai-files.sh`](/home/bjorn/work/agents/scripts/find-ai-files.sh)
+- [`scripts/find-ai-files.js`](/home/bjorn/work/agents/scripts/find-ai-files.js)
   scans for AI-related files such as `AGENTS-MODS.md`, `CLAUDE.md`, `.claude`,
   and `.codex`, and warns when `.gitignore` files hide AI-related files.
-- [`scripts/ensure-licenses.sh`](/home/bjorn/work/agents/scripts/ensure-licenses.sh)
+- [`scripts/ensure-licenses.js`](/home/bjorn/work/agents/scripts/ensure-licenses.js)
   ensures configured directories have a `LICENSE` file and that local
   `package.json` license metadata is set when missing.
 
-License rules enforced by `ensure-licenses.sh`:
+License rules enforced by `ensure-licenses.js`:
 
 - Every configured project directory should have a `LICENSE` file.
 - If a directory has a `package.json` with no `license` field, set
@@ -236,7 +239,7 @@ Templates:
 - [`templates/LICENSE`](/home/bjorn/work/agents/templates/LICENSE)
 - [`templates/LICENSE-MIT`](/home/bjorn/work/agents/templates/LICENSE-MIT)
 
-Git ignore rules checked by `find-ai-files.sh`:
+Git ignore rules checked by `find-ai-files.js`:
 
 - `.gitignore` should not contain entries for `AGENTS.md`
 - `.gitignore` should not contain entries for `AGENTS-MODS.md`
@@ -270,5 +273,5 @@ vX.Y.Z (yyyy-mm-dd)
 - The original basename-of-current-directory approach is not authoritative
   anymore; package-name mapping is the intended behavior.
 - If you change the mapping rules, update
-  [`bin/agent-wrapper-common.sh`](/home/bjorn/work/agents/bin/agent-wrapper-common.sh)
+  [`bin/agent-run.js`](/home/bjorn/work/agents/bin/agent-run.js)
   and keep this file in sync.

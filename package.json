@@ -1,10 +1,15 @@
 {
   "name": "agents",
   "private": true,
+  "bin": {
+    "agent-run": "./bin/agent-run"
+  },
+  "copyright": "Copyright (c) 2026 Bjørn Erik Jacobsen",
   "scripts": {
-    "build-agents": "./scripts/build-agents.sh",
-    "ensure-licenses": "./scripts/ensure-licenses.sh",
-    "find-ai-files": "./scripts/find-ai-files.sh",
+    "build": "tsc -p tsconfig.json",
+    "build-agents": "node ./scripts/build-agents.js",
+    "ensure-licenses": "node ./scripts/ensure-licenses.js",
+    "find-ai-files": "node ./scripts/find-ai-files.js",
     "test": "echo 'No tests for agents meta-repo'"
   },
   "license": "UNLICENSED"

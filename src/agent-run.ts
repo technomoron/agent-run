@@ -354,6 +354,7 @@ function runCheck(parsed: CheckCommand): void {
 		process.stdout.write('SKIP ignored by .agent-run-ignore\n');
 		process.exit(0);
 	}
+
 	const findings = checkProject(projectRoot);
 	printProjectReport(projectRoot, findings);
 	process.exit(hasErrors(findings) ? 1 : 0);
@@ -385,7 +386,6 @@ function checkProject(projectRoot: string): Finding[] {
 
 	const agentDir = path.join(defaultConfigRoot(), profileResult.profile, 'agent');
 	findings.push(...checkAgentDirectory(agentDir));
-
 	return findings;
 }
 
@@ -437,29 +437,6 @@ function looksLikeRepoRoot(dir: string): boolean {
 	}
 
 	return fs.existsSync(path.join(dir, 'package.json'));
-}
-
-function checkAgentDirectoryPath(rootPath: string, agentDir: string): Finding[] {
-	const findings: Finding[] = [];
-	const relative = path.relative(rootPath, agentDir);
-	const segments = splitRelativePath(relative);
-
-	if (segments.length === 0) {
-		findings.push({
-			message: `invalid agent directory root: ${agentDir}`,
-			severity: 'ERROR'
-		});
-		return findings;
-	}
-
-	if (segments.length > 2) {
-		findings.push({
-			message: `agent directory must be <repo> or <org>/<repo>: ${agentDir}`,
-			severity: 'ERROR'
-		});
-	}
-
-	return findings;
 }
 
 function checkAgentDirectory(agentDir: string): Finding[] {
@@ -519,6 +496,7 @@ function checkAgentDirectory(agentDir: string): Finding[] {
 
 	return findings;
 }
+
 
 function checkSourceProjectLayout(projectRoot: string): Finding | null {
 	const packagePath = path.join(projectRoot, 'package.json');
@@ -1050,8 +1028,9 @@ function execTool(command: string, args: string[]): void {
 	execCommand(command, args, shouldUseShell(command));
 }
 
-function execCommand(command: string, args: string[], shell: boolean): void {
+function execCommand(command: string, args: string[], shell: boolean, env?: Record<string, string | undefined>): void {
 	const child = childProcess.spawn(command, args, {
+		env,
 		shell,
 		stdio: 'inherit'
 	});

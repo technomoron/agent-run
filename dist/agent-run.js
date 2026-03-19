@@ -327,25 +327,6 @@ function looksLikeRepoRoot(dir) {
     }
     return fs.existsSync(path.join(dir, 'package.json'));
 }
-function checkAgentDirectoryPath(rootPath, agentDir) {
-    const findings = [];
-    const relative = path.relative(rootPath, agentDir);
-    const segments = splitRelativePath(relative);
-    if (segments.length === 0) {
-        findings.push({
-            message: `invalid agent directory root: ${agentDir}`,
-            severity: 'ERROR'
-        });
-        return findings;
-    }
-    if (segments.length > 2) {
-        findings.push({
-            message: `agent directory must be <repo> or <org>/<repo>: ${agentDir}`,
-            severity: 'ERROR'
-        });
-    }
-    return findings;
-}
 function checkAgentDirectory(agentDir) {
     const findings = [];
     const modsPath = path.join(agentDir, 'AGENTS-MODS.md');
@@ -832,8 +813,9 @@ function isExecutable(filePath) {
 function execTool(command, args) {
     execCommand(command, args, shouldUseShell(command));
 }
-function execCommand(command, args, shell) {
+function execCommand(command, args, shell, env) {
     const child = childProcess.spawn(command, args, {
+        env,
         shell,
         stdio: 'inherit'
     });

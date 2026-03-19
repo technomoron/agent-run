@@ -8,9 +8,6 @@
   "copyright": "Copyright (c) 2026 Bjørn Erik Jacobsen",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "build-agents": "node ./scripts/build-agents.js",
-    "ensure-licenses": "node ./scripts/ensure-licenses.js",
-    "find-ai-files": "node ./scripts/find-ai-files.js",
     "test": "echo 'No tests for agents meta-repo'"
   },
   "license": "UNLICENSED"

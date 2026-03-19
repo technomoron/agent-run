@@ -6,6 +6,7 @@ declare module 'fs' {
 	}
 
 	export interface Stats {
+		isDirectory(): boolean;
 		isFile(): boolean;
 	}
 
@@ -49,6 +50,7 @@ declare module 'child_process' {
 		command: string,
 		args: string[],
 		options: {
+			env?: Record<string, string | undefined>;
 			shell: boolean;
 			stdio: 'inherit';
 		}

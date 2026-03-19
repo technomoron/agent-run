@@ -10,30 +10,47 @@ Its purpose is simple:
 - warn when a working repository still contains local AI files
 - make repo-wide setup and validation predictable
 
-The tool currently supports:
+## Installation
 
-- `agent-run codex`
-- `agent-run claude`
-- `agent-run check`
-- `agent-run init`
-- `agent-run edit`
+Install globally so the `agent-run` command is available on your `PATH`:
 
-It also supports a local override file:
+```sh
+npm install -g agent-run
+```
 
-- `.agent-run.env`
+For local development, prepend this repo's `bin/` directory to `PATH` instead.
 
-This repository is intended to contain the utility itself, not bundled
-per-project agent configs. Those live under the separate `agent-configs` tree.
+## Quick Start
+
+```sh
+# Initialize agent config for a project
+cd ~/source/org/my-api
+agent-run init
+
+# Edit the agent instructions
+agent-run edit
+
+# Run Claude with the mapped config
+agent-run claude
+
+# Run Codex with the mapped config
+agent-run codex
+
+# Check a project for config issues
+agent-run check
+
+# Audit an entire source tree
+agent-run check --all ~/source
+```
 
 ## Why This Exists
 
 Many AI tools look for local instruction files such as:
 
 - `AGENTS.md`
-- `AGENTS-MODS.md`
 - `CLAUDE.md`
-- `.claude`
-- `.codex`
+- `.claude/`
+- `.codex/`
 
 That is convenient for a single repo, but it creates a few problems at scale:
 
@@ -259,7 +276,7 @@ That means the default assumption is:
 
 ## Commands
 
-## `agent-run codex`
+### `agent-run codex`
 
 Runs Codex using mapped agent config.
 
@@ -277,15 +294,11 @@ If `AGENT_WRAPPER_FORCE_PERMISSIVE=1` is set, it adds:
 - `-a never`
 - `-s danger-full-access`
 
-### `--none`
+**`--none`** — bypasses wrapper behavior and runs the real `codex` binary directly.
 
-`agent-run codex --none` bypasses wrapper behavior for that invocation and runs the real `codex` binary directly.
+**`--create`** — creates blank mapped agent files before launching.
 
-### `--create`
-
-`agent-run codex --create` creates blank mapped agent files before launching.
-
-## `agent-run claude`
+### `agent-run claude`
 
 Runs Claude using mapped agent config.
 
@@ -302,15 +315,11 @@ If `AGENT_WRAPPER_FORCE_PERMISSIVE=1` is set for a non-root user, it adds:
 
 - `--permission-mode bypassPermissions`
 
-### `--none`
+**`--none`** — bypasses wrapper behavior and runs the real `claude` binary directly.
 
-`agent-run claude --none` bypasses wrapper behavior for that invocation and runs the real `claude` binary directly.
+**`--create`** — creates blank mapped agent files before launching.
 
-### `--create`
-
-`agent-run claude --create` creates blank mapped agent files before launching.
-
-## `agent-run init [path]`
+### `agent-run init [path]`
 
 Initializes mapped config files for a source repo.
 
@@ -328,7 +337,7 @@ If the project root contains `.agent-run-ignore`, init skips it.
 
 If the project has neither `package.json.name` nor `AGENT_RUN_PROFILE` in `.agent-run.env`, init fails and asks for explicit mapping metadata.
 
-## `agent-run edit [path]`
+### `agent-run edit [path]`
 
 Opens the mapped `AGENTS-MODS.md` source file for a project.
 
@@ -353,7 +362,7 @@ Behavior:
 
 If the project has neither `package.json.name` nor `AGENT_RUN_PROFILE` in `.agent-run.env`, edit fails and asks for explicit mapping metadata.
 
-## `agent-run check [path]`
+### `agent-run check [path]`
 
 Checks one source repo.
 
@@ -368,13 +377,11 @@ Behavior:
 - checks whether generated `AGENTS.md` matches rendered `AGENTS-MODS.md`
 - warns if a scoped package path does not match `<org>/<repo>` under the source root
 
-Typical use:
-
 ```sh
 agent-run check .
 ```
 
-## `agent-run check --all [path]`
+### `agent-run check --all [path]`
 
 Checks a source root and all repos found under it.
 
@@ -385,8 +392,6 @@ Behavior:
 - also treats the root itself as a repo if it already looks like one
 - runs the same per-repo checks as `check`
 - skips any subtree rooted at `.agent-run-ignore`
-
-Typical use:
 
 ```sh
 agent-run check --all ~/source
@@ -408,9 +413,7 @@ The wrapper treats these as local AI files:
 - `.claude`
 - `.codex`
 
-For `codex` and `claude` commands:
-
-- if these are found inside the project, `agent-run` stops and warns
+For `codex` and `claude` commands, if these are found inside the project, `agent-run` stops and warns.
 
 The expected response is:
 
@@ -421,13 +424,7 @@ This is deliberate. The wrapper is opinionated about keeping working repos clean
 
 ## `.agent-run-ignore`
 
-If a directory contains a file named:
-
-```text
-.agent-run-ignore
-```
-
-that directory is excluded from processing.
+If a directory contains a file named `.agent-run-ignore`, that directory is excluded from processing.
 
 Effects:
 
@@ -465,8 +462,6 @@ Use this when:
 
 This value is the profile path relative to `agent-configs`.
 
-Example:
-
 ```dotenv
 AGENT_RUN_PROFILE=org/my-docs
 ```
@@ -475,20 +470,13 @@ AGENT_RUN_PROFILE=org/my-docs
 
 This is the structured equivalent of `.agent-run-ignore`.
 
-Truthy values include:
-
-- `1`
-- `true`
-- `yes`
-- `on`
+Truthy values: `1`, `true`, `yes`, `on`
 
 If set, the repo is skipped by `check`, `check --all`, and `init`, and wrapper behavior is bypassed for tool launch commands.
 
 ## Include Expansion
 
 Leading lines in `AGENTS-MODS.md` beginning with `@` are treated as include lines.
-
-Example:
 
 ```text
 @../../templates/AGENTS-CODE.md
@@ -506,31 +494,11 @@ If included and local content conflict, later local content wins.
 
 `agent-run` looks up the real `codex` or `claude` binary in `PATH` and avoids recursively resolving itself.
 
-On Windows, it also handles:
-
-- `.cmd`
-- `.bat`
-- `.exe`
-
-and uses shell spawning where needed for command shims.
-
-## Installation
-
-The utility should be installable as a standalone package.
-
-The package exposes the command:
-
-```text
-agent-run
-```
-
-If installed globally, it should be available on the command line as long as your package manager’s global bin directory is on `PATH`.
-
-For local development, you can also prepend this repo’s `bin/` directory to `PATH`.
+On Windows, it also handles `.cmd`, `.bat`, and `.exe` extensions, and uses shell spawning where needed for command shims.
 
 ## Recommended Layout
 
-Recommended source tree:
+Source tree:
 
 ```text
 ~/source/
@@ -543,7 +511,7 @@ Recommended source tree:
     another-repo/
 ```
 
-Recommended config tree:
+Config tree:
 
 ```text
 ~/source/agent-configs/
@@ -561,141 +529,30 @@ Recommended config tree:
         CLAUDE.md
 ```
 
-## Example Workflows
-
-### Run Codex For A Project
-
-```sh
-cd ~/source/org/my-api
-agent-run codex
-```
-
-### Create Missing Agent Config For A Project
-
-```sh
-cd ~/source/org/my-api
-agent-run init
-```
-
-### Check A Single Project
-
-```sh
-cd ~/source/org/my-api
-agent-run check
-```
-
-### Edit A Project Agent Config
-
-```sh
-cd ~/source/org/my-api
-agent-run edit
-```
-
-### Check A Whole Source Tree
-
-```sh
-agent-run check --all ~/source
-```
-
-### Use A Different Source Root Temporarily
-
-```sh
-agent-run --root ~/work check --all ~/work
-```
-
-or:
-
-```sh
-AGENT_SOURCE_ROOT=~/work agent-run check --all ~/work
-```
-
-## Reasoning Behind The Design
-
-The design is opinionated on purpose.
+## Design Rationale
 
 ### Keep AI Files Out Of Source Repos
 
-This reduces:
-
-- accidental commits
-- repo noise
-- project-specific duplication
-- ambiguity about which instructions are actually active
+This reduces accidental commits, repo noise, project-specific duplication, and ambiguity about which instructions are actually active.
 
 ### Keep One Editable Instruction Source
 
-Using:
-
-- `AGENTS-MODS.md` as source
-- `AGENTS.md` as generated output
-- `CLAUDE.md` and similar tool-specific files as checked-in pointer files
-
-avoids split-brain configuration between tools.
-
-The repo intentionally does not require symlinks for these compatibility files.
-That keeps the checked-out `agent-configs` tree portable across Linux, macOS,
-and Windows.
+Using `AGENTS-MODS.md` as source, `AGENTS.md` as generated output, and `CLAUDE.md` (and similar) as checked-in pointer files avoids split-brain configuration between tools. Pointer files instead of symlinks keep the `agent-configs` tree portable across Linux, macOS, and Windows.
 
 ### Make Mapping Deterministic
 
-The mapping from repo to config path should come from explicit metadata, not guessed directory names.
-
-That is why the precedence is:
-
-- `AGENT_RUN_PROFILE` in `.agent-run.env`
-- `package.json.name`
-- otherwise fail
-
-The tool intentionally does not fall back to `other/<dirname>` or any other silent catch-all bucket.
+The mapping from repo to config path comes from explicit metadata, not guessed directory names. The precedence is `AGENT_RUN_PROFILE` → `package.json.name` → fail. There is no silent catch-all fallback.
 
 ### Support Batch Validation
 
-Large multi-repo setups need batch checks:
-
-- missing config should be visible
-- stale generated files should be visible
-- bad path conventions should be visible
-- local AI leakage should be visible
+Large multi-repo setups need batch checks to surface missing configs, stale generated files, bad path conventions, and local AI leakage.
 
 ### Allow Explicit Exceptions
 
-`.agent-run-ignore` exists because strict policies still need escape hatches.
+`.agent-run-ignore` exists because strict policies still need escape hatches. Ignored repos are a deliberate exception, not an accident.
 
-Ignored repos are a deliberate exception, not an accident.
+## Scope
 
-## Current Scope
+`agent-run` is focused on wrapping Codex and Claude, mapping projects to external agent config, generating `AGENTS.md`, and validating source and config layout.
 
-`agent-run` is focused on:
-
-- wrapping Codex and Claude
-- mapping projects to external agent config
-- generating `AGENTS.md`
-- validating source and config layout
-
-It is not intended to manage:
-
-- package manager global prefix configuration
-- systemd services
-- license maintenance across all repos
-- arbitrary workspace automation unrelated to agent config
-
-## Summary
-
-`agent-run` is a strict wrapper for externalized AI project configuration.
-
-It assumes:
-
-- source repos live under a common source root
-- agent config lives separately under `<source-root>/agent-configs`
-- working repos should not contain active local AI config
-- repo mapping should come from `AGENT_RUN_PROFILE` or `package.json.name`, not guessed folder names
-
-It provides:
-
-- deterministic mapping
-- generated instruction files
-- safe wrapper behavior
-- batch auditing
-- explicit ignore support
-
-That is the entire point of the tool.
+It is not intended to manage package manager configuration, systemd services, license maintenance, or arbitrary workspace automation unrelated to agent config.

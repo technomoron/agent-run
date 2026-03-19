@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 type ToolName = 'codex' | 'claude';
-type CommandName = ToolName | 'check' | 'init' | 'edit';
+type CommandName = ToolName | 'check' | 'init' | 'edit' | 'update';
 
 type WrapperArgs = {
 	none: boolean;
@@ -35,7 +35,12 @@ type EditCommand = {
 	targetPath: string;
 };
 
-type ParsedInvocation = RunCommand | CheckCommand | InitCommand | EditCommand;
+type UpdateCommand = {
+	command: 'update';
+	targetPath: string;
+};
+
+type ParsedInvocation = RunCommand | CheckCommand | InitCommand | EditCommand | UpdateCommand;
 
 type WalkVisitorResult = 'skip' | undefined;
 type WalkVisitor = (fullPath: string, entry: fs.Dirent) => WalkVisitorResult;
@@ -51,6 +56,7 @@ const IGNORE_FILE_NAME = '.agent-run-ignore';
 const LOCAL_AI_FILE_NAMES = new Set(['AGENTS.md', 'AGENTS-MODS.md', 'CLAUDE.md', 'codex.md']);
 const CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
 const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
+const agentRunEnvCache = new Map<string, Record<string, string>>();
 
 export function renderAgentsMods(sourceFile: string, stack: string[] = []): string {
 	const resolvedSource = path.resolve(sourceFile);
@@ -171,6 +177,11 @@ export function main(invokedTool: string, argv: string[]): void {
 		return;
 	}
 
+	if (parsed.command === 'update') {
+		runUpdate(parsed);
+		return;
+	}
+
 	runTool(parsed);
 }
 
@@ -189,7 +200,7 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 
 	if (command === null) {
 		if (inputArgs.length === 0) {
-			fail('usage: agent-run <codex|claude|check|init|edit> [options]');
+			fail('usage: agent-run <codex|claude|check|init|edit|update> [options]');
 		}
 
 		const firstArg = inputArgs.shift();
@@ -209,6 +220,10 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 
 	if (command === 'edit') {
 		return parseEditCommand(inputArgs);
+	}
+
+	if (command === 'update') {
+		return parseUpdateCommand(inputArgs);
 	}
 
 	return parseRunCommand(command, inputArgs);
@@ -362,6 +377,23 @@ function parseEditCommand(inputArgs: string[]): EditCommand {
 	};
 }
 
+function parseUpdateCommand(inputArgs: string[]): UpdateCommand {
+	let targetPath = process.cwd();
+
+	for (const arg of inputArgs) {
+		if (arg.startsWith('--')) {
+			fail(`unknown update option: ${arg}`);
+		}
+
+		targetPath = arg;
+	}
+
+	return {
+		command: 'update',
+		targetPath: path.resolve(targetPath)
+	};
+}
+
 function normalizeCommandName(value: string): CommandName | null {
 	if (!value) {
 		return null;
@@ -386,6 +418,9 @@ function normalizeCommandName(value: string): CommandName | null {
 	if (base === 'edit') {
 		return 'edit';
 	}
+	if (base === 'update') {
+		return 'update';
+	}
 
 	return null;
 }
@@ -403,9 +438,15 @@ function runTool(parsed: RunCommand): void {
 		return;
 	}
 
-	const localAiFiles = findLocalAiFiles(projectRoot);
+	const profileResult = resolveProfileResult(projectRoot);
+	const excludedDir = profileResult.profile === null ? null : resolveAgentDir(projectRoot);
+	const localAiFiles = findLocalAiFiles(projectRoot, excludedDir);
 	if (localAiFiles.length > 0) {
 		failForLocalAiFiles(command, projectRoot, localAiFiles);
+	}
+
+	if (profileResult.profile === null) {
+		fail(profileResult.reason);
 	}
 
 	const agentDir = resolveAgentDir(projectRoot);
@@ -464,6 +505,24 @@ function runEdit(parsed: EditCommand): void {
 	openEditor(modsPath);
 }
 
+function runUpdate(parsed: UpdateCommand): void {
+	const projectRoot = findProjectRoot(parsed.targetPath);
+	verbose(`update target=${parsed.targetPath} projectRoot=${projectRoot}`);
+	if (isIgnoredDir(projectRoot)) {
+		process.stdout.write(`SKIP ignored ${projectRoot}\n`);
+		return;
+	}
+
+	const agentDir = resolveAgentDir(projectRoot);
+	const modsPath = path.join(agentDir, 'AGENTS-MODS.md');
+	if (!fs.existsSync(modsPath)) {
+		fail(`missing AGENTS-MODS.md: ${modsPath}`);
+	}
+
+	syncGeneratedAgentsFile(agentDir);
+	process.stdout.write(`OK updated ${path.join(agentDir, 'AGENTS.md')}\n`);
+}
+
 function runCheck(parsed: CheckCommand): void {
 	if (parsed.all) {
 		verbose(`check --all root=${parsed.targetPath}`);
@@ -488,7 +547,9 @@ function runCheck(parsed: CheckCommand): void {
 function checkProject(projectRoot: string): Finding[] {
 	const findings: Finding[] = [];
 	verbose(`checking project ${projectRoot}`);
-	const localAiFiles = findLocalAiFiles(projectRoot);
+	const profileResult = resolveProfileResult(projectRoot);
+	const excludedDir = profileResult.profile === null ? null : resolveAgentDir(projectRoot);
+	const localAiFiles = findLocalAiFiles(projectRoot, excludedDir);
 	for (const file of localAiFiles) {
 		findings.push({
 			message: `local AI file in project: ${file}`,
@@ -496,7 +557,6 @@ function checkProject(projectRoot: string): Finding[] {
 		});
 	}
 
-	const profileResult = resolveProfileResult(projectRoot);
 	if (profileResult.profile === null) {
 		findings.push({
 			message: profileResult.reason,
@@ -759,9 +819,19 @@ export function resolveAgentDir(projectRoot: string): string {
 	return agentDir;
 }
 
-function findLocalAiFiles(projectRoot: string): string[] {
+function findLocalAiFiles(projectRoot: string, excludedDir: string | null = null): string[] {
 	const matches: string[] = [];
+	const rootIgnored = isIgnoredDir(projectRoot);
+	if (rootIgnored) {
+		return matches;
+	}
+
+	const resolvedExcludedDir = excludedDir ? path.resolve(excludedDir) : null;
 	walk(projectRoot, (fullPath, entry) => {
+		if (resolvedExcludedDir !== null && isSamePathOrDescendant(fullPath, resolvedExcludedDir)) {
+			return entry.isDirectory() ? 'skip' : undefined;
+		}
+
 		if (isLocalAiDirectory(entry)) {
 			matches.push(fullPath);
 			return 'skip';
@@ -818,6 +888,11 @@ function walk(dir: string, visitor: WalkVisitor): void {
 			walk(fullPath, visitor);
 		}
 	}
+}
+
+function isSamePathOrDescendant(candidatePath: string, parentPath: string): boolean {
+	const relative = path.relative(parentPath, candidatePath);
+	return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function shouldPruneProjectEntry(entry: fs.Dirent): boolean {
@@ -984,10 +1059,18 @@ function parseProfile(profile: string, source: string): { profile: string | null
 }
 
 function readAgentRunEnv(dir: string): Record<string, string> {
-	const filePath = path.join(dir, ENV_FILE_NAME);
+	const resolvedDir = path.resolve(dir);
+	const cached = agentRunEnvCache.get(resolvedDir);
+	if (cached) {
+		return cached;
+	}
+
+	const filePath = path.join(resolvedDir, ENV_FILE_NAME);
 	if (!fs.existsSync(filePath)) {
-		verbose(`no ${ENV_FILE_NAME} in ${dir}`);
-		return {};
+		verbose(`no ${ENV_FILE_NAME} in ${resolvedDir}`);
+		const emptyEnv: Record<string, string> = {};
+		agentRunEnvCache.set(resolvedDir, emptyEnv);
+		return emptyEnv;
 	}
 
 	verbose(`read ${filePath}`);
@@ -1017,6 +1100,7 @@ function readAgentRunEnv(dir: string): Record<string, string> {
 		env[key] = value;
 	}
 
+	agentRunEnvCache.set(resolvedDir, env);
 	return env;
 }
 

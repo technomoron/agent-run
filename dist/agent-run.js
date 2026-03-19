@@ -19,6 +19,7 @@ const IGNORE_FILE_NAME = '.agent-run-ignore';
 const LOCAL_AI_FILE_NAMES = new Set(['AGENTS.md', 'AGENTS-MODS.md', 'CLAUDE.md', 'codex.md']);
 const CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
 const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
+const agentRunEnvCache = new Map();
 function renderAgentsMods(sourceFile, stack = []) {
     const resolvedSource = path.resolve(sourceFile);
     verbose(`render ${resolvedSource}`);
@@ -116,6 +117,10 @@ function main(invokedTool, argv) {
         runEdit(parsed);
         return;
     }
+    if (parsed.command === 'update') {
+        runUpdate(parsed);
+        return;
+    }
     runTool(parsed);
 }
 function parseInvocation(invokedTool, argv) {
@@ -130,7 +135,7 @@ function parseInvocation(invokedTool, argv) {
     }
     if (command === null) {
         if (inputArgs.length === 0) {
-            fail('usage: agent-run <codex|claude|check|init|edit> [options]');
+            fail('usage: agent-run <codex|claude|check|init|edit|update> [options]');
         }
         const firstArg = inputArgs.shift();
         command = normalizeCommandName(firstArg ?? '');
@@ -146,6 +151,9 @@ function parseInvocation(invokedTool, argv) {
     }
     if (command === 'edit') {
         return parseEditCommand(inputArgs);
+    }
+    if (command === 'update') {
+        return parseUpdateCommand(inputArgs);
     }
     return parseRunCommand(command, inputArgs);
 }
@@ -265,6 +273,19 @@ function parseEditCommand(inputArgs) {
         targetPath: path.resolve(targetPath)
     };
 }
+function parseUpdateCommand(inputArgs) {
+    let targetPath = process.cwd();
+    for (const arg of inputArgs) {
+        if (arg.startsWith('--')) {
+            fail(`unknown update option: ${arg}`);
+        }
+        targetPath = arg;
+    }
+    return {
+        command: 'update',
+        targetPath: path.resolve(targetPath)
+    };
+}
 function normalizeCommandName(value) {
     if (!value) {
         return null;
@@ -288,6 +309,9 @@ function normalizeCommandName(value) {
     if (base === 'edit') {
         return 'edit';
     }
+    if (base === 'update') {
+        return 'update';
+    }
     return null;
 }
 function runTool(parsed) {
@@ -301,9 +325,14 @@ function runTool(parsed) {
         execTool(realBinary, [...permissionArgs, ...args]);
         return;
     }
-    const localAiFiles = findLocalAiFiles(projectRoot);
+    const profileResult = resolveProfileResult(projectRoot);
+    const excludedDir = profileResult.profile === null ? null : resolveAgentDir(projectRoot);
+    const localAiFiles = findLocalAiFiles(projectRoot, excludedDir);
     if (localAiFiles.length > 0) {
         failForLocalAiFiles(command, projectRoot, localAiFiles);
+    }
+    if (profileResult.profile === null) {
+        fail(profileResult.reason);
     }
     const agentDir = resolveAgentDir(projectRoot);
     verbose(`resolved agent path: ${agentDir}`);
@@ -350,6 +379,21 @@ function runEdit(parsed) {
     process.stdout.write(`Edit: ${modsPath}\n`);
     openEditor(modsPath);
 }
+function runUpdate(parsed) {
+    const projectRoot = findProjectRoot(parsed.targetPath);
+    verbose(`update target=${parsed.targetPath} projectRoot=${projectRoot}`);
+    if (isIgnoredDir(projectRoot)) {
+        process.stdout.write(`SKIP ignored ${projectRoot}\n`);
+        return;
+    }
+    const agentDir = resolveAgentDir(projectRoot);
+    const modsPath = path.join(agentDir, 'AGENTS-MODS.md');
+    if (!fs.existsSync(modsPath)) {
+        fail(`missing AGENTS-MODS.md: ${modsPath}`);
+    }
+    syncGeneratedAgentsFile(agentDir);
+    process.stdout.write(`OK updated ${path.join(agentDir, 'AGENTS.md')}\n`);
+}
 function runCheck(parsed) {
     if (parsed.all) {
         verbose(`check --all root=${parsed.targetPath}`);
@@ -371,14 +415,15 @@ function runCheck(parsed) {
 function checkProject(projectRoot) {
     const findings = [];
     verbose(`checking project ${projectRoot}`);
-    const localAiFiles = findLocalAiFiles(projectRoot);
+    const profileResult = resolveProfileResult(projectRoot);
+    const excludedDir = profileResult.profile === null ? null : resolveAgentDir(projectRoot);
+    const localAiFiles = findLocalAiFiles(projectRoot, excludedDir);
     for (const file of localAiFiles) {
         findings.push({
             message: `local AI file in project: ${file}`,
             severity: 'ERROR'
         });
     }
-    const profileResult = resolveProfileResult(projectRoot);
     if (profileResult.profile === null) {
         findings.push({
             message: profileResult.reason,
@@ -592,9 +637,17 @@ function resolveAgentDir(projectRoot) {
     verbose(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
     return agentDir;
 }
-function findLocalAiFiles(projectRoot) {
+function findLocalAiFiles(projectRoot, excludedDir = null) {
     const matches = [];
+    const rootIgnored = isIgnoredDir(projectRoot);
+    if (rootIgnored) {
+        return matches;
+    }
+    const resolvedExcludedDir = excludedDir ? path.resolve(excludedDir) : null;
     walk(projectRoot, (fullPath, entry) => {
+        if (resolvedExcludedDir !== null && isSamePathOrDescendant(fullPath, resolvedExcludedDir)) {
+            return entry.isDirectory() ? 'skip' : undefined;
+        }
         if (isLocalAiDirectory(entry)) {
             matches.push(fullPath);
             return 'skip';
@@ -638,6 +691,10 @@ function walk(dir, visitor) {
             walk(fullPath, visitor);
         }
     }
+}
+function isSamePathOrDescendant(candidatePath, parentPath) {
+    const relative = path.relative(parentPath, candidatePath);
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 function shouldPruneProjectEntry(entry) {
     return (entry.isDirectory() &&
@@ -776,10 +833,17 @@ function parseProfile(profile, source) {
     };
 }
 function readAgentRunEnv(dir) {
-    const filePath = path.join(dir, ENV_FILE_NAME);
+    const resolvedDir = path.resolve(dir);
+    const cached = agentRunEnvCache.get(resolvedDir);
+    if (cached) {
+        return cached;
+    }
+    const filePath = path.join(resolvedDir, ENV_FILE_NAME);
     if (!fs.existsSync(filePath)) {
-        verbose(`no ${ENV_FILE_NAME} in ${dir}`);
-        return {};
+        verbose(`no ${ENV_FILE_NAME} in ${resolvedDir}`);
+        const emptyEnv = {};
+        agentRunEnvCache.set(resolvedDir, emptyEnv);
+        return emptyEnv;
     }
     verbose(`read ${filePath}`);
     const env = {};
@@ -801,6 +865,7 @@ function readAgentRunEnv(dir) {
         }
         env[key] = value;
     }
+    agentRunEnvCache.set(resolvedDir, env);
     return env;
 }
 function parseBooleanEnv(value) {

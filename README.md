@@ -117,6 +117,17 @@ agent-run edit
 This creates missing files, syncs generated files, then opens
 `AGENTS-MODS.md` in your editor.
 
+Regenerate the generated files for the current repo:
+
+```sh
+agent-run update
+```
+
+This reads `AGENTS-MODS.md` from the mapped profile directory and rewrites:
+
+- `AGENTS.md`
+- `CLAUDE.md`
+
 Check the current repo:
 
 ```sh

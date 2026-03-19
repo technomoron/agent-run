@@ -3,6 +3,10 @@ CHANGES
 
 Version 0.99.0 (2026-03-19)
 ---------------------------
+* Normalize package metadata and license copyright text to `Technomoron.com`.
+
+Version 0.99.0 (2026-03-19)
+---------------------------
 * Replace the shell wrapper with the Node and TypeScript-based `agent-run` utility.
 * Add `check` and `init` commands, source-root support, and external agent-config mapping.
 * Add `.agent-run-ignore` and `.agent-run.env` support for explicit ignore and profile overrides.

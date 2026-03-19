@@ -29,8 +29,8 @@
     "release:verify": "bash ./scripts/release-verify.sh"
   },
   "author": "Bjorn Erik Jacobsen",
-  "license": "UNLICENSED",
-  "copyright": "Copyright (c) 2026 Bjørn Erik Jacobsen",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 Bjørn Erik Jacobsen / Technomoron.com",
   "bugs": {
     "url": "https://github.com/technomoron/agent-run/issues"
   },

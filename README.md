@@ -140,5 +140,5 @@ agent-run check --all ~/source
 ## Install
 
 ```sh
-npm install -g agent-run
+npm install -g @technomoron/agent-run
 ```

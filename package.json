@@ -1,9 +1,9 @@
 {
   "name": "@technomoron/agent-run",
   "version": "0.99.0",
-  "private": true,
+  "packageManager": "pnpm@10.28.1",
   "bin": {
-    "agent-run": "./dist/agent-run.js"
+    "agent-run": "dist/agent-run.js"
   },
   "files": [
     "dist/",
@@ -11,10 +11,35 @@
     "LICENSE",
     "CHANGES"
   ],
-  "copyright": "Copyright (c) 2026 Bjørn Erik Jacobsen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/technomoron/agent-run.git"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "echo 'No tests for agents meta-repo'"
+    "postbuild": "node -e \"require('node:fs').chmodSync('dist/agent-run.js', 0o755)\"",
+    "clean:dist": "rimraf ./dist/",
+    "cleanbuild": "run-s clean:dist build",
+    "prepack": "run-s build",
+    "test": "echo 'No tests for agent-run'",
+    "release": "bash ./scripts/release-package.sh .",
+    "release:check": "bash ./scripts/release-package-check.sh .",
+    "release:preflight": "bash ./scripts/release-package-preflight.sh .",
+    "release:publish:dry-run": "bash ./scripts/release-package-publish.sh . --dry-run",
+    "release:verify": "bash ./scripts/release-verify.sh"
   },
-  "license": "UNLICENSED"
+  "author": "Bjorn Erik Jacobsen",
+  "license": "UNLICENSED",
+  "copyright": "Copyright (c) 2026 Bjørn Erik Jacobsen",
+  "bugs": {
+    "url": "https://github.com/technomoron/agent-run/issues"
+  },
+  "homepage": "https://github.com/technomoron/agent-run#readme",
+  "devDependencies": {
+    "@types/node": "^20.19.11",
+    "npm-run-all": "^4.1.5",
+    "pnpm": "^10.28.1",
+    "rimraf": "^6.1.3",
+    "typescript": "^5.9.3"
+  }
 }

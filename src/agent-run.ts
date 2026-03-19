@@ -1,8 +1,9 @@
+#!/usr/bin/env node
+
 import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { renderAgentsMods, syncGeneratedAgentsFile } from './agent-files';
 
 type ToolName = 'codex' | 'claude';
 type CommandName = ToolName | 'check' | 'init' | 'edit';
@@ -48,6 +49,109 @@ const IS_WINDOWS = process.platform === 'win32';
 const ENV_FILE_NAME = '.agent-run.env';
 const IGNORE_FILE_NAME = '.agent-run-ignore';
 const LOCAL_AI_FILE_NAMES = new Set(['AGENTS.md', 'AGENTS-MODS.md', 'CLAUDE.md', 'codex.md']);
+const CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
+const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
+
+export function renderAgentsMods(sourceFile: string, stack: string[] = []): string {
+	const resolvedSource = path.resolve(sourceFile);
+	verbose(`render ${resolvedSource}`);
+	if (stack.includes(resolvedSource)) {
+		throw new Error(`Include cycle detected: ${[...stack, resolvedSource].join(' -> ')}`);
+	}
+
+	const lines = fs.readFileSync(resolvedSource, 'utf8').replace(/\r\n/g, '\n').split('\n');
+	const output: string[] = [];
+	const nextStack = [...stack, resolvedSource];
+	let sawLeadingInclude = false;
+	let insertedOverrideNote = false;
+	let contentStarted = false;
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+
+		if (!contentStarted && trimmed === '') {
+			continue;
+		}
+
+		if (trimmed.startsWith('@')) {
+			const includePath = trimmed.slice(1).trim();
+			if (!includePath) {
+				continue;
+			}
+
+			const resolvedInclude = resolveIncludePath(resolvedSource, includePath);
+			verbose(`include ${includePath} -> ${resolvedInclude}`);
+			output.push(renderAgentsMods(resolvedInclude, nextStack));
+			if (!contentStarted) {
+				sawLeadingInclude = true;
+			}
+			continue;
+		}
+
+		if (sawLeadingInclude && !insertedOverrideNote) {
+			verbose(`insert override note in ${resolvedSource}`);
+			output.push('');
+			output.push('If anything below this point conflicts with anything included above,');
+			output.push('the later instructions below take precedence.');
+			output.push('');
+			insertedOverrideNote = true;
+		}
+
+		output.push(line);
+		contentStarted = true;
+	}
+
+	return output.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+}
+
+export function syncGeneratedAgentsFile(agentDir: string): void {
+	const modsPath = path.join(agentDir, 'AGENTS-MODS.md');
+	const agentsPath = path.join(agentDir, 'AGENTS.md');
+	verbose(`sync generated files from ${modsPath}`);
+	const rendered = renderAgentsMods(modsPath);
+	fs.writeFileSync(agentsPath, rendered, 'utf8');
+	verbose(`write ${agentsPath}`);
+
+	const claudePath = path.join(agentDir, 'CLAUDE.md');
+	fs.writeFileSync(claudePath, '@AGENTS.md\n', 'utf8');
+	verbose(`write ${claudePath}`);
+}
+
+function resolveIncludePath(sourceFile: string, includePath: string): string {
+	if (path.isAbsolute(includePath)) {
+		verbose(`resolve include absolute ${includePath}`);
+		return includePath;
+	}
+
+	const sourceRelativePath = path.resolve(path.dirname(sourceFile), includePath);
+	if (fs.existsSync(sourceRelativePath)) {
+		verbose(`resolve include relative ${includePath} -> ${sourceRelativePath}`);
+		return sourceRelativePath;
+	}
+
+	const includeRoot = findIncludeRoot(sourceFile);
+	const fallbackPath = path.resolve(includeRoot, includePath.replace(/^(\.\.\/)+/, ''));
+	verbose(`resolve include root fallback ${includePath} -> ${fallbackPath}`);
+	return fallbackPath;
+}
+
+function findIncludeRoot(sourceFile: string): string {
+	let dir = path.dirname(sourceFile);
+
+	for (;;) {
+		const templatesDir = path.join(dir, 'templates');
+		if (fs.existsSync(templatesDir)) {
+			return dir;
+		}
+
+		const parent = path.dirname(dir);
+		if (parent === dir) {
+			return path.dirname(sourceFile);
+		}
+
+		dir = parent;
+	}
+}
 
 export function main(invokedTool: string, argv: string[]): void {
 	const parsed = parseInvocation(invokedTool, argv);
@@ -75,8 +179,12 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 	const extracted = extractGlobalOptions(argv);
 	const inputArgs = extracted.args;
 
-	if (extracted.sourceRootOverride !== null) {
-		process.env.AGENT_SOURCE_ROOT = extracted.sourceRootOverride;
+	if (extracted.verbose) {
+		process.env[VERBOSE_ENV] = '1';
+	}
+
+	if (extracted.configRootOverride !== null) {
+		process.env[CONFIG_ROOT_OVERRIDE_ENV] = extracted.configRootOverride;
 	}
 
 	if (command === null) {
@@ -106,9 +214,14 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 	return parseRunCommand(command, inputArgs);
 }
 
-function extractGlobalOptions(argv: string[]): { args: string[]; sourceRootOverride: string | null } {
+function extractGlobalOptions(argv: string[]): {
+	args: string[];
+	configRootOverride: string | null;
+	verbose: boolean;
+} {
 	const args: string[] = [];
-	let sourceRootOverride: string | null = null;
+	let configRootOverride: string | null = null;
+	let verbose = false;
 	let passthrough = false;
 
 	for (let index = 0; index < argv.length; index += 1) {
@@ -126,29 +239,34 @@ function extractGlobalOptions(argv: string[]): { args: string[]; sourceRootOverr
 			continue;
 		}
 
-		if (arg === '--root') {
+		if (arg === '-v' || arg === '--verbose') {
+			verbose = true;
+			continue;
+		}
+
+		if (arg === '--config-root') {
 			const nextArg = argv[index + 1];
 			if (nextArg === undefined) {
-				fail('missing value for --root');
+				fail('missing value for --config-root');
 			}
-			sourceRootOverride = path.resolve(nextArg);
+			configRootOverride = path.resolve(nextArg);
 			index += 1;
 			continue;
 		}
 
-		if (arg.startsWith('--root=')) {
-			const rootValue = arg.slice('--root='.length);
+		if (arg.startsWith('--config-root=')) {
+			const rootValue = arg.slice('--config-root='.length);
 			if (!rootValue) {
-				fail('missing value for --root');
+				fail('missing value for --config-root');
 			}
-			sourceRootOverride = path.resolve(rootValue);
+			configRootOverride = path.resolve(rootValue);
 			continue;
 		}
 
 		args.push(arg);
 	}
 
-	return { args, sourceRootOverride };
+	return { args, configRootOverride, verbose };
 }
 
 function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
@@ -277,8 +395,10 @@ function runTool(parsed: RunCommand): void {
 	const realBinary = findRealBinary(command);
 	const permissionArgs = getPermissionArgs(command);
 	const projectRoot = findProjectRoot(process.cwd());
+	verbose(`run ${command}: cwd=${process.cwd()} projectRoot=${projectRoot}`);
 
 	if (wrapperArgs.none || isIgnoredDir(projectRoot)) {
+		verbose(`wrapper bypassed for ${command}${wrapperArgs.none ? ' via --none' : ' because project is ignored'}`);
 		execTool(realBinary, [...permissionArgs, ...args]);
 		return;
 	}
@@ -289,6 +409,7 @@ function runTool(parsed: RunCommand): void {
 	}
 
 	const agentDir = resolveAgentDir(projectRoot);
+	verbose(`resolved agent path: ${agentDir}`);
 
 	if (wrapperArgs.create) {
 		createBlankAgentFiles(agentDir);
@@ -309,6 +430,7 @@ function runTool(parsed: RunCommand): void {
 
 function runInit(parsed: InitCommand): void {
 	const projectRoot = findProjectRoot(parsed.targetPath);
+	verbose(`init target=${parsed.targetPath} projectRoot=${projectRoot}`);
 	if (isIgnoredDir(projectRoot)) {
 		process.stdout.write(`SKIP ignored ${projectRoot}\n`);
 		return;
@@ -325,6 +447,7 @@ function runInit(parsed: InitCommand): void {
 
 function runEdit(parsed: EditCommand): void {
 	const projectRoot = findProjectRoot(parsed.targetPath);
+	verbose(`edit target=${parsed.targetPath} projectRoot=${projectRoot}`);
 	if (isIgnoredDir(projectRoot)) {
 		process.stdout.write(`SKIP ignored ${projectRoot}\n`);
 		process.exit(0);
@@ -343,12 +466,14 @@ function runEdit(parsed: EditCommand): void {
 
 function runCheck(parsed: CheckCommand): void {
 	if (parsed.all) {
+		verbose(`check --all root=${parsed.targetPath}`);
 		const report = checkSourceTree(parsed.targetPath);
 		printBatchReport(report.root, report.entries);
 		process.exit(report.hasErrors ? 1 : 0);
 	}
 
 	const projectRoot = findProjectRoot(parsed.targetPath);
+	verbose(`check target=${parsed.targetPath} projectRoot=${projectRoot}`);
 	if (isIgnoredDir(projectRoot)) {
 		process.stdout.write(`Check: ${projectRoot}\n`);
 		process.stdout.write('SKIP ignored by .agent-run-ignore\n');
@@ -362,17 +487,13 @@ function runCheck(parsed: CheckCommand): void {
 
 function checkProject(projectRoot: string): Finding[] {
 	const findings: Finding[] = [];
+	verbose(`checking project ${projectRoot}`);
 	const localAiFiles = findLocalAiFiles(projectRoot);
 	for (const file of localAiFiles) {
 		findings.push({
 			message: `local AI file in project: ${file}`,
 			severity: 'ERROR'
 		});
-	}
-
-	const sourceLayoutFinding = checkSourceProjectLayout(projectRoot);
-	if (sourceLayoutFinding !== null) {
-		findings.push(sourceLayoutFinding);
 	}
 
 	const profileResult = resolveProfileResult(projectRoot);
@@ -384,7 +505,7 @@ function checkProject(projectRoot: string): Finding[] {
 		return findings;
 	}
 
-	const agentDir = path.join(defaultConfigRoot(), profileResult.profile, 'agent');
+	const agentDir = resolveAgentDir(projectRoot);
 	findings.push(...checkAgentDirectory(agentDir));
 	return findings;
 }
@@ -498,53 +619,6 @@ function checkAgentDirectory(agentDir: string): Finding[] {
 }
 
 
-function checkSourceProjectLayout(projectRoot: string): Finding | null {
-	const packagePath = path.join(projectRoot, 'package.json');
-	if (!fs.existsSync(packagePath)) {
-		return null;
-	}
-
-	try {
-		const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { name?: unknown };
-		if (typeof pkg.name !== 'string' || !pkg.name.startsWith('@')) {
-			return null;
-		}
-
-		const sourceRoot = defaultSourceStorageRoot();
-		const relative = path.relative(sourceRoot, projectRoot);
-		if (relative.startsWith('..') || path.isAbsolute(relative)) {
-			return null;
-		}
-
-		const segments = splitRelativePath(relative);
-		if (segments.length < 2) {
-			return {
-				message: `scoped package path under source storage root should be <org>/<repo>: ${projectRoot}`,
-				severity: 'WARN'
-			};
-		}
-
-		const expected = pkg.name.slice(1).split('/');
-		if (expected.length !== 2) {
-			return null;
-		}
-
-		if (segments[0] !== expected[0] || segments[1] !== expected[1]) {
-			return {
-				message: `source path does not match package name ${pkg.name}: ${projectRoot}`,
-				severity: 'WARN'
-			};
-		}
-	} catch {
-		return {
-			message: `cannot parse package.json: ${packagePath}`,
-			severity: 'WARN'
-		};
-	}
-
-	return null;
-}
-
 function printProjectReport(projectRoot: string, findings: Finding[]): void {
 	process.stdout.write(`Check: ${projectRoot}\n`);
 	if (findings.length === 0) {
@@ -603,6 +677,7 @@ function formatError(error: unknown): string {
 
 function createBlankAgentFiles(agentDir: string): void {
 	fs.mkdirSync(agentDir, { recursive: true });
+	verbose(`ensure agent path exists: ${agentDir}`);
 
 	const modsPath = path.join(agentDir, 'AGENTS-MODS.md');
 	const agentsPath = path.join(agentDir, 'AGENTS.md');
@@ -610,14 +685,23 @@ function createBlankAgentFiles(agentDir: string): void {
 
 	if (!fs.existsSync(modsPath)) {
 		fs.writeFileSync(modsPath, '\n', 'utf8');
+		verbose(`created ${modsPath}`);
+	} else {
+		verbose(`exists ${modsPath}`);
 	}
 
 	if (!fs.existsSync(agentsPath)) {
 		fs.writeFileSync(agentsPath, '\n', 'utf8');
+		verbose(`created ${agentsPath}`);
+	} else {
+		verbose(`exists ${agentsPath}`);
 	}
 
 	if (!fs.existsSync(claudePath)) {
 		fs.writeFileSync(claudePath, '@AGENTS.md\n', 'utf8');
+		verbose(`created ${claudePath}`);
+	} else {
+		verbose(`exists ${claudePath}`);
 	}
 }
 
@@ -669,7 +753,10 @@ function getPermissionArgs(tool: ToolName): string[] {
 
 export function resolveAgentDir(projectRoot: string): string {
 	const profile = resolveProfile(projectRoot);
-	return path.join(defaultConfigRoot(), profile, 'agent');
+	const configRoot = defaultConfigRoot(projectRoot);
+	const agentDir = path.join(configRoot, profile);
+	verbose(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
+	return agentDir;
 }
 
 function findLocalAiFiles(projectRoot: string): string[] {
@@ -802,7 +889,11 @@ export function findProjectRoot(cwd: string): string {
 		dir = parent;
 	}
 
-	return workspaceRoot || nearestPackageRoot || gitRoot || path.resolve(cwd);
+	const resolvedRoot = workspaceRoot || nearestPackageRoot || gitRoot || path.resolve(cwd);
+	verbose(
+		`findProjectRoot cwd=${path.resolve(cwd)} workspaceRoot=${workspaceRoot || '-'} nearestPackageRoot=${nearestPackageRoot || '-'} gitRoot=${gitRoot || '-'} resolved=${resolvedRoot}`
+	);
+	return resolvedRoot;
 }
 
 function isWorkspaceRoot(dir: string): boolean {
@@ -836,10 +927,8 @@ function resolveProfileResult(projectRoot: string): { profile: string | null; re
 	const env = readAgentRunEnv(projectRoot);
 	const envProfile = env.AGENT_RUN_PROFILE?.trim();
 	if (envProfile) {
-		return {
-			profile: normalizeProfile(envProfile),
-			reason: ''
-		};
+		verbose(`using ${ENV_FILE_NAME} AGENT_RUN_PROFILE=${envProfile}`);
+		return parseProfile(envProfile, `${ENV_FILE_NAME} AGENT_RUN_PROFILE`);
 	}
 
 	const packagePath = path.join(projectRoot, 'package.json');
@@ -847,10 +936,8 @@ function resolveProfileResult(projectRoot: string): { profile: string | null; re
 		try {
 			const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { name?: unknown };
 			if (typeof pkg.name === 'string' && pkg.name.length > 0) {
-				return {
-					profile: normalizeProfile(pkg.name.startsWith('@') ? pkg.name.slice(1) : pkg.name),
-					reason: ''
-				};
+				verbose(`using package.json name=${pkg.name}`);
+				return parseProfile(pkg.name.startsWith('@') ? pkg.name.slice(1) : pkg.name, `${packagePath} name`);
 			}
 		} catch {
 			return {
@@ -862,20 +949,48 @@ function resolveProfileResult(projectRoot: string): { profile: string | null; re
 
 	return {
 		profile: null,
-		reason: `cannot resolve agent profile for ${projectRoot}; add ${ENV_FILE_NAME} with AGENT_RUN_PROFILE=<org/repo> or set package.json.name`
+		reason: `cannot resolve agent profile for ${projectRoot}; add ${ENV_FILE_NAME} with AGENT_RUN_PROFILE=<org/project> or set package.json.name`
 	};
 }
 
-function normalizeProfile(profile: string): string {
-	return profile.replace(/^\/+|\/+$/g, '');
+function parseProfile(profile: string, source: string): { profile: string | null; reason: string } {
+	const normalized = profile.trim().replace(/\\/g, '/');
+	if (!normalized) {
+		return {
+			profile: null,
+			reason: `${source} must be a non-empty path relative to the config root`
+		};
+	}
+
+	if (normalized.startsWith('/') || normalized.startsWith('\\\\') || /^[A-Za-z]:\//.test(normalized)) {
+		return {
+			profile: null,
+			reason: `${source} must be relative to the config root, not an absolute path`
+		};
+	}
+
+	const segments = normalized.split('/').filter((segment) => segment.length > 0);
+	if (segments.length === 0 || segments.some((segment) => segment === '.' || segment === '..')) {
+		return {
+			profile: null,
+			reason: `${source} must be a clean relative path like org/my-project`
+		};
+	}
+
+	return {
+		profile: segments.join('/'),
+		reason: ''
+	};
 }
 
 function readAgentRunEnv(dir: string): Record<string, string> {
 	const filePath = path.join(dir, ENV_FILE_NAME);
 	if (!fs.existsSync(filePath)) {
+		verbose(`no ${ENV_FILE_NAME} in ${dir}`);
 		return {};
 	}
 
+	verbose(`read ${filePath}`);
 	const env: Record<string, string> = {};
 	const lines = fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n').split('\n');
 
@@ -914,24 +1029,38 @@ function parseBooleanEnv(value: string | undefined): boolean {
 	return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
-export function defaultConfigRoot(): string {
-	if (process.env.AGENT_CONFIG_ROOT) {
-		return process.env.AGENT_CONFIG_ROOT;
+export function defaultConfigRoot(projectRoot?: string): string {
+	const overrideRoot = process.env[CONFIG_ROOT_OVERRIDE_ENV];
+	if (overrideRoot) {
+		const resolved = path.resolve(overrideRoot);
+		verbose(`using --config-root override: ${resolved}`);
+		return resolved;
 	}
-	return path.join(defaultSourceStorageRoot(), 'agent-configs');
-}
 
-function defaultSourceStorageRoot(): string {
-	if (process.env.AGENT_SOURCE_ROOT) {
-		return process.env.AGENT_SOURCE_ROOT;
+	if (process.env.AGENT_CONFIG_ROOT) {
+		const resolved = path.resolve(process.env.AGENT_CONFIG_ROOT);
+		verbose(`using AGENT_CONFIG_ROOT env: ${resolved}`);
+		return resolved;
 	}
-	if (process.env.SOURCE_STORAGE_DIR) {
-		return process.env.SOURCE_STORAGE_DIR;
+
+	if (projectRoot) {
+		const env = readAgentRunEnv(projectRoot);
+		const localConfigRoot = env.AGENT_CONFIG_ROOT?.trim();
+		if (localConfigRoot) {
+			const resolved = path.resolve(projectRoot, localConfigRoot);
+			verbose(`using ${ENV_FILE_NAME} AGENT_CONFIG_ROOT: ${resolved}`);
+			return resolved;
+		}
 	}
+
 	if (IS_WINDOWS) {
-		return path.join(os.homedir(), 'Documents', 'source');
+		const resolved = path.join(os.homedir(), 'Documents', 'source', 'agent-configs');
+		verbose(`using default config root: ${resolved}`);
+		return resolved;
 	}
-	return path.join(os.homedir(), 'source');
+	const resolved = path.join(os.homedir(), 'source', 'agent-configs');
+	verbose(`using default config root: ${resolved}`);
+	return resolved;
 }
 
 function findRealBinary(tool: ToolName): string {
@@ -1025,10 +1154,12 @@ function isExecutable(filePath: string): boolean {
 }
 
 function execTool(command: string, args: string[]): void {
+	verbose(`exec tool: ${formatCommand(command, args)} shell=${String(shouldUseShell(command))}`);
 	execCommand(command, args, shouldUseShell(command));
 }
 
 function execCommand(command: string, args: string[], shell: boolean, env?: Record<string, string | undefined>): void {
+	verbose(`spawn: ${formatCommand(command, args)} shell=${String(shell)}`);
 	const child = childProcess.spawn(command, args, {
 		env,
 		shell,
@@ -1051,38 +1182,45 @@ function execCommand(command: string, args: string[], shell: boolean, env?: Reco
 function openEditor(filePath: string): void {
 	const visual = process.env.VISUAL?.trim();
 	if (visual) {
+		verbose(`open editor via VISUAL=${visual} file=${filePath}`);
 		execCommand(visual, [filePath], true);
 		return;
 	}
 
 	const editor = process.env.EDITOR?.trim();
 	if (editor) {
+		verbose(`open editor via EDITOR=${editor} file=${filePath}`);
 		execCommand(editor, [filePath], true);
 		return;
 	}
 
 	const vscodeCommand = findVsCodeEditorCommand();
 	if (vscodeCommand !== null) {
+		verbose(`open editor via VS Code command=${vscodeCommand} file=${filePath}`);
 		execCommand(vscodeCommand, ['--reuse-window', filePath], shouldUseShell(vscodeCommand));
 		return;
 	}
 
 	const fallbackEditor = findFallbackEditor();
 	if (fallbackEditor !== null) {
+		verbose(`open editor via fallback command=${fallbackEditor} file=${filePath}`);
 		execCommand(fallbackEditor, [filePath], shouldUseShell(fallbackEditor));
 		return;
 	}
 
 	if (IS_WINDOWS) {
+		verbose(`open editor via cmd.exe start file=${filePath}`);
 		execCommand('cmd.exe', ['/c', 'start', '', filePath], false);
 		return;
 	}
 
 	if (process.platform === 'darwin') {
+		verbose(`open editor via open file=${filePath}`);
 		execCommand('open', [filePath], false);
 		return;
 	}
 
+	verbose(`open editor via xdg-open file=${filePath}`);
 	execCommand('xdg-open', [filePath], false);
 }
 
@@ -1177,14 +1315,39 @@ function shouldUseShell(command: string): boolean {
 	return extension === '.cmd' || extension === '.bat';
 }
 
-function splitRelativePath(relativePath: string): string[] {
-	if (!relativePath || relativePath === '.') {
-		return [];
+function isVerbose(): boolean {
+	return parseBooleanEnv(process.env[VERBOSE_ENV]);
+}
+
+function verbose(message: string): void {
+	if (!isVerbose()) {
+		return;
 	}
-	return relativePath.split(path.sep).filter((segment) => segment.length > 0);
+
+	process.stderr.write(`agent-run: ${message}\n`);
+}
+
+function formatCommand(command: string, args: string[]): string {
+	return [command, ...args].map(quoteArg).join(' ');
+}
+
+function quoteArg(value: string): string {
+	if (value === '') {
+		return '""';
+	}
+
+	if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) {
+		return value;
+	}
+
+	return JSON.stringify(value);
 }
 
 function fail(message: string): never {
 	process.stderr.write(`agent-run: ${message}\n`);
 	process.exit(1);
+}
+
+if (require.main === module) {
+	main(path.basename(process.argv[1] ?? 'agent-run'), process.argv.slice(2));
 }

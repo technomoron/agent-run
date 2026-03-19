@@ -58,6 +58,11 @@ declare module 'child_process' {
 }
 
 declare const __dirname: string;
+declare const module: { exports: unknown };
+declare const require: {
+	(name: string): unknown;
+	main?: unknown;
+};
 
 declare const process: {
 	argv: string[];

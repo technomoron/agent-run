@@ -3,8 +3,14 @@
   "version": "0.99.0",
   "private": true,
   "bin": {
-    "agent-run": "./bin/agent-run"
+    "agent-run": "./dist/agent-run.js"
   },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE",
+    "CHANGES"
+  ],
   "copyright": "Copyright (c) 2026 Bjørn Erik Jacobsen",
   "scripts": {
     "build": "tsc -p tsconfig.json",

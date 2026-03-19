@@ -1,5 +1,6 @@
 {
-  "name": "agents",
+  "name": "@technomoron/agent-run",
+  "version": "0.99.0",
   "private": true,
   "bin": {
     "agent-run": "./bin/agent-run"

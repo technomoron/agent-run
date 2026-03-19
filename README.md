@@ -65,12 +65,12 @@ These are your normal code repositories. A typical layout is:
 
 ```text
 <source-root>/
-  bjornjac/
+  user/
     some-repo/
-  technomoron/
-    api-server-base/
-  documentmedia/
-    doc-api/
+  org1/
+    hyped-up-codebase/
+  org2/
+    awesome-api/
 ```
 
 ### Agent Config Repository
@@ -85,8 +85,8 @@ Inside that config repo, each project gets a mapped folder:
 
 ```text
 <source-root>/agent-configs/
-  technomoron/
-    api-server-base/
+  org/
+    my-api/
       agent/
         AGENTS-MODS.md
         AGENTS.md
@@ -194,9 +194,9 @@ Order of precedence:
 
 Examples:
 
-- `AGENT_RUN_PROFILE=technomoron/apicore` becomes `technomoron/apicore`
-- `package.json.name = @technomoron/apicore` becomes `technomoron/apicore`
-- `package.json.name = apicore` becomes `apicore`
+- `AGENT_RUN_PROFILE=org/my-app` becomes `org/my-app`
+- `package.json.name = @org/my-app` becomes `org/my-app`
+- `package.json.name = my-app` becomes `my-app`
 
 If neither `AGENT_RUN_PROFILE` nor `package.json.name` exists, `agent-run` does not guess from the directory name. It fails and asks for an explicit profile.
 
@@ -210,15 +210,15 @@ The resolved config path is:
 
 Example:
 
-- source repo: `<source-root>/technomoron/api-server-base`
-- package name: `@technomoron/api-server-base`
+- source repo: `<source-root>/org/my-api`
+- package name: `@org/my-api`
 - config dir:
-  `<source-root>/agent-configs/technomoron/api-server-base/agent`
+  `<source-root>/agent-configs/org/my-api/agent`
 
 For a non-Node repo, use:
 
 ```dotenv
-AGENT_RUN_PROFILE=technomoron/api-server-base
+AGENT_RUN_PROFILE=org/my-api
 ```
 
 ## Source Root And Config Root
@@ -252,10 +252,9 @@ That means the default assumption is:
 ```text
 <source-root>/
   agent-configs/
-  bjornjac/
-  technomoron/
-  yes-media/
-  documentmedia/
+  user/
+  org/
+  org2/
 ```
 
 ## Commands
@@ -452,7 +451,7 @@ This is useful for:
 Supported keys:
 
 ```dotenv
-AGENT_RUN_PROFILE=technomoron/api-server-base
+AGENT_RUN_PROFILE=org/my-api
 AGENT_RUN_IGNORE=1
 ```
 
@@ -469,7 +468,7 @@ This value is the profile path relative to `agent-configs`.
 Example:
 
 ```dotenv
-AGENT_RUN_PROFILE=documentmedia/doc-api
+AGENT_RUN_PROFILE=org/my-docs
 ```
 
 ### `AGENT_RUN_IGNORE`
@@ -536,28 +535,26 @@ Recommended source tree:
 ```text
 ~/source/
   agent-configs/
-  bjornjac/
-    beachbody-api/
-  technomoron/
-    api-server-base/
-  yes-media/
-    front-yesmedia/
-  documentmedia/
-    doc-api/
+  user/
+    my-repo/
+  org/
+    my-api/
+  org2/
+    another-repo/
 ```
 
 Recommended config tree:
 
 ```text
 ~/source/agent-configs/
-  bjornjac/
-    beachbody-api/
+  user/
+    my-repo/
       agent/
         AGENTS-MODS.md
         AGENTS.md
         CLAUDE.md
-  technomoron/
-    api-server-base/
+  org/
+    my-api/
       agent/
         AGENTS-MODS.md
         AGENTS.md
@@ -569,28 +566,28 @@ Recommended config tree:
 ### Run Codex For A Project
 
 ```sh
-cd ~/source/technomoron/api-server-base
+cd ~/source/org/my-api
 agent-run codex
 ```
 
 ### Create Missing Agent Config For A Project
 
 ```sh
-cd ~/source/technomoron/api-server-base
+cd ~/source/org/my-api
 agent-run init
 ```
 
 ### Check A Single Project
 
 ```sh
-cd ~/source/technomoron/api-server-base
+cd ~/source/org/my-api
 agent-run check
 ```
 
 ### Edit A Project Agent Config
 
 ```sh
-cd ~/source/technomoron/api-server-base
+cd ~/source/org/my-api
 agent-run edit
 ```
 

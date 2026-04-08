@@ -39,9 +39,7 @@ jobs:
 
       - name: Publish npm Package
         if: github.event_name == 'push'
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
 
       - name: Create GitHub Release
         if: github.event_name == 'push'

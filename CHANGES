@@ -4,6 +4,11 @@ CHANGES
 Unreleased (2026-04-08)
 -----------------------
 
+Version 0.99.2 (2026-04-08)
+---------------------------
+* Update the release workflow to use current GitHub Actions versions that run on Node 24.
+* Skip npm publish in the release workflow when the package version already exists on npm.
+
 Version 0.99.1 (2026-04-08)
 ---------------------------
 * Expand `{{AGENT_DIR}}`, `{{AGENTS_PATH}}`, and related placeholders from `AGENTS-MODS.md` when generating `AGENTS.md`.

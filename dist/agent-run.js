@@ -67,12 +67,36 @@ function syncGeneratedAgentsFile(agentDir) {
     const modsPath = path.join(agentDir, 'AGENTS-MODS.md');
     const agentsPath = path.join(agentDir, 'AGENTS.md');
     verbose(`sync generated files from ${modsPath}`);
-    const rendered = renderAgentsMods(modsPath);
+    const rendered = expandAgentsTemplateVariables(renderAgentsMods(modsPath), buildAgentsTemplateContext(agentDir));
     fs.writeFileSync(agentsPath, rendered, 'utf8');
     verbose(`write ${agentsPath}`);
     const claudePath = path.join(agentDir, 'CLAUDE.md');
     fs.writeFileSync(claudePath, '@AGENTS.md\n', 'utf8');
     verbose(`write ${claudePath}`);
+}
+function buildAgentsTemplateContext(agentDir) {
+    const resolvedAgentDir = path.resolve(agentDir);
+    const resolvedConfigRoot = path.resolve(defaultConfigRoot());
+    const profile = path.relative(resolvedConfigRoot, resolvedAgentDir).replace(/\\/g, '/');
+    return {
+        agentDir: resolvedAgentDir,
+        agentsModsPath: path.join(resolvedAgentDir, 'AGENTS-MODS.md'),
+        agentsPath: path.join(resolvedAgentDir, 'AGENTS.md'),
+        claudePath: path.join(resolvedAgentDir, 'CLAUDE.md'),
+        configRoot: resolvedConfigRoot,
+        profile
+    };
+}
+function expandAgentsTemplateVariables(content, context) {
+    const replacements = new Map([
+        ['AGENT_DIR', context.agentDir],
+        ['AGENTS_MODS_PATH', context.agentsModsPath],
+        ['AGENTS_PATH', context.agentsPath],
+        ['CLAUDE_PATH', context.claudePath],
+        ['CONFIG_ROOT', context.configRoot],
+        ['PROFILE', context.profile]
+    ]);
+    return content.replace(/\{\{([A-Z_]+)\}\}/g, (match, key) => replacements.get(key) ?? match);
 }
 function resolveIncludePath(sourceFile, includePath) {
     if (path.isAbsolute(includePath)) {

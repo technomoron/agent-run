@@ -1,6 +1,13 @@
 CHANGES
 =======
 
+Unreleased (2026-04-08)
+-----------------------
+
+Version 0.99.1 (2026-04-08)
+---------------------------
+* Expand `{{AGENT_DIR}}`, `{{AGENTS_PATH}}`, and related placeholders from `AGENTS-MODS.md` when generating `AGENTS.md`.
+
 Version 0.99.0 (2026-03-19)
 ---------------------------
 * Normalize package metadata and license copyright text to `Technomoron.com`.

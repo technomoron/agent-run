@@ -58,6 +58,15 @@ const CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
 const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
 const agentRunEnvCache = new Map<string, Record<string, string>>();
 
+type AgentsTemplateContext = {
+	agentDir: string;
+	agentsModsPath: string;
+	agentsPath: string;
+	claudePath: string;
+	configRoot: string;
+	profile: string;
+};
+
 export function renderAgentsMods(sourceFile: string, stack: string[] = []): string {
 	const resolvedSource = path.resolve(sourceFile);
 	verbose(`render ${resolvedSource}`);
@@ -114,13 +123,41 @@ export function syncGeneratedAgentsFile(agentDir: string): void {
 	const modsPath = path.join(agentDir, 'AGENTS-MODS.md');
 	const agentsPath = path.join(agentDir, 'AGENTS.md');
 	verbose(`sync generated files from ${modsPath}`);
-	const rendered = renderAgentsMods(modsPath);
+	const rendered = expandAgentsTemplateVariables(renderAgentsMods(modsPath), buildAgentsTemplateContext(agentDir));
 	fs.writeFileSync(agentsPath, rendered, 'utf8');
 	verbose(`write ${agentsPath}`);
 
 	const claudePath = path.join(agentDir, 'CLAUDE.md');
 	fs.writeFileSync(claudePath, '@AGENTS.md\n', 'utf8');
 	verbose(`write ${claudePath}`);
+}
+
+function buildAgentsTemplateContext(agentDir: string): AgentsTemplateContext {
+	const resolvedAgentDir = path.resolve(agentDir);
+	const resolvedConfigRoot = path.resolve(defaultConfigRoot());
+	const profile = path.relative(resolvedConfigRoot, resolvedAgentDir).replace(/\\/g, '/');
+
+	return {
+		agentDir: resolvedAgentDir,
+		agentsModsPath: path.join(resolvedAgentDir, 'AGENTS-MODS.md'),
+		agentsPath: path.join(resolvedAgentDir, 'AGENTS.md'),
+		claudePath: path.join(resolvedAgentDir, 'CLAUDE.md'),
+		configRoot: resolvedConfigRoot,
+		profile
+	};
+}
+
+function expandAgentsTemplateVariables(content: string, context: AgentsTemplateContext): string {
+	const replacements = new Map<string, string>([
+		['AGENT_DIR', context.agentDir],
+		['AGENTS_MODS_PATH', context.agentsModsPath],
+		['AGENTS_PATH', context.agentsPath],
+		['CLAUDE_PATH', context.claudePath],
+		['CONFIG_ROOT', context.configRoot],
+		['PROFILE', context.profile]
+	]);
+
+	return content.replace(/\{\{([A-Z_]+)\}\}/g, (match, key: string) => replacements.get(key) ?? match);
 }
 
 function resolveIncludePath(sourceFile: string, includePath: string): string {

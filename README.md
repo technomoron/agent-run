@@ -128,6 +128,15 @@ This reads `AGENTS-MODS.md` from the mapped profile directory and rewrites:
 - `AGENTS.md`
 - `CLAUDE.md`
 
+Supported placeholders in `AGENTS-MODS.md` are expanded when `AGENTS.md` is generated:
+
+- `{{AGENT_DIR}}`: mapped config directory for the current repo
+- `{{AGENTS_MODS_PATH}}`: source `AGENTS-MODS.md` path
+- `{{AGENTS_PATH}}`: generated `AGENTS.md` path
+- `{{CLAUDE_PATH}}`: generated `CLAUDE.md` path
+- `{{CONFIG_ROOT}}`: resolved config root
+- `{{PROFILE}}`: mapped profile such as `technomoron/apicore`
+
 Check the current repo:
 
 ```sh

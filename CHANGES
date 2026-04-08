@@ -3,6 +3,9 @@ CHANGES
 
 Unreleased (2026-04-08)
 -----------------------
+
+Version 0.99.3 (2026-04-08)
+---------------------------
 * Replace the GitHub release action with `gh` so the workflow avoids the remaining Node 20 action warning.
 
 Version 0.99.2 (2026-04-08)

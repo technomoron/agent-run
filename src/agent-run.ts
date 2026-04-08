@@ -696,7 +696,7 @@ function checkAgentDirectory(agentDir: string): Finding[] {
 
 	if (fs.existsSync(modsPath) && fs.existsSync(agentsPath)) {
 		try {
-			const rendered = renderAgentsMods(modsPath);
+			const rendered = expandAgentsTemplateVariables(renderAgentsMods(modsPath), buildAgentsTemplateContext(agentDir));
 			const generated = fs.readFileSync(agentsPath, 'utf8').replace(/\r\n/g, '\n');
 			if (generated !== rendered) {
 				findings.push({

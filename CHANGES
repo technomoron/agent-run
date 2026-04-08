@@ -3,6 +3,7 @@ CHANGES
 
 Unreleased (2026-04-08)
 -----------------------
+* Make `agent-run check` compare `AGENTS.md` against the same expanded template output that `agent-run update` writes, so placeholder-based profiles no longer fail as stale immediately after update.
 
 Version 0.99.3 (2026-04-08)
 ---------------------------

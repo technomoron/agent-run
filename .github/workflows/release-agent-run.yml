@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - '@technomoron/agent-run@*'
-  workflow_dispatch:
 
 permissions:
   contents: write

@@ -25,7 +25,6 @@
     "release": "bash ./scripts/release.sh",
     "release:check": "bash ./scripts/release-check.sh",
     "release:preflight": "pnpm cleanbuild && pnpm test && pnpm release:check -- --local",
-    "release:publish:dry-run": "env -u npm_config_npm_globalconfig -u npm_config_verify_deps_before_run -u npm_config__jsr_registry -u npm_config_only_built_dependencies -u npm_config_global_bin_dir npm publish --access public --dry-run",
     "release:verify": "bash ./scripts/release-verify.sh"
   },
   "author": "Bjorn Erik Jacobsen",

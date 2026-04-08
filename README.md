@@ -162,3 +162,17 @@ agent-run check --all ~/source
 ```sh
 npm install -g @technomoron/agent-run
 ```
+
+## Release
+
+Releases publish from GitHub Actions, not from a local `npm publish`.
+
+After updating `package.json` and `CHANGES`, run:
+
+```sh
+pnpm release
+```
+
+This validates the repo, creates the annotated tag matching the package version,
+and pushes that tag to `origin`. The tag push triggers the release workflow,
+which verifies, packs, publishes to npm, and creates the GitHub release.

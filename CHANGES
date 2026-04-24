@@ -3,6 +3,7 @@ CHANGES
 
 Unreleased (2026-04-08)
 -----------------------
+* Add `-h` and `--help` output for `agent-run` and its built-in commands, while keeping `agent-run codex --help` and `agent-run claude --help` as passthrough to the underlying tools.
 * Make `agent-run check` compare `AGENTS.md` against the same expanded template output that `agent-run update` writes, so placeholder-based profiles no longer fail as stale immediately after update.
 
 Version 0.99.3 (2026-04-08)

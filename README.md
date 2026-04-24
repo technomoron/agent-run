@@ -92,8 +92,12 @@ Config root:
 
 Global flag:
 
+- `-h`, `--help`: show wrapper help for `agent-run` and the built-in commands
 - `-v`, `--verbose`: print path resolution, file creation, include expansion,
   generated file writes, and spawned commands
+
+`agent-run codex --help` and `agent-run claude --help` still pass `--help`
+through to the underlying tool.
 
 Initialize mapped files for the current repo:
 

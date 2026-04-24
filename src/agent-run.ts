@@ -237,13 +237,16 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 
 	if (command === null) {
 		if (inputArgs.length === 0) {
-			fail('usage: agent-run <codex|claude|check|init|edit|update> [options]');
+			fail('usage: agent-run <codex|claude|check|init|edit|update> [options] (run with --help for details)');
 		}
 
 		const firstArg = inputArgs.shift();
+		if (isHelpFlag(firstArg)) {
+			printHelp('general');
+		}
 		command = normalizeCommandName(firstArg ?? '');
 		if (command === null) {
-			fail(`unknown command: ${firstArg ?? ''}`);
+			fail(`unknown command: ${firstArg ?? ''} (run with --help for usage)`);
 		}
 	}
 
@@ -361,6 +364,10 @@ function parseCheckCommand(inputArgs: string[]): CheckCommand {
 	let targetPath = process.cwd();
 
 	for (const arg of inputArgs) {
+		if (isHelpFlag(arg)) {
+			printHelp('check');
+		}
+
 		if (arg === '--all') {
 			all = true;
 			continue;
@@ -384,6 +391,10 @@ function parseInitCommand(inputArgs: string[]): InitCommand {
 	let targetPath = process.cwd();
 
 	for (const arg of inputArgs) {
+		if (isHelpFlag(arg)) {
+			printHelp('init');
+		}
+
 		if (arg.startsWith('--')) {
 			fail(`unknown init option: ${arg}`);
 		}
@@ -401,6 +412,10 @@ function parseEditCommand(inputArgs: string[]): EditCommand {
 	let targetPath = process.cwd();
 
 	for (const arg of inputArgs) {
+		if (isHelpFlag(arg)) {
+			printHelp('edit');
+		}
+
 		if (arg.startsWith('--')) {
 			fail(`unknown edit option: ${arg}`);
 		}
@@ -418,6 +433,10 @@ function parseUpdateCommand(inputArgs: string[]): UpdateCommand {
 	let targetPath = process.cwd();
 
 	for (const arg of inputArgs) {
+		if (isHelpFlag(arg)) {
+			printHelp('update');
+		}
+
 		if (arg.startsWith('--')) {
 			fail(`unknown update option: ${arg}`);
 		}
@@ -429,6 +448,109 @@ function parseUpdateCommand(inputArgs: string[]): UpdateCommand {
 		command: 'update',
 		targetPath: path.resolve(targetPath)
 	};
+}
+
+function isHelpFlag(value: string | undefined): boolean {
+	return value === '-h' || value === '--help';
+}
+
+function printHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update'): never {
+	process.stdout.write(renderHelp(topic));
+	process.exit(0);
+}
+
+function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update'): string {
+	switch (topic) {
+		case 'check':
+			return [
+				'Usage:',
+				'  agent-run check [--all] [path]',
+				'',
+				'Check the mapped agent files for the current repo or a source tree.',
+				'',
+				'Options:',
+				'  -h, --help  Show this help text',
+				'  --all       Check every repo under path',
+				'',
+				'Examples:',
+				'  agent-run check',
+				'  agent-run check --all ~/source',
+				''
+			].join('\n');
+		case 'init':
+			return [
+				'Usage:',
+				'  agent-run init [path]',
+				'',
+				'Create the mapped agent files for the repo at path.',
+				'',
+				'Options:',
+				'  -h, --help  Show this help text',
+				'',
+				'Examples:',
+				'  agent-run init',
+				'  agent-run init ~/source/org/my-api',
+				''
+			].join('\n');
+		case 'edit':
+			return [
+				'Usage:',
+				'  agent-run edit [path]',
+				'',
+				'Create missing mapped files, sync generated output, and open AGENTS-MODS.md.',
+				'',
+				'Options:',
+				'  -h, --help  Show this help text',
+				'',
+				'Examples:',
+				'  agent-run edit',
+				'  agent-run edit ~/source/org/my-api',
+				''
+			].join('\n');
+		case 'update':
+			return [
+				'Usage:',
+				'  agent-run update [path]',
+				'',
+				'Rebuild AGENTS.md and CLAUDE.md from AGENTS-MODS.md for the repo at path.',
+				'',
+				'Options:',
+				'  -h, --help  Show this help text',
+				'',
+				'Examples:',
+				'  agent-run update',
+				'  agent-run update ~/source/org/my-api',
+				''
+			].join('\n');
+		case 'general':
+		default:
+			return [
+				'Usage:',
+				'  agent-run <codex|claude|check|init|edit|update> [options]',
+				'',
+				'Commands:',
+				'  codex [--none] [--create] [args...]   Run codex with mapped AGENTS.md',
+				'  claude [--none] [--create] [args...]  Run claude with mapped AGENTS.md',
+				'  check [--all] [path]                  Validate mapped files for a repo or tree',
+				'  init [path]                           Create mapped files for a repo',
+				'  edit [path]                           Open AGENTS-MODS.md for a repo',
+				'  update [path]                         Regenerate AGENTS.md and CLAUDE.md',
+				'',
+				'Global options:',
+				'  -h, --help         Show this help text',
+				'  -v, --verbose      Print path resolution and wrapper actions',
+				'  --config-root DIR  Override the agent-config root',
+				'',
+				'Wrapper options for codex and claude:',
+				'  --none             Bypass agent setup and run the tool directly',
+				'  --create           Create blank agent files before running the tool',
+				'',
+				'Notes:',
+				'  agent-run check --help   Show help for a built-in command',
+				'  agent-run codex --help   Pass --help through to codex',
+				''
+			].join('\n');
+	}
 }
 
 function normalizeCommandName(value: string): CommandName | null {

@@ -15,11 +15,13 @@ declare module 'fs' {
 	};
 
 	export function accessSync(path: string, mode?: number): void;
+	export function chmodSync(path: string, mode: number): void;
 	export function existsSync(path: string): boolean;
 	export function mkdirSync(path: string, options?: { recursive?: boolean }): string | undefined;
 	export function readFileSync(path: string, encoding: string): string;
 	export function readdirSync(path: string, options: { withFileTypes: true }): Dirent[];
 	export function realpathSync(path: string): string;
+	export function renameSync(oldPath: string, newPath: string): void;
 	export function statSync(path: string): Stats;
 	export function writeFileSync(path: string, data: string, encoding?: string): void;
 }
@@ -50,11 +52,33 @@ declare module 'child_process' {
 		command: string,
 		args: string[],
 		options: {
+			cwd?: string;
 			env?: Record<string, string | undefined>;
 			shell: boolean;
 			stdio: 'inherit';
 		}
 	): ChildProcess;
+}
+
+declare module 'jsonc-parser' {
+	export type ParseError = {
+		error: number;
+		offset: number;
+		length: number;
+	};
+	export function parse(text: string, errors?: ParseError[], options?: { allowTrailingComma?: boolean }): unknown;
+	export function printParseErrorCode(code: number): string;
+}
+
+declare module 'nunjucks' {
+	export class FileSystemLoader {
+		constructor(searchPaths: string | string[], opts?: { noCache?: boolean });
+	}
+	export class Environment {
+		constructor(loader?: FileSystemLoader, opts?: Record<string, unknown>);
+		render(name: string, context?: object): string;
+		renderString(src: string, context?: object): string;
+	}
 }
 
 declare const __dirname: string;

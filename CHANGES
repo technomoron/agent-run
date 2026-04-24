@@ -1,8 +1,17 @@
 CHANGES
 =======
 
-Unreleased (2026-04-08)
+Unreleased (2026-04-24)
 -----------------------
+
+Version 0.99.4 (2026-04-24)
+---------------------------
+* Refactor profile generation around `agent-run.jsonc` manifests, Nunjucks templates, generated Codex and Claude homes, and private per-profile runtime output.
+* Add generated native skill files, Codex `config.toml`, Claude `settings.json`, guard command shims, and a config-root `.gitignore` for generated outputs.
+* Add Codex runtime modes with `--danger`, `--sandboxed`, and `--network`, defaulting to a private `CODEX_HOME` plus explicit `-C` project root handling.
+* Change the default config root to `~/.agent-config`, add `AGENT_CONFIG_DIR`, and preserve existing config-root overrides.
+* Add `agent-run migrate-config` for converting legacy `AGENTS-MODS.md` config trees into the new manifest/template layout.
+* Add `jsonc-parser` and `nunjucks` runtime dependencies for JSONC manifests and template rendering.
 * Add `-h` and `--help` output for `agent-run` and its built-in commands, while keeping `agent-run codex --help` and `agent-run claude --help` as passthrough to the underlying tools.
 * Make `agent-run check` compare `AGENTS.md` against the same expanded template output that `agent-run update` writes, so placeholder-based profiles no longer fail as stale immediately after update.
 

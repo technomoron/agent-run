@@ -3,7 +3,7 @@
 Small wrapper for AI coding CLIs like Codex and Claude.
 
 It keeps agent files out of normal repos and stores them in a separate
-`agent-configs` tree. That tree can live anywhere; it does not need to sit
+agent config tree. That tree can live anywhere; it does not need to sit
 inside the source tree.
 
 ## Model
@@ -11,7 +11,7 @@ inside the source tree.
 There are three things:
 
 - the source tree
-- the `agent-configs` tree
+- the agent config tree
 - this `agent-run` wrapper
 
 Example:
@@ -21,30 +21,40 @@ Example:
   org/
     my-api/
 
-~/source/agent-configs/
+~/.agent-config/
   org/
     my-api/
-      AGENTS-MODS.md
+      agent-run.jsonc
+      local.md.njk
+      overrides/
       AGENTS.md
       CLAUDE.md
+      config.toml
+      .agents/
+      .claude/
+      bin/
 ```
 
 If your source repo is `~/source/org/my-api`, `agent-run` can map it to:
 
 ```text
-~/source/agent-configs/org/my-api
+~/.agent-config/org/my-api
 ```
 
 The source repo stays clean. The agent files live in the matching path under
-`agent-configs`.
+the agent config tree.
 
 ## File Roles
 
-- `AGENTS-MODS.md`: source file you edit
-- `AGENTS.md`: generated from `AGENTS-MODS.md`
-- `CLAUDE.md`: pointer file containing only `@AGENTS.md`
+- `agent-run.jsonc`: profile manifest
+- `local.md.njk`: source file you edit for project-specific instructions
+- `overrides/`: optional per-profile template overrides
+- `AGENTS.md`: generated Codex instructions
+- `CLAUDE.md`: generated Claude instructions
+- `config.toml`: generated Codex config
+- `.agents/` and `.claude/`: generated native skill/config homes
 
-Edit `AGENTS-MODS.md`. `agent-run` keeps `AGENTS.md` and `CLAUDE.md` in sync.
+Edit `local.md.njk` and `agent-run.jsonc`. `agent-run` keeps generated files in sync.
 
 ## Profile Resolution
 
@@ -57,7 +67,8 @@ The mapped path is:
 `profile` is resolved in this order:
 
 1. `AGENT_RUN_PROFILE` in `.agent-run.env`
-2. `package.json.name`
+2. GitHub `origin` remote
+3. `package.json.name`
 
 Examples:
 
@@ -82,11 +93,11 @@ AGENT_RUN_PROFILE=org/my-api
 
 Config root:
 
-- default: `~/source/agent-configs` on Unix
-- default: `~/Documents/source/agent-configs` on Windows
+- default: `~/.agent-config`
 - override with `--config-root /path/to/agent-configs`
+- override with `AGENT_CONFIG_DIR=/path/to/agent-configs`
 - override with `AGENT_CONFIG_ROOT=/path/to/agent-configs`
-- or set `AGENT_CONFIG_ROOT=/path/to/agent-configs` in `.agent-run.env`
+- or set `AGENT_CONFIG_DIR=/path/to/agent-configs` or `AGENT_CONFIG_ROOT=/path/to/agent-configs` in `.agent-run.env`
 
 ## Commands
 
@@ -99,18 +110,30 @@ Global flag:
 `agent-run codex --help` and `agent-run claude --help` still pass `--help`
 through to the underlying tool.
 
+Codex defaults to `--danger`, which launches Codex with `-a never -s danger-full-access`,
+sets `CODEX_HOME` under the private agent directory, starts the Codex process
+from that private directory, passes the project root with `-C`, and keeps
+generated guard shims on `PATH`. Use `--sandboxed` to request Codex
+`workspace-write`; add `--network` with `--sandboxed` to set
+`sandbox_workspace_write.network_access=true`.
+
+Claude Code currently has no `--cd` equivalent. `agent-run` keeps Claude's
+process cwd at the project root, passes the generated `.claude/settings.json`
+with `--settings`, and allows both the project root and private agent directory
+with `--add-dir`.
+
 Initialize mapped files for the current repo:
 
 ```sh
 agent-run init
 ```
 
-This creates the mapped profile directory if needed and ensures these files
-exist:
+This creates the mapped profile directory if needed and ensures these source
+files/directories exist:
 
-- `AGENTS-MODS.md`
-- `AGENTS.md`
-- `CLAUDE.md`
+- `agent-run.jsonc`
+- `local.md.njk`
+- `overrides/`
 
 Edit the source file for the current repo:
 
@@ -118,8 +141,8 @@ Edit the source file for the current repo:
 agent-run edit
 ```
 
-This creates missing files, syncs generated files, then opens
-`AGENTS-MODS.md` in your editor.
+This creates missing files, syncs generated files, then opens `local.md.njk`
+in your editor.
 
 Regenerate the generated files for the current repo:
 
@@ -127,19 +150,20 @@ Regenerate the generated files for the current repo:
 agent-run update
 ```
 
-This reads `AGENTS-MODS.md` from the mapped profile directory and rewrites:
+This reads `agent-run.jsonc` and Nunjucks templates from the mapped profile
+directory and rewrites generated files:
 
 - `AGENTS.md`
 - `CLAUDE.md`
+- `config.toml`
+- `.agents/skills/**`
+- `.claude/**`
+- `bin/**`
 
-Supported placeholders in `AGENTS-MODS.md` are expanded when `AGENTS.md` is generated:
+Per-profile override templates can be placed in:
 
-- `{{AGENT_DIR}}`: mapped config directory for the current repo
-- `{{AGENTS_MODS_PATH}}`: source `AGENTS-MODS.md` path
-- `{{AGENTS_PATH}}`: generated `AGENTS.md` path
-- `{{CLAUDE_PATH}}`: generated `CLAUDE.md` path
-- `{{CONFIG_ROOT}}`: resolved config root
-- `{{PROFILE}}`: mapped profile such as `technomoron/apicore`
+- `overrides/codex-config.toml.njk`
+- `overrides/claude-settings.json.njk`
 
 Check the current repo:
 
@@ -160,6 +184,18 @@ Check every repo under a source tree:
 ```sh
 agent-run check --all ~/source
 ```
+
+Migrate an existing config tree to the manifest/template layout:
+
+```sh
+agent-run migrate-config ~/.agent-config
+```
+
+This preserves `AGENTS-MODS.md`, creates `local.md.njk`, `agent-run.jsonc`, and
+`overrides/` for legacy profiles, creates the `global/` templates, moves loose
+review files into `reviews/`, moves loose `memory*.md` files into `memories/`,
+and moves old Codex runtime files into `memories/codex-home` when doing so does
+not overwrite existing files.
 
 ## Install
 

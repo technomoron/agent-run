@@ -617,11 +617,14 @@ function runTool(parsed: RunCommand): void {
 		fail(profileResult.reason);
 	}
 
+	const profile = profileResult.profile;
+	const configRoot = defaultConfigRoot(projectRoot);
 	const agentDir = resolveAgentDir(projectRoot);
 	if (wrapperArgs.create) {
 		runInit({ command: 'init', targetPath: projectRoot });
 	}
 
+	ensureRunnableProfile(configRoot, agentDir, profile);
 	syncAgentProfile(projectRoot, agentDir);
 
 	if (command === 'codex') {
@@ -657,6 +660,17 @@ function runInit(parsed: InitCommand): void {
 	printUpdateSummary(rendered);
 }
 
+function ensureRunnableProfile(configRoot: string, agentDir: string, profile: string): void {
+	ensureConfigRootLayout(configRoot);
+	ensureConfigRootGitignore(configRoot);
+	ensureDefaultGlobalTemplates(configRoot);
+	fs.mkdirSync(agentDir, { recursive: true });
+	ensureProfileOverridesDir(agentDir);
+	convertLegacyProfileIfNeeded(configRoot, agentDir, profile);
+	createDefaultManifestFile(agentDir, profile);
+	createDefaultLocalFile(agentDir, profile);
+}
+
 function runEdit(parsed: EditCommand): void {
 	const projectRoot = findProjectRoot(parsed.targetPath);
 	verbose(`edit target=${parsed.targetPath} projectRoot=${projectRoot}`);
@@ -690,10 +704,12 @@ function runUpdate(parsed: UpdateCommand): void {
 	const agentDir = resolveAgentDir(projectRoot);
 	ensureConfigRootLayout(configRoot);
 	ensureConfigRootGitignore(configRoot);
+	ensureDefaultGlobalTemplates(configRoot);
 	fs.mkdirSync(agentDir, { recursive: true });
 	ensureProfileOverridesDir(agentDir);
 	convertLegacyProfileIfNeeded(configRoot, agentDir, profile);
 	createDefaultManifestFile(agentDir, profile);
+	createDefaultLocalFile(agentDir, profile);
 
 	const rendered = syncAgentProfile(projectRoot, agentDir);
 	printUpdateSummary(rendered);
@@ -789,12 +805,17 @@ function ensureConfigRootGitignore(configRoot: string): void {
 	const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf8').replace(/\r\n/g, '\n') : '';
 	const lines = existing.length > 0 ? existing.replace(/\n+$/, '').split('\n') : [];
 	const present = new Set(lines);
+	let changed = !fs.existsSync(gitignorePath);
 	for (const entry of GENERATED_GITIGNORE_ENTRIES) {
 		if (entry === '' || present.has(entry)) {
 			continue;
 		}
 		lines.push(entry);
 		present.add(entry);
+		changed = true;
+	}
+	if (!changed) {
+		return;
 	}
 	fs.writeFileSync(gitignorePath, `${lines.join('\n')}\n`, 'utf8');
 }

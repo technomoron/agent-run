@@ -4,6 +4,11 @@ CHANGES
 Unreleased (2026-04-24)
 -----------------------
 
+Version 0.99.5 (2026-04-25)
+---------------------------
+* Bootstrap missing default global templates, manifests, local templates, and overrides before `agent-run codex`, `agent-run claude`, or `agent-run update` render a profile.
+* Avoid rewriting the config-root `.gitignore` when it already contains the generated-file ignore entries.
+
 Version 0.99.4 (2026-04-24)
 ---------------------------
 * Refactor profile generation around `agent-run.jsonc` manifests, Nunjucks templates, generated Codex and Claude homes, and private per-profile runtime output.

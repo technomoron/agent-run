@@ -1,0 +1,12 @@
+---
+name: commit-workflow
+description: Use when preparing commits for {{ profile }}.
+---
+
+# Commit Workflow
+
+Review changed files before committing. Run:
+
+{% for check in checks %}
+- `{{ check }}`
+{% endfor %}

@@ -1,0 +1,12 @@
+---
+name: triage
+description: Use this profile-specific triage workflow for {{ profile }}.
+---
+
+# Starter Triage
+
+Use the project checks from this profile before closing out:
+
+{% for check in checks %}
+- `{{ check }}`
+{% endfor %}

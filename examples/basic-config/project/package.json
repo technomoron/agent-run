@@ -1,0 +1,8 @@
+{
+  "name": "@starter/basic-project",
+  "private": true,
+  "scripts": {
+    "cleanbuild": "echo cleanbuild",
+    "test": "echo test"
+  }
+}

@@ -1,12 +1,13 @@
 {
   "name": "@technomoron/agent-run",
-  "version": "0.99.6",
+  "version": "0.99.7",
   "packageManager": "pnpm@10.28.1",
   "bin": {
     "agent-run": "dist/agent-run.js"
   },
   "files": [
     "dist/",
+    "examples/",
     "README.md",
     "LICENSE",
     "CHANGES"
@@ -21,7 +22,8 @@
     "clean:dist": "rimraf ./dist/",
     "cleanbuild": "run-s clean:dist build",
     "prepack": "run-s build",
-    "test": "echo 'No tests for agent-run'",
+    "test": "run-s build test:integration",
+    "test:integration": "bash ./scripts/test.sh",
     "release": "bash ./scripts/release.sh",
     "release:check": "bash ./scripts/release-check.sh",
     "release:preflight": "pnpm cleanbuild && pnpm test && pnpm release:check -- --local",

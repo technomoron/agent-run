@@ -35,6 +35,11 @@ type InitCommand = {
 	targetPath: string;
 };
 
+type InitConfigCommand = {
+	command: 'init-config';
+	targetPath: string;
+};
+
 type EditCommand = {
 	command: 'edit';
 	targetPath: string;
@@ -50,7 +55,14 @@ type MigrateConfigCommand = {
 	configRoot: string;
 };
 
-type ParsedInvocation = RunCommand | CheckCommand | InitCommand | EditCommand | UpdateCommand | MigrateConfigCommand;
+type ParsedInvocation =
+	| RunCommand
+	| CheckCommand
+	| InitCommand
+	| InitConfigCommand
+	| EditCommand
+	| UpdateCommand
+	| MigrateConfigCommand;
 type WalkVisitorResult = 'skip' | undefined;
 type WalkVisitor = (fullPath: string, entry: fs.Dirent) => WalkVisitorResult;
 
@@ -219,6 +231,10 @@ export function main(invokedTool: string, argv: string[]): void {
 		runInit(parsed);
 		return;
 	}
+	if (parsed.command === 'init-config') {
+		runInitConfig(parsed);
+		return;
+	}
 	if (parsed.command === 'edit') {
 		runEdit(parsed);
 		return;
@@ -245,6 +261,15 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 	}
 	if (extracted.configRootOverride !== null) {
 		process.env[CONFIG_ROOT_OVERRIDE_ENV] = extracted.configRootOverride;
+	}
+	if (extracted.initConfig) {
+		if (inputArgs.length > 0) {
+			fail('--init cannot be combined with a command');
+		}
+		return {
+			command: 'init-config',
+			targetPath: path.resolve(extracted.initConfigTargetPath ?? defaultConfigRoot())
+		};
 	}
 
 	if (command === null) {
@@ -303,10 +328,14 @@ function findCommandArgIndex(args: string[]): number {
 function extractGlobalOptions(argv: string[]): {
 	args: string[];
 	configRootOverride: string | null;
+	initConfig: boolean;
+	initConfigTargetPath: string | null;
 	verbose: boolean;
 } {
 	const args: string[] = [];
 	let configRootOverride: string | null = null;
+	let initConfig = false;
+	let initConfigTargetPath: string | null = null;
 	let verbose = false;
 	let passthrough = false;
 
@@ -326,6 +355,15 @@ function extractGlobalOptions(argv: string[]): {
 		}
 		if (arg === '-v' || arg === '--verbose') {
 			verbose = true;
+			continue;
+		}
+		if (arg === '--init') {
+			initConfig = true;
+			const nextArg = argv[index + 1];
+			if (nextArg !== undefined && !nextArg.startsWith('-')) {
+				initConfigTargetPath = nextArg;
+				index += 1;
+			}
 			continue;
 		}
 		if (arg === '--config-root') {
@@ -349,7 +387,7 @@ function extractGlobalOptions(argv: string[]): {
 		args.push(arg);
 	}
 
-	return { args, configRootOverride, verbose };
+	return { args, configRootOverride, initConfig, initConfigTargetPath, verbose };
 }
 
 function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
@@ -553,6 +591,7 @@ function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'm
 			return [
 				'Usage:',
 				'  agent-run <codex|claude|check|init|edit|update> [options]',
+				'  agent-run --init [config-root]',
 				'',
 				'Commands:',
 				'  codex [--none] [--create] [--danger|--sandboxed] [--network] [args...]',
@@ -568,6 +607,7 @@ function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'm
 				'  -h, --help         Show this help text',
 				'  -v, --verbose      Print path resolution and wrapper actions',
 				'  --config-root DIR  Override the agent-config root',
+				'  --init [DIR]       Copy the packaged starter config root to DIR (default ~/.agent-config)',
 				'',
 				'Codex wrapper options:',
 				'  --danger           Run Codex with no sandbox: -a never -s danger-full-access (default)',
@@ -677,6 +717,17 @@ function runInit(parsed: InitCommand): void {
 
 	const rendered = syncAgentProfile(projectRoot, agentDir);
 	printUpdateSummary(rendered);
+}
+
+function runInitConfig(parsed: InitConfigCommand): void {
+	const targetPath = path.resolve(parsed.targetPath);
+	const sourcePath = starterConfigRootPath();
+	if (!fs.existsSync(sourcePath)) {
+		fail(`starter config skeleton not found: ${sourcePath}`);
+	}
+
+	copySkeletonTree(sourcePath, targetPath);
+	process.stdout.write(`OK copied starter config to ${targetPath}\n`);
 }
 
 function ensureRunnableProfile(configRoot: string, agentDir: string, profile: string): void {
@@ -1264,6 +1315,32 @@ function writeGeneratedFile(filePath: string, content: string, executable = fals
 		fs.chmodSync(filePath, 0o755);
 	}
 	verbose(`write ${filePath}`);
+}
+
+function starterConfigRootPath(): string {
+	return path.resolve(__dirname, '..', 'examples', 'basic-config', 'agent-config');
+}
+
+function copySkeletonTree(sourceDir: string, targetDir: string): void {
+	fs.mkdirSync(targetDir, { recursive: true });
+	const entries = fs.readdirSync(sourceDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+	for (const entry of entries) {
+		const sourcePath = path.join(sourceDir, entry.name);
+		const targetName = entry.name === 'gitignore' ? '.gitignore' : entry.name;
+		const targetPath = path.join(targetDir, targetName);
+		if (entry.isDirectory()) {
+			copySkeletonTree(sourcePath, targetPath);
+			continue;
+		}
+		if (!entry.isFile()) {
+			continue;
+		}
+		if (fs.existsSync(targetPath)) {
+			continue;
+		}
+		fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+		fs.copyFileSync(sourcePath, targetPath);
+	}
 }
 
 function renderProfile(projectRoot: string, agentDir: string, checkOnly = false): RenderedProfile {

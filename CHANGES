@@ -4,6 +4,12 @@ CHANGES
 Unreleased (2026-04-24)
 -----------------------
 
+Version 0.99.7 (2026-04-26)
+---------------------------
+* Add a checked-in basic starter config under `examples/basic-config` that exercises manifests, templates, snippets, skills, overrides, guardrails, checks, and generated runtime paths.
+* Add `agent-run --init [config-root]` to copy the packaged starter config skeleton to a destination, defaulting to `~/.agent-config`.
+* Replace the placeholder test command with an integration test suite covering the starter config, rendering, checking, stale-file detection, guard shims, local AI-file detection, and flexible command parsing.
+
 Version 0.99.6 (2026-04-26)
 ---------------------------
 * Allow `agent-run` to find the target command after wrapper arguments, so invocations like `agent-run --sandboxed --network codex` work the same as `agent-run codex --sandboxed --network`.

@@ -165,6 +165,35 @@ Per-profile override templates can be placed in:
 - `overrides/codex-config.toml.njk`
 - `overrides/claude-settings.json.njk`
 
+## Starter Config
+
+A complete starter lives in `examples/basic-config`. It includes a minimal
+project, `.agent-run.env`, a config root with global templates and snippets,
+profile-local templates, skill templates, profile skill overrides, tool config
+overrides, guardrails, checks, and generated runtime paths.
+
+To copy the packaged starter config root into your default config location:
+
+```sh
+agent-run --init
+```
+
+Or choose a destination:
+
+```sh
+agent-run --init ~/.agent-config
+```
+
+The copy skips files that already exist, so local edits are preserved.
+
+Try it from a checkout:
+
+```sh
+pnpm build
+node dist/agent-run.js update examples/basic-config/project
+node dist/agent-run.js check examples/basic-config/project
+```
+
 Check the current repo:
 
 ```sh

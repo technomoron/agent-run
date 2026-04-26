@@ -69,6 +69,10 @@ function main(invokedTool, argv) {
         runInit(parsed);
         return;
     }
+    if (parsed.command === 'init-config') {
+        runInitConfig(parsed);
+        return;
+    }
     if (parsed.command === 'edit') {
         runEdit(parsed);
         return;
@@ -92,6 +96,15 @@ function parseInvocation(invokedTool, argv) {
     }
     if (extracted.configRootOverride !== null) {
         process.env[CONFIG_ROOT_OVERRIDE_ENV] = extracted.configRootOverride;
+    }
+    if (extracted.initConfig) {
+        if (inputArgs.length > 0) {
+            fail('--init cannot be combined with a command');
+        }
+        return {
+            command: 'init-config',
+            targetPath: path.resolve(extracted.initConfigTargetPath ?? defaultConfigRoot())
+        };
     }
     if (command === null) {
         if (inputArgs.length === 0) {
@@ -144,6 +157,8 @@ function findCommandArgIndex(args) {
 function extractGlobalOptions(argv) {
     const args = [];
     let configRootOverride = null;
+    let initConfig = false;
+    let initConfigTargetPath = null;
     let verbose = false;
     let passthrough = false;
     for (let index = 0; index < argv.length; index += 1) {
@@ -161,6 +176,15 @@ function extractGlobalOptions(argv) {
         }
         if (arg === '-v' || arg === '--verbose') {
             verbose = true;
+            continue;
+        }
+        if (arg === '--init') {
+            initConfig = true;
+            const nextArg = argv[index + 1];
+            if (nextArg !== undefined && !nextArg.startsWith('-')) {
+                initConfigTargetPath = nextArg;
+                index += 1;
+            }
             continue;
         }
         if (arg === '--config-root') {
@@ -182,7 +206,7 @@ function extractGlobalOptions(argv) {
         }
         args.push(arg);
     }
-    return { args, configRootOverride, verbose };
+    return { args, configRootOverride, initConfig, initConfigTargetPath, verbose };
 }
 function parseRunCommand(command, inputArgs) {
     const wrapperArgs = {
@@ -372,6 +396,7 @@ function renderHelp(topic) {
             return [
                 'Usage:',
                 '  agent-run <codex|claude|check|init|edit|update> [options]',
+                '  agent-run --init [config-root]',
                 '',
                 'Commands:',
                 '  codex [--none] [--create] [--danger|--sandboxed] [--network] [args...]',
@@ -387,6 +412,7 @@ function renderHelp(topic) {
                 '  -h, --help         Show this help text',
                 '  -v, --verbose      Print path resolution and wrapper actions',
                 '  --config-root DIR  Override the agent-config root',
+                '  --init [DIR]       Copy the packaged starter config root to DIR (default ~/.agent-config)',
                 '',
                 'Codex wrapper options:',
                 '  --danger           Run Codex with no sandbox: -a never -s danger-full-access (default)',
@@ -481,6 +507,15 @@ function runInit(parsed) {
     createDefaultLocalFile(agentDir, profile);
     const rendered = syncAgentProfile(projectRoot, agentDir);
     printUpdateSummary(rendered);
+}
+function runInitConfig(parsed) {
+    const targetPath = path.resolve(parsed.targetPath);
+    const sourcePath = starterConfigRootPath();
+    if (!fs.existsSync(sourcePath)) {
+        fail(`starter config skeleton not found: ${sourcePath}`);
+    }
+    copySkeletonTree(sourcePath, targetPath);
+    process.stdout.write(`OK copied starter config to ${targetPath}\n`);
 }
 function ensureRunnableProfile(configRoot, agentDir, profile) {
     ensureConfigRootLayout(configRoot);
@@ -991,6 +1026,30 @@ function writeGeneratedFile(filePath, content, executable = false) {
         fs.chmodSync(filePath, 0o755);
     }
     verbose(`write ${filePath}`);
+}
+function starterConfigRootPath() {
+    return path.resolve(__dirname, '..', 'examples', 'basic-config', 'agent-config');
+}
+function copySkeletonTree(sourceDir, targetDir) {
+    fs.mkdirSync(targetDir, { recursive: true });
+    const entries = fs.readdirSync(sourceDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+        const sourcePath = path.join(sourceDir, entry.name);
+        const targetName = entry.name === 'gitignore' ? '.gitignore' : entry.name;
+        const targetPath = path.join(targetDir, targetName);
+        if (entry.isDirectory()) {
+            copySkeletonTree(sourcePath, targetPath);
+            continue;
+        }
+        if (!entry.isFile()) {
+            continue;
+        }
+        if (fs.existsSync(targetPath)) {
+            continue;
+        }
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        fs.copyFileSync(sourcePath, targetPath);
+    }
 }
 function renderProfile(projectRoot, agentDir, checkOnly = false) {
     const configRoot = defaultConfigRoot(projectRoot);

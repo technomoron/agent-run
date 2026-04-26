@@ -1,0 +1,11 @@
+# Starter profile Codex override
+project_doc_max_bytes = 65536
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+writable_roots = [
+  "{{ projectRoot }}",
+  "{{ agentDir }}",
+  "{{ paths.memoriesDir }}"
+]
+network_access = false

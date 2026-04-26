@@ -482,10 +482,10 @@ function runTool(parsed) {
     ensureRunnableProfile(configRoot, agentDir, profile);
     syncAgentProfile(projectRoot, agentDir);
     if (command === 'codex') {
-        runCodex(realBinary, permissionArgs, agentDir, args, projectRoot, wrapperArgs);
+        runCodex(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot, wrapperArgs);
         return;
     }
-    runClaude(realBinary, permissionArgs, agentDir, args, projectRoot);
+    runClaude(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot);
 }
 function runInit(parsed) {
     const projectRoot = findProjectRoot(parsed.targetPath);
@@ -1459,7 +1459,7 @@ function countWarnings(findings) {
 function formatError(error) {
     return error instanceof Error ? error.message : String(error);
 }
-function runCodex(realBinary, permissionArgs, agentDir, args, projectRoot, wrapperArgs) {
+function runCodex(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot, wrapperArgs) {
     const agentsPath = path.join(agentDir, 'AGENTS.md');
     if (!fs.existsSync(agentsPath)) {
         failMissingConfig('codex', agentDir);
@@ -1482,6 +1482,7 @@ function runCodex(realBinary, permissionArgs, agentDir, args, projectRoot, wrapp
         `system_prompt_file=${agentsPath}`,
         '--config',
         'project_doc_max_bytes=65536',
+        ...globalMemoryArgs(configRoot),
         '-C',
         projectRoot,
         ...(wrapperArgs.codexSandboxMode === 'sandboxed' && wrapperArgs.codexNetwork
@@ -1497,7 +1498,7 @@ function buildCodexRuntimeArgs(wrapperArgs) {
     }
     return ['-a', 'never', '-s', 'danger-full-access'];
 }
-function runClaude(realBinary, permissionArgs, agentDir, args, projectRoot) {
+function runClaude(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot) {
     const claudePath = path.join(agentDir, 'CLAUDE.md');
     if (!fs.existsSync(claudePath)) {
         failMissingConfig('claude', agentDir);
@@ -1519,8 +1520,13 @@ function runClaude(realBinary, permissionArgs, agentDir, args, projectRoot) {
         projectRoot,
         '--add-dir',
         agentDir,
+        ...globalMemoryArgs(configRoot),
         ...args
     ], shouldUseShell(realBinary), env, projectRoot, (code) => postflightProjectCheck(projectRoot, agentDir, code));
+}
+function globalMemoryArgs(configRoot) {
+    const memoryDir = path.join(configRoot, 'notes', 'memory');
+    return fs.existsSync(memoryDir) ? ['--add-dir', memoryDir] : [];
 }
 function postflightProjectCheck(projectRoot, agentDir, code) {
     const localAiFiles = findLocalAiFiles(projectRoot, agentDir);

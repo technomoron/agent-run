@@ -169,8 +169,9 @@ Per-profile override templates can be placed in:
 
 A complete starter lives in `examples/basic-config`. It includes a minimal
 project, `.agent-run.env`, a config root with global templates and snippets,
-profile-local templates, skill templates, profile skill overrides, tool config
-overrides, guardrails, checks, and generated runtime paths.
+profile-local templates, skill templates, a personal memory skill, profile
+skill overrides, tool config overrides, guardrails, checks, and generated
+runtime paths.
 
 To copy the packaged starter config root into your default config location:
 

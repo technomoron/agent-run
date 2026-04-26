@@ -21,7 +21,7 @@ assert_dir() {
 assert_contains() {
 	local file="$1"
 	local expected="$2"
-	grep -Fq "$expected" "$file" || fail "expected '$expected' in $file"
+	grep -Fq -- "$expected" "$file" || fail "expected '$expected' in $file"
 }
 
 assert_executable() {
@@ -58,8 +58,10 @@ assert_file "$SKELETON_INIT/.gitignore"
 assert_file "$SKELETON_INIT/global/agents/code.md.njk"
 assert_file "$SKELETON_INIT/global/tool-templates/AGENTS.md.njk"
 assert_file "$SKELETON_INIT/global/skills/triage/SKILL.md.njk"
+assert_file "$SKELETON_INIT/skills/personal-memory.md"
 assert_file "$SKELETON_INIT/starter/basic-project/agent-run.jsonc"
 assert_file "$SKELETON_INIT/starter/basic-project/overrides/codex-config.toml.njk"
+assert_contains "$SKELETON_INIT/skills/personal-memory.md" "Read \`./notes/memory/README.md\` first."
 
 printf 'local edit\n' >"$SKELETON_INIT/starter/basic-project/local.md.njk"
 node "$BIN" --init "$SKELETON_INIT" >/dev/null
@@ -97,6 +99,29 @@ assert_executable "$AGENT_DIR/bin/git"
 assert_executable "$AGENT_DIR/bin/npm"
 assert_executable "$AGENT_DIR/bin/pnpm"
 assert_executable "$AGENT_DIR/bin/gh"
+
+mkdir -p "$EXAMPLE/agent-config/notes/memory"
+FAKE_TOOL_BIN="$TMP_DIR/fake-tool-bin"
+mkdir -p "$FAKE_TOOL_BIN"
+cat >"$FAKE_TOOL_BIN/codex" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$AGENT_RUN_ARG_CAPTURE"
+SH
+cat >"$FAKE_TOOL_BIN/claude" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$AGENT_RUN_ARG_CAPTURE"
+SH
+chmod +x "$FAKE_TOOL_BIN/codex" "$FAKE_TOOL_BIN/claude"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --sandboxed --memory-check)
+assert_contains "$TMP_DIR/codex-args.out" "--add-dir"
+assert_contains "$TMP_DIR/codex-args.out" "$EXAMPLE/agent-config/notes/memory"
+assert_contains "$TMP_DIR/codex-args.out" "-C"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check)
+assert_contains "$TMP_DIR/claude-args.out" "--add-dir"
+assert_contains "$TMP_DIR/claude-args.out" "$EXAMPLE/agent-config/notes/memory"
+assert_contains "$TMP_DIR/claude-args.out" "$AGENT_DIR"
 
 set +e
 "$AGENT_DIR/bin/git" commit >"$TMP_DIR/git.out" 2>&1

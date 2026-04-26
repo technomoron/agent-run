@@ -4,6 +4,11 @@ CHANGES
 Unreleased (2026-04-24)
 -----------------------
 
+Version 0.99.9 (2026-04-26)
+---------------------------
+* Add `{config-root}/notes/memory` as an optional shared memory directory passed with `--add-dir` to Codex and Claude when it exists.
+* Add a starter `skills/personal-memory.md` file to the packaged config skeleton.
+
 Version 0.99.8 (2026-04-26)
 ---------------------------
 * Skip stale `codex` or `claude` PATH redirect shims that print `Run agent-run instead` when locating the real underlying tool binary.

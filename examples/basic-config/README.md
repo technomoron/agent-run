@@ -8,8 +8,8 @@ It contains two pieces:
 - `project/`: a minimal project with `.agent-run.env` pointing at the bundled
   config root.
 - `agent-config/`: a complete config root with global templates, snippets,
-  skill templates, a profile manifest, profile-local instructions, and profile
-  overrides.
+  skill templates, a personal memory skill, a profile manifest, profile-local
+  instructions, and profile overrides.
 
 Try it from this repository after building:
 

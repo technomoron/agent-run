@@ -687,11 +687,11 @@ function runTool(parsed: RunCommand): void {
 	syncAgentProfile(projectRoot, agentDir);
 
 	if (command === 'codex') {
-		runCodex(realBinary, permissionArgs, agentDir, args, projectRoot, wrapperArgs);
+		runCodex(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot, wrapperArgs);
 		return;
 	}
 
-	runClaude(realBinary, permissionArgs, agentDir, args, projectRoot);
+	runClaude(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot);
 }
 
 function runInit(parsed: InitCommand): void {
@@ -1827,6 +1827,7 @@ function runCodex(
 	realBinary: string,
 	permissionArgs: string[],
 	agentDir: string,
+	configRoot: string,
 	args: string[],
 	projectRoot: string,
 	wrapperArgs: WrapperArgs
@@ -1857,6 +1858,7 @@ function runCodex(
 			`system_prompt_file=${agentsPath}`,
 			'--config',
 			'project_doc_max_bytes=65536',
+			...globalMemoryArgs(configRoot),
 			'-C',
 			projectRoot,
 			...(wrapperArgs.codexSandboxMode === 'sandboxed' && wrapperArgs.codexNetwork
@@ -1883,6 +1885,7 @@ function runClaude(
 	realBinary: string,
 	permissionArgs: string[],
 	agentDir: string,
+	configRoot: string,
 	args: string[],
 	projectRoot: string
 ): void {
@@ -1911,6 +1914,7 @@ function runClaude(
 			projectRoot,
 			'--add-dir',
 			agentDir,
+			...globalMemoryArgs(configRoot),
 			...args
 		],
 		shouldUseShell(realBinary),
@@ -1918,6 +1922,11 @@ function runClaude(
 		projectRoot,
 		(code) => postflightProjectCheck(projectRoot, agentDir, code)
 	);
+}
+
+function globalMemoryArgs(configRoot: string): string[] {
+	const memoryDir = path.join(configRoot, 'notes', 'memory');
+	return fs.existsSync(memoryDir) ? ['--add-dir', memoryDir] : [];
 }
 
 function postflightProjectCheck(projectRoot: string, agentDir: string, code: number): number {

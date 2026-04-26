@@ -4,6 +4,10 @@ CHANGES
 Unreleased (2026-04-24)
 -----------------------
 
+Version 0.99.6 (2026-04-26)
+---------------------------
+* Allow `agent-run` to find the target command after wrapper arguments, so invocations like `agent-run --sandboxed --network codex` work the same as `agent-run codex --sandboxed --network`.
+
 Version 0.99.5 (2026-04-25)
 ---------------------------
 * Bootstrap missing default global templates, manifests, local templates, and overrides before `agent-run codex`, `agent-run claude`, or `agent-run update` render a profile.

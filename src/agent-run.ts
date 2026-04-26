@@ -252,14 +252,20 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 			fail('usage: agent-run <codex|claude|check|init|edit|update> [options] (run with --help for details)');
 		}
 
-		const firstArg = inputArgs.shift();
+		const firstArg = inputArgs[0];
 		if (isHelpFlag(firstArg)) {
 			printHelp('general');
 		}
-		command = normalizeCommandName(firstArg ?? '');
-		if (command === null) {
+		const commandIndex = findCommandArgIndex(inputArgs);
+		if (commandIndex === -1) {
 			fail(`unknown command: ${firstArg ?? ''} (run with --help for usage)`);
 		}
+		const parsedCommand = normalizeCommandName(inputArgs[commandIndex] ?? '');
+		if (parsedCommand === null) {
+			fail(`unknown command: ${firstArg ?? ''} (run with --help for usage)`);
+		}
+		command = parsedCommand;
+		inputArgs.splice(commandIndex, 1);
 	}
 
 	if (command === 'check') {
@@ -279,6 +285,19 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 	}
 
 	return parseRunCommand(command, inputArgs);
+}
+
+function findCommandArgIndex(args: string[]): number {
+	for (let index = 0; index < args.length; index += 1) {
+		const arg = args[index];
+		if (arg === '--') {
+			return -1;
+		}
+		if (normalizeCommandName(arg ?? '') !== null) {
+			return index;
+		}
+	}
+	return -1;
 }
 
 function extractGlobalOptions(argv: string[]): {

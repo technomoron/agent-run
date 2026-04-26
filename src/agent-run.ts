@@ -2321,10 +2321,30 @@ function findRealBinary(tool: ToolName): string {
 			if (resolvedCandidate === currentScript || wrapperCandidates.has(resolvedCandidate)) {
 				continue;
 			}
+			if (isAgentRunRedirectShim(candidate)) {
+				verbose(`skip ${tool} redirect shim: ${candidate}`);
+				continue;
+			}
 			return candidate;
 		}
 	}
 	fail(`no ${tool} binary found in PATH`);
+}
+
+function isAgentRunRedirectShim(filePath: string): boolean {
+	try {
+		const handle = fs.openSync(filePath, 'r');
+		try {
+			const buffer = Buffer.alloc(4096);
+			const bytesRead = fs.readSync(handle, buffer, 0, buffer.length, 0);
+			const content = buffer.subarray(0, bytesRead).toString('utf8');
+			return content.includes('Run agent-run instead');
+		} finally {
+			fs.closeSync(handle);
+		}
+	} catch {
+		return false;
+	}
 }
 
 function getExecutableExtensions(tool: string): string[] {

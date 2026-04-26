@@ -35,6 +35,22 @@ PROJECT="$EXAMPLE/project"
 AGENT_DIR="$EXAMPLE/agent-config/starter/basic-project"
 BIN="$ROOT/dist/agent-run.js"
 
+FAKE_GUARD_BIN="$TMP_DIR/fake-guard-bin"
+FAKE_REAL_BIN="$TMP_DIR/fake-real-bin"
+mkdir -p "$FAKE_GUARD_BIN" "$FAKE_REAL_BIN"
+cat >"$FAKE_GUARD_BIN/codex" <<'SH'
+#!/usr/bin/env bash
+echo "Run agent-run instead." >&2
+exit 1
+SH
+cat >"$FAKE_REAL_BIN/codex" <<'SH'
+#!/usr/bin/env bash
+echo "codex-cli fake"
+SH
+chmod +x "$FAKE_GUARD_BIN/codex" "$FAKE_REAL_BIN/codex"
+PATH="$FAKE_GUARD_BIN:$FAKE_REAL_BIN:$PATH" node "$BIN" codex --none --version >"$TMP_DIR/codex-version.out"
+assert_contains "$TMP_DIR/codex-version.out" "codex-cli fake"
+
 SKELETON_INIT="$TMP_DIR/copied-agent-config"
 node "$BIN" --init "$SKELETON_INIT" >"$TMP_DIR/init-config.out"
 assert_contains "$TMP_DIR/init-config.out" "OK copied starter config to $SKELETON_INIT"

@@ -4,6 +4,10 @@ CHANGES
 Unreleased (2026-04-24)
 -----------------------
 
+Version 0.99.8 (2026-04-26)
+---------------------------
+* Skip stale `codex` or `claude` PATH redirect shims that print `Run agent-run instead` when locating the real underlying tool binary.
+
 Version 0.99.7 (2026-04-26)
 ---------------------------
 * Add a checked-in basic starter config under `examples/basic-config` that exercises manifests, templates, snippets, skills, overrides, guardrails, checks, and generated runtime paths.

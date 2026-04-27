@@ -14,6 +14,7 @@ type CodexSandboxMode = 'danger' | 'sandboxed';
 type WrapperArgs = {
 	none: boolean;
 	create: boolean;
+	local: boolean;
 	codexSandboxMode: CodexSandboxMode | null;
 	codexNetwork: boolean;
 };
@@ -142,6 +143,7 @@ type RenderContext = {
 	date: string;
 	checks: string[];
 	guardrails: NormalizedManifest['guardrails'];
+	permissionsAllow: string[];
 	paths: {
 		changesFile: string;
 		reviewDir: string;
@@ -399,6 +401,7 @@ function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
 	const wrapperArgs: WrapperArgs = {
 		none: false,
 		create: false,
+		local: false,
 		codexSandboxMode: null,
 		codexNetwork: false
 	};
@@ -420,6 +423,10 @@ function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
 		}
 		if (arg === '--create') {
 			wrapperArgs.create = true;
+			continue;
+		}
+		if (arg === '--local') {
+			wrapperArgs.local = true;
 			continue;
 		}
 		if (arg === '--danger') {
@@ -610,9 +617,10 @@ function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'm
 				'  agent-run --init [config-root]',
 				'',
 				'Commands:',
-				'  codex [--none] [--create] [--danger|--sandboxed] [--network] [args...]',
+				'  codex [--none] [--create] [--local] [--danger|--sandboxed] [--network] [args...]',
 				'                                           Run codex with generated private config',
-				'  claude [--none] [--create] [args...]  Run claude with generated private config',
+				'  claude [--none] [--create] [--local] [args...]',
+				'                                           Run claude with generated private config',
 				'  check [--all] [path]                  Validate generated profile output',
 				'  init [path]                           Create profile source files and render output',
 				'  edit [path]                           Open local.md.njk or legacy AGENTS-MODS.md',
@@ -627,6 +635,7 @@ function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'm
 				'  --init [DIR]       Copy the packaged starter config root to DIR (default ~/.agent-config)',
 				'',
 				'Codex wrapper options:',
+				'  --local            Warn about local AI files instead of failing',
 				'  --danger           Run Codex with no sandbox: -a never -s danger-full-access (default)',
 				'  --sandboxed        Run Codex with workspace-write sandbox',
 				'  --network          Enable network for --sandboxed via config override',
@@ -699,7 +708,10 @@ function runTool(parsed: RunCommand): void {
 	const excludedDir = profileResult.profile === null ? null : resolveAgentDir(projectRoot);
 	const localAiFiles = findLocalAiFiles(projectRoot, excludedDir);
 	if (localAiFiles.length > 0) {
-		failForLocalAiFiles(command, projectRoot, localAiFiles);
+		if (!wrapperArgs.local) {
+			failForLocalAiFiles(command, projectRoot, localAiFiles);
+		}
+		warnForLocalAiFiles(command, projectRoot, localAiFiles);
 	}
 
 	if (profileResult.profile === null) {
@@ -721,7 +733,7 @@ function runTool(parsed: RunCommand): void {
 		return;
 	}
 
-	runClaude(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot);
+	runClaude(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot, wrapperArgs);
 }
 
 function runInit(parsed: InitCommand): void {
@@ -1284,9 +1296,21 @@ function buildRenderContext(
 	return {
 		...baseContext,
 		paths,
+		permissionsAllow: buildPermissionsAllow(manifest),
 		skills: [],
 		renderedAgentSections: []
 	};
+}
+
+function buildPermissionsAllow(manifest: NormalizedManifest): string[] {
+	const allow = new Set<string>();
+	for (const check of manifest.checks) {
+		const normalizedCheck = check.trim();
+		if (normalizedCheck) {
+			allow.add(`Bash(${normalizedCheck})`);
+		}
+	}
+	return [...allow];
 }
 
 function resolveConfigPath(configRoot: string, relativePath: string, context: Record<string, unknown>): string {
@@ -1417,7 +1441,7 @@ function renderProfile(projectRoot: string, agentDir: string, checkOnly = false)
 	files.push({ path: path.join(agentDir, 'CLAUDE.md'), content: claudeContent });
 	files.push({ path: path.join(agentDir, '.claude', 'CLAUDE.md'), content: claudeContent });
 	files.push({ path: path.join(agentDir, 'config.toml'), content: renderCodexConfig(env, configRoot, context) });
-	files.push({ path: path.join(agentDir, '.claude', 'settings.json'), content: renderClaudeSettings(env, configRoot, context) });
+	files.push({ path: path.join(agentDir, '.claude', 'agent-run-settings.json'), content: renderClaudeSettings(env, configRoot, context) });
 	files.push(...renderNativeSkillFiles(context));
 	files.push(...renderGuardShims(context));
 
@@ -1437,7 +1461,21 @@ function syncAgentProfile(projectRoot: string, agentDir: string): RenderedProfil
 	for (const file of rendered.files) {
 		writeGeneratedFile(file.path, file.content, file.executable ?? false);
 	}
+	removeLegacyGeneratedClaudeSettings(rendered.context);
 	return rendered;
+}
+
+function removeLegacyGeneratedClaudeSettings(context: RenderContext): void {
+	const legacyPath = path.join(context.agentDir, '.claude', 'settings.json');
+	if (!fs.existsSync(legacyPath)) {
+		return;
+	}
+	const actual = fs.readFileSync(legacyPath, 'utf8').replace(/\r\n/g, '\n');
+	const legacyGeneratedContent = legacyDefaultClaudeSettingsContent(context);
+	if (actual === legacyGeneratedContent) {
+		fs.rmSync(legacyPath);
+		verbose(`removed legacy generated Claude settings ${legacyPath}`);
+	}
 }
 
 function checkRenderedProfile(projectRoot: string, agentDir: string): Finding[] {
@@ -1900,7 +1938,7 @@ function runCodex(
 		shouldUseShell(realBinary),
 		env,
 		codexHomeDir,
-		(code) => postflightProjectCheck(projectRoot, agentDir, code)
+		(code) => postflightProjectCheck(projectRoot, agentDir, wrapperArgs.local, code)
 	);
 }
 
@@ -1918,7 +1956,8 @@ function runClaude(
 	agentDir: string,
 	configRoot: string,
 	args: string[],
-	projectRoot: string
+	projectRoot: string,
+	wrapperArgs: WrapperArgs
 ): void {
 	const claudePath = path.join(agentDir, 'CLAUDE.md');
 	if (!fs.existsSync(claudePath)) {
@@ -1940,7 +1979,7 @@ function runClaude(
 		[
 			...permissionArgs,
 			'--settings',
-			path.join(claudeConfigDir, 'settings.json'),
+			path.join(claudeConfigDir, 'agent-run-settings.json'),
 			'--add-dir',
 			projectRoot,
 			'--add-dir',
@@ -1948,11 +1987,11 @@ function runClaude(
 			...globalMemoryArgs(configRoot),
 			...args
 		],
-		shouldUseShell(realBinary),
-		env,
-		projectRoot,
-		(code) => postflightProjectCheck(projectRoot, agentDir, code)
-	);
+			shouldUseShell(realBinary),
+			env,
+			projectRoot,
+			(code) => postflightProjectCheck(projectRoot, agentDir, wrapperArgs.local, code)
+		);
 }
 
 function globalMemoryArgs(configRoot: string): string[] {
@@ -1964,16 +2003,15 @@ function globalMemoryDir(configRoot: string): string {
 	return path.join(configRoot, 'notes', 'memory');
 }
 
-function postflightProjectCheck(projectRoot: string, agentDir: string, code: number): number {
+function postflightProjectCheck(projectRoot: string, agentDir: string, allowLocal: boolean, code: number): number {
 	const localAiFiles = findLocalAiFiles(projectRoot, agentDir);
-	if (localAiFiles.length === 0) {
-		return code;
+	if (localAiFiles.length > 0) {
+		warnForLocalAiFiles(null, projectRoot, localAiFiles);
+		if (!allowLocal) {
+			return 1;
+		}
 	}
-	process.stderr.write(`agent-run: postflight found local AI files in project root ${projectRoot}\n`);
-	for (const file of localAiFiles) {
-		process.stderr.write(`agent-run:   ${file}\n`);
-	}
-	return 1;
+	return code;
 }
 
 function failMissingConfig(tool: ToolName, agentDir: string): never {
@@ -2069,6 +2107,7 @@ function shouldPruneProjectEntry(entry: fs.Dirent): boolean {
 	return (
 		entry.isDirectory() &&
 		(entry.name === '.git' ||
+			entry.name === '.claude' ||
 			entry.name === 'node_modules' ||
 			entry.name === '.pnpm-store' ||
 			entry.name === 'dist' ||
@@ -2092,15 +2131,24 @@ function isIgnoredDir(dir: string): boolean {
 	return parseBooleanEnv(env.AGENT_RUN_IGNORE);
 }
 
+function warnForLocalAiFiles(tool: ToolName | null, projectRoot: string, localAiFiles: string[]): void {
+	process.stderr.write(`WARNING: local AI files found in project root ${projectRoot}\n`);
+	for (const file of localAiFiles) {
+		process.stderr.write(`WARNING:   ${path.relative(projectRoot, file)}\n`);
+	}
+	if (tool !== null) {
+		process.stderr.write(`WARNING: consider moving these files out of the project, or run \`agent-run ${tool} --none\` to bypass the wrapper.\n`);
+	}
+}
+
 function failForLocalAiFiles(tool: ToolName, projectRoot: string, localAiFiles: string[]): never {
 	process.stderr.write(`agent-run: found local AI files in project root ${projectRoot}\n`);
 	for (const file of localAiFiles) {
 		process.stderr.write(`agent-run:   ${file}\n`);
 	}
 	process.stderr.write(
-		`agent-run: move these files manually out of the project, or run \`${tool}\` directly if you want to use the local files.\n`
+		`agent-run: move these files manually out of the project, run \`agent-run ${tool} --local\` to warn and continue, or run \`agent-run ${tool} --none\` to bypass the wrapper for this invocation.\n`
 	);
-	process.stderr.write(`agent-run: run \`agent-run ${tool} --none\` to bypass the wrapper for this invocation.\n`);
 	process.exit(1);
 }
 
@@ -2774,15 +2822,26 @@ function defaultCodexConfigTemplate(): string {
 }
 
 function defaultClaudeSettingsTemplate(): string {
-	return [
-		'{',
+	const envBlock = [
 		'  "env": {',
 		'    "AGENT_DIR": "{{ agentDir }}",',
 		'    "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",',
 		'    "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}"',
+		'  }'
+	].join('\n');
+	return [
+		'{% if permissionsAllow.length %}{',
+		envBlock + ',',
+		'  "permissions": {',
+		'    "allow": [',
+		'      "{{ permissionsAllow | join(\'",\\n      "\') }}"',
+		'    ]',
 		'  }',
 		'}',
-		''
+		'{% else %}{',
+		envBlock,
+		'}',
+		'{% endif %}'
 	].join('\n');
 }
 
@@ -2805,6 +2864,20 @@ function defaultCodexConfigContent(context: RenderContext): string {
 }
 
 function defaultClaudeSettingsContent(context: RenderContext): string {
+	const settings: Record<string, unknown> = {
+		env: {
+			AGENT_DIR: context.agentDir,
+			AGENT_RUN_PROJECT_ROOT: context.projectRoot,
+			AGENT_GLOBAL_MEMORY_DIR: context.paths.globalMemoryDir
+		}
+	};
+	if (context.permissionsAllow.length > 0) {
+		settings.permissions = { allow: context.permissionsAllow };
+	}
+	return `${JSON.stringify(settings, null, 2)}\n`;
+}
+
+function legacyDefaultClaudeSettingsContent(context: RenderContext): string {
 	return `${JSON.stringify(
 		{
 			env: {

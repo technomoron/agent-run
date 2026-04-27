@@ -4,6 +4,12 @@ CHANGES
 Unreleased (2026-04-24)
 -----------------------
 
+Version 0.99.12 (2026-04-27)
+----------------------------
+* Add `--local` for Codex and Claude runs to warn about local AI files instead of failing.
+* Limit generated Claude permission allow entries to configured checks instead of broad blocked command families.
+* Write agent-run's Claude settings to `.claude/agent-run-settings.json` and remove only exact legacy generated `.claude/settings.json` files.
+
 Version 0.99.11 (2026-04-27)
 ----------------------------
 * Show the package version in `agent-run --help` and add `agent-run --version`.

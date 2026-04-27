@@ -118,9 +118,14 @@ generated guard shims on `PATH`. Use `--sandboxed` to request Codex
 `sandbox_workspace_write.network_access=true`.
 
 Claude Code currently has no `--cd` equivalent. `agent-run` keeps Claude's
-process cwd at the project root, passes the generated `.claude/settings.json`
+process cwd at the project root, passes the generated `.claude/agent-run-settings.json`
 with `--settings`, and allows both the project root and private agent directory
 with `--add-dir`.
+
+By default, `agent-run codex` and `agent-run claude` fail when local AI files
+such as `AGENTS.md`, `CLAUDE.md`, `.agents`, `.claude`, or `.codex` are present
+inside the project repository. Use `--local` to warn and continue for a specific
+invocation.
 
 Initialize mapped files for the current repo:
 

@@ -1,4 +1,18 @@
-{
+{% if permissionsAllow.length %}{
+  "env": {
+    "AGENT_DIR": "{{ agentDir }}",
+    "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",
+    "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}",
+    "STARTER_PROFILE": "{{ profile }}",
+    "STARTER_OVERRIDE": "true"
+  },
+  "permissions": {
+    "allow": [
+      "{{ permissionsAllow | join('",\n      "') }}"
+    ]
+  }
+}
+{% else %}{
   "env": {
     "AGENT_DIR": "{{ agentDir }}",
     "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",
@@ -7,3 +21,4 @@
     "STARTER_OVERRIDE": "true"
   }
 }
+{% endif %}

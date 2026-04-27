@@ -14,6 +14,10 @@ assert_file() {
 	[ -f "$1" ] || fail "missing file: $1"
 }
 
+assert_no_file() {
+	[ ! -f "$1" ] || fail "unexpected file: $1"
+}
+
 assert_dir() {
 	[ -d "$1" ] || fail "missing directory: $1"
 }
@@ -22,6 +26,12 @@ assert_contains() {
 	local file="$1"
 	local expected="$2"
 	grep -Fq -- "$expected" "$file" || fail "expected '$expected' in $file"
+}
+
+assert_not_contains() {
+	local file="$1"
+	local unexpected="$2"
+	! grep -Fq -- "$unexpected" "$file" || fail "did not expect '$unexpected' in $file"
 }
 
 assert_executable() {
@@ -81,7 +91,7 @@ assert_file "$AGENT_DIR/AGENTS.md"
 assert_file "$AGENT_DIR/CLAUDE.md"
 assert_file "$AGENT_DIR/.claude/CLAUDE.md"
 assert_file "$AGENT_DIR/config.toml"
-assert_file "$AGENT_DIR/.claude/settings.json"
+assert_file "$AGENT_DIR/.claude/agent-run-settings.json"
 assert_file "$AGENT_DIR/.agents/skills/triage/SKILL.md"
 assert_file "$AGENT_DIR/.claude/skills/triage/SKILL.md"
 assert_dir "$AGENT_DIR/reviews"
@@ -100,9 +110,12 @@ assert_contains "$AGENT_DIR/CLAUDE.md" "Starter CLAUDE for starter/basic-project
 assert_contains "$AGENT_DIR/CLAUDE.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
 assert_contains "$AGENT_DIR/config.toml" "Starter profile Codex override"
 assert_contains "$AGENT_DIR/config.toml" "$EXAMPLE/agent-config/notes/memory"
-assert_contains "$AGENT_DIR/.claude/settings.json" '"STARTER_OVERRIDE": "true"'
-assert_contains "$AGENT_DIR/.claude/settings.json" '"AGENT_GLOBAL_MEMORY_DIR":'
-assert_contains "$AGENT_DIR/.claude/settings.json" "$EXAMPLE/agent-config/notes/memory"
+assert_contains "$AGENT_DIR/.claude/agent-run-settings.json" '"STARTER_OVERRIDE": "true"'
+assert_contains "$AGENT_DIR/.claude/agent-run-settings.json" '"AGENT_GLOBAL_MEMORY_DIR":'
+assert_contains "$AGENT_DIR/.claude/agent-run-settings.json" "$EXAMPLE/agent-config/notes/memory"
+assert_contains "$AGENT_DIR/.claude/agent-run-settings.json" "Bash(pnpm test)"
+assert_not_contains "$AGENT_DIR/.claude/agent-run-settings.json" "Bash(git *)"
+assert_not_contains "$AGENT_DIR/.claude/agent-run-settings.json" "Bash(npm *)"
 assert_contains "$AGENT_DIR/.agents/skills/triage/SKILL.md" "Starter Triage"
 assert_contains "$AGENT_DIR/.claude/skills/commit-workflow/SKILL.md" "Use when preparing commits"
 assert_contains "$EXAMPLE/agent-config/.gitignore" "**/AGENTS.md"
@@ -134,6 +147,18 @@ assert_contains "$TMP_DIR/codex-args.out" "-C"
 assert_contains "$TMP_DIR/claude-args.out" "--add-dir"
 assert_contains "$TMP_DIR/claude-args.out" "$EXAMPLE/agent-config/notes/memory"
 assert_contains "$TMP_DIR/claude-args.out" "$AGENT_DIR"
+
+cat >"$AGENT_DIR/.claude/settings.json" <<JSON
+{
+  "env": {
+    "AGENT_DIR": "$AGENT_DIR",
+    "AGENT_RUN_PROJECT_ROOT": "$PROJECT",
+    "AGENT_GLOBAL_MEMORY_DIR": "$EXAMPLE/agent-config/notes/memory"
+  }
+}
+JSON
+node "$BIN" update "$PROJECT" >/dev/null
+assert_no_file "$AGENT_DIR/.claude/settings.json"
 
 set +e
 "$AGENT_DIR/bin/git" commit >"$TMP_DIR/git.out" 2>&1
@@ -173,6 +198,17 @@ local_ai_status=$?
 set -e
 [ "$local_ai_status" -ne 0 ] || fail "expected local AI file check to fail"
 assert_contains "$TMP_DIR/local-ai.out" "local AI file in project"
+
+set +e
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/local-run-blocked-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --sandboxed >"$TMP_DIR/local-run-blocked.out" 2>&1)
+local_run_blocked_status=$?
+set -e
+[ "$local_run_blocked_status" -ne 0 ] || fail "expected local AI file run to fail without --local"
+assert_contains "$TMP_DIR/local-run-blocked.out" "found local AI files"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/local-run-allowed-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --local --sandboxed >"$TMP_DIR/local-run-allowed.out" 2>&1)
+assert_contains "$TMP_DIR/local-run-allowed.out" "WARNING: local AI files found"
+assert_file "$TMP_DIR/local-run-allowed-args.out"
 rm "$PROJECT/AGENTS.md"
 
 node "$BIN" check "$PROJECT" >/dev/null
@@ -192,11 +228,13 @@ assert.deepEqual(parseInvocation('agent-run', ['--create', 'claude', 'hello']), 
 	wrapperArgs: {
 		none: false,
 		create: true,
+		local: false,
 		codexSandboxMode: null,
 		codexNetwork: false
 	}
 });
 
+assert.equal(parseInvocation('agent-run', ['--local', 'codex']).wrapperArgs.local, true);
 assert.equal(parseInvocation('agent-run', ['--all', 'check', '.']).command, 'check');
 assert.deepEqual(parseInvocation('agent-run', ['--init', '/tmp/agent-config']), {
 	command: 'init-config',

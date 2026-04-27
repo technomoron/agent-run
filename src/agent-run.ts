@@ -181,6 +181,7 @@ const CONFIG_DIR_ENV = 'AGENT_CONFIG_DIR';
 const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
 const MANIFEST_FILE_NAME = 'agent-run.jsonc';
 const LOCAL_TEMPLATE_FILE_NAME = 'local.md.njk';
+const PACKAGE_VERSION = '0.99.10';
 const UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 const agentRunEnvCache = new Map<string, Record<string, string>>();
 
@@ -281,6 +282,9 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 		const firstArg = inputArgs[0];
 		if (isHelpFlag(firstArg)) {
 			printHelp('general');
+		}
+		if (isVersionFlag(firstArg)) {
+			printVersion();
 		}
 		const commandIndex = findCommandArgIndex(inputArgs);
 		if (commandIndex === -1) {
@@ -536,6 +540,15 @@ function isHelpFlag(value: string | undefined): boolean {
 	return value === '-h' || value === '--help';
 }
 
+function isVersionFlag(value: string | undefined): boolean {
+	return value === '-V' || value === '--version';
+}
+
+function printVersion(): never {
+	process.stdout.write(`agent-run ${agentRunVersion()}\n`);
+	process.exit(0);
+}
+
 function printHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'migrate-config'): never {
 	process.stdout.write(renderHelp(topic));
 	process.exit(0);
@@ -590,6 +603,8 @@ function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'm
 		case 'general':
 		default:
 			return [
+				`agent-run ${agentRunVersion()}`,
+				'',
 				'Usage:',
 				'  agent-run <codex|claude|check|init|edit|update> [options]',
 				'  agent-run --init [config-root]',
@@ -606,6 +621,7 @@ function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'm
 				'',
 				'Global options:',
 				'  -h, --help         Show this help text',
+				'  -V, --version      Show the agent-run version',
 				'  -v, --verbose      Print path resolution and wrapper actions',
 				'  --config-root DIR  Override the agent-config root',
 				'  --init [DIR]       Copy the packaged starter config root to DIR (default ~/.agent-config)',
@@ -617,6 +633,19 @@ function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'm
 				''
 			].join('\n');
 	}
+}
+
+function agentRunVersion(): string {
+	const packagePath = path.resolve(__dirname, '..', 'package.json');
+	try {
+		const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { version?: unknown };
+		if (typeof pkg.version === 'string' && pkg.version.length > 0) {
+			return pkg.version;
+		}
+	} catch {
+		return PACKAGE_VERSION;
+	}
+	return PACKAGE_VERSION;
 }
 
 function normalizeCommandName(value: string): CommandName | null {

@@ -4,6 +4,10 @@ CHANGES
 Unreleased (2026-04-24)
 -----------------------
 
+Version 0.99.11 (2026-04-27)
+----------------------------
+* Show the package version in `agent-run --help` and add `agent-run --version`.
+
 Version 0.99.10 (2026-04-27)
 ----------------------------
 * Add `paths.globalMemoryDir` to render context and expose it from default Codex, Claude, AGENTS, and CLAUDE templates.

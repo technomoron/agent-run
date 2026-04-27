@@ -34,6 +34,13 @@ cp -R "$ROOT/examples/basic-config" "$EXAMPLE"
 PROJECT="$EXAMPLE/project"
 AGENT_DIR="$EXAMPLE/agent-config/starter/basic-project"
 BIN="$ROOT/dist/agent-run.js"
+PACKAGE_VERSION="$(node -p "require('$ROOT/package.json').version")"
+
+node "$BIN" --version >"$TMP_DIR/version.out"
+assert_contains "$TMP_DIR/version.out" "agent-run $PACKAGE_VERSION"
+node "$BIN" --help >"$TMP_DIR/help.out"
+assert_contains "$TMP_DIR/help.out" "agent-run $PACKAGE_VERSION"
+assert_contains "$TMP_DIR/help.out" "-V, --version"
 
 FAKE_GUARD_BIN="$TMP_DIR/fake-guard-bin"
 FAKE_REAL_BIN="$TMP_DIR/fake-real-bin"

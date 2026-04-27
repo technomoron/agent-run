@@ -1,21 +1,5 @@
-# Generated agent-run files
-**/AGENTS.md
-**/CLAUDE.md
-**/GEMINI.md
-**/config.toml
-
-# Generated native agent homes
-**/.agents/
-**/.claude/
-**/.codex/
-
-# Generated runtime files
-**/bin/
-**/reviews/
-**/memories/
-
-# Generated review reports
-**/REVIEW-*.md
+# Generated agent-run live profiles
+**/live/
 
 # Optional generated caches
 **/.agent-run-cache/

@@ -1,6 +1,7 @@
 {% if permissionsAllow.length %}{
   "env": {
     "AGENT_DIR": "{{ agentDir }}",
+    "AGENT_PROFILE_DIR": "{{ profileDir }}",
     "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",
     "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}",
     "STARTER_PROFILE": "{{ profile }}",
@@ -15,6 +16,7 @@
 {% else %}{
   "env": {
     "AGENT_DIR": "{{ agentDir }}",
+    "AGENT_PROFILE_DIR": "{{ profileDir }}",
     "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",
     "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}",
     "STARTER_PROFILE": "{{ profile }}",

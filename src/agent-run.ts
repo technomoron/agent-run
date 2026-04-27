@@ -139,12 +139,15 @@ type RenderContext = {
 	kind: string;
 	projectRoot: string;
 	agentDir: string;
+	profileDir: string;
 	configRoot: string;
 	date: string;
 	checks: string[];
 	guardrails: NormalizedManifest['guardrails'];
 	permissionsAllow: string[];
 	paths: {
+		profileDir: string;
+		liveDir: string;
 		changesFile: string;
 		reviewDir: string;
 		reviewFile: string;
@@ -183,29 +186,14 @@ const CONFIG_DIR_ENV = 'AGENT_CONFIG_DIR';
 const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
 const MANIFEST_FILE_NAME = 'agent-run.jsonc';
 const LOCAL_TEMPLATE_FILE_NAME = 'local.md.njk';
+const LIVE_DIR_NAME = 'live';
 const PACKAGE_VERSION = '0.99.10';
 const UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 const agentRunEnvCache = new Map<string, Record<string, string>>();
 
 const GENERATED_GITIGNORE_ENTRIES = [
-	'# Generated agent-run files',
-	'**/AGENTS.md',
-	'**/CLAUDE.md',
-	'**/GEMINI.md',
-	'**/config.toml',
-	'',
-	'# Generated native agent homes',
-	'**/.agents/',
-	'**/.claude/',
-	'**/.codex/',
-	'',
-	'# Generated runtime files',
-	'**/bin/',
-	'**/reviews/',
-	'**/memories/',
-	'',
-	'# Generated review reports',
-	'**/REVIEW-*.md',
+	'# Generated agent-run live profiles',
+	'**/live/',
 	'',
 	'# Optional generated caches',
 	'**/.agent-run-cache/'
@@ -902,7 +890,8 @@ function runCheck(parsed: CheckCommand): void {
 
 function printUpdateSummary(rendered: RenderedProfile): void {
 	process.stdout.write(`OK profile ${rendered.profile}\n`);
-	process.stdout.write(`Agent dir: ${rendered.agentDir}\n`);
+	process.stdout.write(`Profile dir: ${rendered.agentDir}\n`);
+	process.stdout.write(`Live dir: ${rendered.context.paths.liveDir}\n`);
 	process.stdout.write(`Generated files: ${rendered.files.length}\n`);
 	process.stdout.write(`Installed skills: ${rendered.skills.map((skill) => skill.name).join(', ') || '(none)'}\n`);
 }
@@ -1261,23 +1250,27 @@ function createNunjucksEnv(configRoot: string): nunjucks.Environment {
 
 function buildRenderContext(
 	projectRoot: string,
-	agentDir: string,
+	profileDir: string,
 	configRoot: string,
 	manifest: NormalizedManifest,
 	env: nunjucks.Environment
 ): RenderContext {
 	const date = localDateString();
+	const liveDir = path.join(profileDir, LIVE_DIR_NAME);
 	const baseContext = {
 		profile: manifest.profile,
 		kind: manifest.kind,
 		projectRoot,
-		agentDir,
+		agentDir: liveDir,
+		profileDir,
 		configRoot,
 		date,
 		checks: manifest.checks,
 		guardrails: manifest.guardrails
 	};
 	const paths = {
+		profileDir,
+		liveDir,
 		changesFile: resolveRuntimePath(configRoot, manifest.paths.changesFile, env, baseContext),
 		reviewDir: resolveRuntimePath(configRoot, manifest.paths.reviewDir, env, baseContext),
 		reviewFile: resolveRuntimePath(configRoot, manifest.paths.reviewFile, env, baseContext),
@@ -1287,10 +1280,10 @@ function buildRenderContext(
 			resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext),
 			'codex-home'
 		),
-		overridesDir: path.join(agentDir, 'overrides'),
-		codexSkillsDir: path.join(agentDir, '.agents', 'skills'),
-		claudeSkillsDir: path.join(agentDir, '.claude', 'skills'),
-		binDir: path.join(agentDir, 'bin')
+		overridesDir: path.join(profileDir, 'overrides'),
+		codexSkillsDir: path.join(liveDir, '.agents', 'skills'),
+		claudeSkillsDir: path.join(liveDir, '.claude', 'skills'),
+		binDir: path.join(liveDir, 'bin')
 	};
 
 	return {
@@ -1437,11 +1430,14 @@ function renderProfile(projectRoot: string, agentDir: string, checkOnly = false)
 	const files: RenderedProfile['files'] = [];
 	const agentsContent = renderToolInstructions('AGENTS.md', env, configRoot, context, false);
 	const claudeContent = renderToolInstructions('CLAUDE.md', env, configRoot, context, true);
-	files.push({ path: path.join(agentDir, 'AGENTS.md'), content: agentsContent });
-	files.push({ path: path.join(agentDir, 'CLAUDE.md'), content: claudeContent });
-	files.push({ path: path.join(agentDir, '.claude', 'CLAUDE.md'), content: claudeContent });
-	files.push({ path: path.join(agentDir, 'config.toml'), content: renderCodexConfig(env, configRoot, context) });
-	files.push({ path: path.join(agentDir, '.claude', 'agent-run-settings.json'), content: renderClaudeSettings(env, configRoot, context) });
+	files.push({ path: path.join(context.paths.liveDir, 'AGENTS.md'), content: agentsContent });
+	files.push({ path: path.join(context.paths.liveDir, 'CLAUDE.md'), content: claudeContent });
+	files.push({ path: path.join(context.paths.liveDir, '.claude', 'CLAUDE.md'), content: claudeContent });
+	files.push({ path: path.join(context.paths.liveDir, 'config.toml'), content: renderCodexConfig(env, configRoot, context) });
+	files.push({
+		path: path.join(context.paths.liveDir, '.claude', 'agent-run-settings.json'),
+		content: renderClaudeSettings(env, configRoot, context)
+	});
 	files.push(...renderNativeSkillFiles(context));
 	files.push(...renderGuardShims(context));
 
@@ -1466,15 +1462,22 @@ function syncAgentProfile(projectRoot: string, agentDir: string): RenderedProfil
 }
 
 function removeLegacyGeneratedClaudeSettings(context: RenderContext): void {
-	const legacyPath = path.join(context.agentDir, '.claude', 'settings.json');
-	if (!fs.existsSync(legacyPath)) {
-		return;
-	}
-	const actual = fs.readFileSync(legacyPath, 'utf8').replace(/\r\n/g, '\n');
-	const legacyGeneratedContent = legacyDefaultClaudeSettingsContent(context);
-	if (actual === legacyGeneratedContent) {
-		fs.rmSync(legacyPath);
-		verbose(`removed legacy generated Claude settings ${legacyPath}`);
+	for (const legacyPath of [
+		path.join(context.paths.liveDir, '.claude', 'settings.json'),
+		path.join(context.profileDir, '.claude', 'settings.json')
+	]) {
+		if (!fs.existsSync(legacyPath)) {
+			continue;
+		}
+		const actual = fs.readFileSync(legacyPath, 'utf8').replace(/\r\n/g, '\n');
+		const legacyGeneratedContents = [
+			legacyDefaultClaudeSettingsContent(context, context.agentDir),
+			legacyDefaultClaudeSettingsContent(context, context.profileDir)
+		];
+		if (legacyGeneratedContents.includes(actual)) {
+			fs.rmSync(legacyPath);
+			verbose(`removed legacy generated Claude settings ${legacyPath}`);
+		}
 	}
 }
 
@@ -1498,6 +1501,7 @@ function checkRenderedProfile(projectRoot: string, agentDir: string): Finding[] 
 			rendered.context.paths.reviewDir,
 			rendered.context.paths.memoriesDir,
 			rendered.context.paths.codexHomeDir,
+			rendered.context.paths.liveDir,
 			rendered.context.paths.overridesDir,
 			rendered.context.paths.codexSkillsDir,
 			rendered.context.paths.claudeSkillsDir,
@@ -1654,7 +1658,7 @@ function syncRuntimeDirs(context: RenderContext): void {
 		context.paths.codexSkillsDir,
 		context.paths.claudeSkillsDir,
 		context.paths.binDir,
-		path.join(context.agentDir, '.claude')
+		path.join(context.paths.liveDir, '.claude')
 	]) {
 		fs.mkdirSync(dir, { recursive: true });
 	}
@@ -1901,18 +1905,20 @@ function runCodex(
 	projectRoot: string,
 	wrapperArgs: WrapperArgs
 ): void {
-	const agentsPath = path.join(agentDir, 'AGENTS.md');
+	const liveDir = profileLiveDir(agentDir);
+	const agentsPath = path.join(liveDir, 'AGENTS.md');
 	if (!fs.existsSync(agentsPath)) {
 		failMissingConfig('codex', agentDir);
 	}
 
-	const guardBin = path.join(agentDir, 'bin');
-	const codexHomeDir = path.join(agentDir, 'memories', 'codex-home');
+	const guardBin = path.join(liveDir, 'bin');
+	const codexHomeDir = path.join(liveDir, 'memories', 'codex-home');
 	fs.mkdirSync(codexHomeDir, { recursive: true });
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		CODEX_HOME: codexHomeDir,
-		AGENT_DIR: agentDir,
+		AGENT_DIR: liveDir,
+		AGENT_PROFILE_DIR: agentDir,
 		AGENT_RUN_PROJECT_ROOT: projectRoot,
 		PATH: `${guardBin}${path.delimiter}${process.env.PATH ?? ''}`
 	};
@@ -1959,17 +1965,19 @@ function runClaude(
 	projectRoot: string,
 	wrapperArgs: WrapperArgs
 ): void {
-	const claudePath = path.join(agentDir, 'CLAUDE.md');
+	const liveDir = profileLiveDir(agentDir);
+	const claudePath = path.join(liveDir, 'CLAUDE.md');
 	if (!fs.existsSync(claudePath)) {
 		failMissingConfig('claude', agentDir);
 	}
 
-	const guardBin = path.join(agentDir, 'bin');
-	const claudeConfigDir = path.join(agentDir, '.claude');
+	const guardBin = path.join(liveDir, 'bin');
+	const claudeConfigDir = path.join(liveDir, '.claude');
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		CLAUDE_CONFIG_DIR: claudeConfigDir,
-		AGENT_DIR: agentDir,
+		AGENT_DIR: liveDir,
+		AGENT_PROFILE_DIR: agentDir,
 		AGENT_RUN_PROJECT_ROOT: projectRoot,
 		PATH: `${guardBin}${path.delimiter}${process.env.PATH ?? ''}`
 	};
@@ -1983,7 +1991,7 @@ function runClaude(
 			'--add-dir',
 			projectRoot,
 			'--add-dir',
-			agentDir,
+			liveDir,
 			...globalMemoryArgs(configRoot),
 			...args
 		],
@@ -1992,6 +2000,10 @@ function runClaude(
 			projectRoot,
 			(code) => postflightProjectCheck(projectRoot, agentDir, wrapperArgs.local, code)
 		);
+}
+
+function profileLiveDir(agentDir: string): string {
+	return path.join(agentDir, LIVE_DIR_NAME);
 }
 
 function globalMemoryArgs(configRoot: string): string[] {
@@ -2608,6 +2620,12 @@ function defaultLocalTemplate(_profile: string): string {
 		'{{ agentDir }}',
 		'```',
 		'',
+		'Profile source directory:',
+		'',
+		'```text',
+		'{{ profileDir }}',
+		'```',
+		'',
 		'Add project-specific rules here.',
 		''
 	].join('\n');
@@ -2654,7 +2672,8 @@ function defaultNoAiFilesSnippet(): string {
 		'## Agent File Storage',
 		'',
 		'Do not create AGENTS.md, CLAUDE.md, .agents, .claude, .codex, or other agent runtime files inside the project repository.',
-		'Agent-only files belong under {{ agentDir }}.',
+		'Generated agent-only files belong under {{ paths.liveDir }}.',
+		'Source config files belong under {{ profileDir }}.',
 		''
 	].join('\n');
 }
@@ -2731,8 +2750,8 @@ function defaultToolInstructionsTemplate(isClaude: boolean): string {
 		'Do not edit this file directly. Edit:',
 		'',
 		'```text',
-		'{{ agentDir }}/agent-run.jsonc',
-		'{{ agentDir }}/local.md.njk',
+		'{{ profileDir }}/agent-run.jsonc',
+		'{{ profileDir }}/local.md.njk',
 		'```',
 		'',
 		'{% for section in renderedAgentSections %}',
@@ -2751,6 +2770,12 @@ function defaultToolInstructionsTemplate(isClaude: boolean): string {
 		'',
 		'```text',
 		'{{ agentDir }}',
+		'```',
+		'',
+		'Profile source directory:',
+		'',
+		'```text',
+		'{{ profileDir }}',
 		'```',
 		'',
 		'Review directory:',
@@ -2792,13 +2817,14 @@ function defaultToolInstructionsTemplate(isClaude: boolean): string {
 		'## Tool Note',
 		'',
 		isClaude
-			? 'Claude uses the generated config directory under {{ agentDir }}/.claude and may read {{ agentDir }} via `--add-dir`.'
+			? 'Claude uses the generated config directory under {{ paths.liveDir }}/.claude and may read {{ paths.liveDir }} via `--add-dir`.'
 			: 'Codex uses {{ agentDir }}/AGENTS.md as `system_prompt_file` and {{ paths.codexHomeDir }} as CODEX_HOME.',
 		'',
 		'## Mandatory Path Rule',
 		'',
 		'Do not create AGENTS.md, CLAUDE.md, .agents, .claude, .codex, or AI-related files inside the project repository.',
-		'Agent-only files must be stored under the agent directory shown above.',
+		'Generated agent-only files must be stored under the agent directory shown above.',
+		'Source config files must be stored under the profile source directory shown above.',
 		''
 	].join('\n');
 }
@@ -2814,6 +2840,7 @@ function defaultCodexConfigTemplate(): string {
 		'writable_roots = [',
 		'  "{{ projectRoot }}",',
 		'  "{{ agentDir }}",',
+		'  "{{ profileDir }}",',
 		'  "{{ paths.globalMemoryDir }}"',
 		']',
 		'network_access = false',
@@ -2825,6 +2852,7 @@ function defaultClaudeSettingsTemplate(): string {
 	const envBlock = [
 		'  "env": {',
 		'    "AGENT_DIR": "{{ agentDir }}",',
+		'    "AGENT_PROFILE_DIR": "{{ profileDir }}",',
 		'    "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",',
 		'    "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}"',
 		'  }'
@@ -2856,6 +2884,7 @@ function defaultCodexConfigContent(context: RenderContext): string {
 		'writable_roots = [',
 		`  ${jsonString(context.projectRoot)},`,
 		`  ${jsonString(context.agentDir)},`,
+		`  ${jsonString(context.profileDir)},`,
 		`  ${jsonString(context.paths.globalMemoryDir)}`,
 		']',
 		'network_access = false',
@@ -2867,6 +2896,7 @@ function defaultClaudeSettingsContent(context: RenderContext): string {
 	const settings: Record<string, unknown> = {
 		env: {
 			AGENT_DIR: context.agentDir,
+			AGENT_PROFILE_DIR: context.profileDir,
 			AGENT_RUN_PROJECT_ROOT: context.projectRoot,
 			AGENT_GLOBAL_MEMORY_DIR: context.paths.globalMemoryDir
 		}
@@ -2877,11 +2907,11 @@ function defaultClaudeSettingsContent(context: RenderContext): string {
 	return `${JSON.stringify(settings, null, 2)}\n`;
 }
 
-function legacyDefaultClaudeSettingsContent(context: RenderContext): string {
+function legacyDefaultClaudeSettingsContent(context: RenderContext, agentDir: string): string {
 	return `${JSON.stringify(
 		{
 			env: {
-				AGENT_DIR: context.agentDir,
+				AGENT_DIR: agentDir,
 				AGENT_RUN_PROJECT_ROOT: context.projectRoot,
 				AGENT_GLOBAL_MEMORY_DIR: context.paths.globalMemoryDir
 			}

@@ -43,6 +43,7 @@ cp -R "$ROOT/examples/basic-config" "$EXAMPLE"
 
 PROJECT="$EXAMPLE/project"
 AGENT_DIR="$EXAMPLE/agent-config/starter/basic-project"
+LIVE_DIR="$AGENT_DIR/live"
 BIN="$ROOT/dist/agent-run.js"
 PACKAGE_VERSION="$(node -p "require('$ROOT/package.json').version")"
 
@@ -79,6 +80,7 @@ assert_file "$SKELETON_INIT/skills/personal-memory.md"
 assert_file "$SKELETON_INIT/starter/basic-project/agent-run.jsonc"
 assert_file "$SKELETON_INIT/starter/basic-project/overrides/codex-config.toml.njk"
 assert_contains "$SKELETON_INIT/skills/personal-memory.md" "Read \`./notes/memory/README.md\` first."
+assert_contains "$SKELETON_INIT/.gitignore" "**/live/"
 
 printf 'local edit\n' >"$SKELETON_INIT/starter/basic-project/local.md.njk"
 node "$BIN" --init "$SKELETON_INIT" >/dev/null
@@ -87,43 +89,45 @@ assert_contains "$SKELETON_INIT/starter/basic-project/local.md.njk" "local edit"
 node "$BIN" update "$PROJECT" >"$TMP_DIR/update.out"
 assert_contains "$TMP_DIR/update.out" "OK profile starter/basic-project"
 
-assert_file "$AGENT_DIR/AGENTS.md"
-assert_file "$AGENT_DIR/CLAUDE.md"
-assert_file "$AGENT_DIR/.claude/CLAUDE.md"
-assert_file "$AGENT_DIR/config.toml"
-assert_file "$AGENT_DIR/.claude/agent-run-settings.json"
-assert_file "$AGENT_DIR/.agents/skills/triage/SKILL.md"
-assert_file "$AGENT_DIR/.claude/skills/triage/SKILL.md"
-assert_dir "$AGENT_DIR/reviews"
-assert_dir "$AGENT_DIR/memories"
-assert_dir "$AGENT_DIR/memories/codex-home"
+assert_file "$LIVE_DIR/AGENTS.md"
+assert_file "$LIVE_DIR/CLAUDE.md"
+assert_file "$LIVE_DIR/.claude/CLAUDE.md"
+assert_file "$LIVE_DIR/config.toml"
+assert_file "$LIVE_DIR/.claude/agent-run-settings.json"
+assert_file "$LIVE_DIR/.agents/skills/triage/SKILL.md"
+assert_file "$LIVE_DIR/.claude/skills/triage/SKILL.md"
+assert_dir "$LIVE_DIR/reviews"
+assert_dir "$LIVE_DIR/memories"
+assert_dir "$LIVE_DIR/memories/codex-home"
 assert_dir "$AGENT_DIR/overrides"
-assert_dir "$AGENT_DIR/bin"
+assert_dir "$LIVE_DIR/bin"
 
-assert_contains "$AGENT_DIR/AGENTS.md" "Starter AGENTS for starter/basic-project"
-assert_contains "$AGENT_DIR/AGENTS.md" "Starter Code Agent"
-assert_contains "$AGENT_DIR/AGENTS.md" 'Use the project root at `'
-assert_contains "$AGENT_DIR/AGENTS.md" 'Store durable notes in `'
-assert_contains "$AGENT_DIR/AGENTS.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
-assert_contains "$AGENT_DIR/AGENTS.md" '`triage`: Use this profile-specific triage workflow'
-assert_contains "$AGENT_DIR/CLAUDE.md" "Starter CLAUDE for starter/basic-project"
-assert_contains "$AGENT_DIR/CLAUDE.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
-assert_contains "$AGENT_DIR/config.toml" "Starter profile Codex override"
-assert_contains "$AGENT_DIR/config.toml" "$EXAMPLE/agent-config/notes/memory"
-assert_contains "$AGENT_DIR/.claude/agent-run-settings.json" '"STARTER_OVERRIDE": "true"'
-assert_contains "$AGENT_DIR/.claude/agent-run-settings.json" '"AGENT_GLOBAL_MEMORY_DIR":'
-assert_contains "$AGENT_DIR/.claude/agent-run-settings.json" "$EXAMPLE/agent-config/notes/memory"
-assert_contains "$AGENT_DIR/.claude/agent-run-settings.json" "Bash(pnpm test)"
-assert_not_contains "$AGENT_DIR/.claude/agent-run-settings.json" "Bash(git *)"
-assert_not_contains "$AGENT_DIR/.claude/agent-run-settings.json" "Bash(npm *)"
-assert_contains "$AGENT_DIR/.agents/skills/triage/SKILL.md" "Starter Triage"
-assert_contains "$AGENT_DIR/.claude/skills/commit-workflow/SKILL.md" "Use when preparing commits"
-assert_contains "$EXAMPLE/agent-config/.gitignore" "**/AGENTS.md"
+assert_contains "$LIVE_DIR/AGENTS.md" "Starter AGENTS for starter/basic-project"
+assert_contains "$LIVE_DIR/AGENTS.md" "Starter Code Agent"
+assert_contains "$LIVE_DIR/AGENTS.md" 'Use the project root at `'
+assert_contains "$LIVE_DIR/AGENTS.md" 'Store durable notes in `'
+assert_contains "$LIVE_DIR/AGENTS.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
+assert_contains "$LIVE_DIR/AGENTS.md" '`triage`: Use this profile-specific triage workflow'
+assert_contains "$LIVE_DIR/AGENTS.md" "profileDir: \`$AGENT_DIR\`"
+assert_contains "$LIVE_DIR/CLAUDE.md" "Starter CLAUDE for starter/basic-project"
+assert_contains "$LIVE_DIR/CLAUDE.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
+assert_contains "$LIVE_DIR/config.toml" "Starter profile Codex override"
+assert_contains "$LIVE_DIR/config.toml" "$EXAMPLE/agent-config/notes/memory"
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"STARTER_OVERRIDE": "true"'
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"AGENT_GLOBAL_MEMORY_DIR":'
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "$EXAMPLE/agent-config/notes/memory"
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "\"AGENT_PROFILE_DIR\": \"$AGENT_DIR\""
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm test)"
+assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(git *)"
+assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(npm *)"
+assert_contains "$LIVE_DIR/.agents/skills/triage/SKILL.md" "Starter Triage"
+assert_contains "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md" "Use when preparing commits"
+assert_contains "$EXAMPLE/agent-config/.gitignore" "**/live/"
 
-assert_executable "$AGENT_DIR/bin/git"
-assert_executable "$AGENT_DIR/bin/npm"
-assert_executable "$AGENT_DIR/bin/pnpm"
-assert_executable "$AGENT_DIR/bin/gh"
+assert_executable "$LIVE_DIR/bin/git"
+assert_executable "$LIVE_DIR/bin/npm"
+assert_executable "$LIVE_DIR/bin/pnpm"
+assert_executable "$LIVE_DIR/bin/gh"
 
 mkdir -p "$EXAMPLE/agent-config/notes/memory"
 FAKE_TOOL_BIN="$TMP_DIR/fake-tool-bin"
@@ -146,26 +150,26 @@ assert_contains "$TMP_DIR/codex-args.out" "-C"
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check)
 assert_contains "$TMP_DIR/claude-args.out" "--add-dir"
 assert_contains "$TMP_DIR/claude-args.out" "$EXAMPLE/agent-config/notes/memory"
-assert_contains "$TMP_DIR/claude-args.out" "$AGENT_DIR"
+assert_contains "$TMP_DIR/claude-args.out" "$LIVE_DIR"
 
-cat >"$AGENT_DIR/.claude/settings.json" <<JSON
+cat >"$LIVE_DIR/.claude/settings.json" <<JSON
 {
   "env": {
-    "AGENT_DIR": "$AGENT_DIR",
+    "AGENT_DIR": "$LIVE_DIR",
     "AGENT_RUN_PROJECT_ROOT": "$PROJECT",
     "AGENT_GLOBAL_MEMORY_DIR": "$EXAMPLE/agent-config/notes/memory"
   }
 }
 JSON
 node "$BIN" update "$PROJECT" >/dev/null
-assert_no_file "$AGENT_DIR/.claude/settings.json"
+assert_no_file "$LIVE_DIR/.claude/settings.json"
 
 set +e
-"$AGENT_DIR/bin/git" commit >"$TMP_DIR/git.out" 2>&1
+"$LIVE_DIR/bin/git" commit >"$TMP_DIR/git.out" 2>&1
 git_status=$?
-"$AGENT_DIR/bin/pnpm" publish >"$TMP_DIR/pnpm.out" 2>&1
+"$LIVE_DIR/bin/pnpm" publish >"$TMP_DIR/pnpm.out" 2>&1
 pnpm_status=$?
-"$AGENT_DIR/bin/gh" release create v0.0.0 >"$TMP_DIR/gh.out" 2>&1
+"$LIVE_DIR/bin/gh" release create v0.0.0 >"$TMP_DIR/gh.out" 2>&1
 gh_status=$?
 set -e
 [ "$git_status" -eq 42 ] || fail "expected git commit shim to exit 42, got $git_status"
@@ -182,7 +186,7 @@ node "$BIN" check --all "$PROJECT" >"$TMP_DIR/check-all.out"
 assert_contains "$TMP_DIR/check-all.out" "OK $PROJECT"
 assert_contains "$TMP_DIR/check-all.out" "Summary: 0 error(s), 0 warning(s)"
 
-printf '\nstale\n' >>"$AGENT_DIR/AGENTS.md"
+printf '\nstale\n' >>"$LIVE_DIR/AGENTS.md"
 set +e
 node "$BIN" check "$PROJECT" >"$TMP_DIR/stale.out" 2>&1
 stale_status=$?

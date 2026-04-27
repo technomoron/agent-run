@@ -972,6 +972,7 @@ function buildRenderContext(projectRoot, agentDir, configRoot, manifest, env) {
         reviewDir: resolveRuntimePath(configRoot, manifest.paths.reviewDir, env, baseContext),
         reviewFile: resolveRuntimePath(configRoot, manifest.paths.reviewFile, env, baseContext),
         memoriesDir: resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext),
+        globalMemoryDir: globalMemoryDir(configRoot),
         codexHomeDir: path.join(resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext), 'codex-home'),
         overridesDir: path.join(agentDir, 'overrides'),
         codexSkillsDir: path.join(agentDir, '.agents', 'skills'),
@@ -1525,8 +1526,11 @@ function runClaude(realBinary, permissionArgs, agentDir, configRoot, args, proje
     ], shouldUseShell(realBinary), env, projectRoot, (code) => postflightProjectCheck(projectRoot, agentDir, code));
 }
 function globalMemoryArgs(configRoot) {
-    const memoryDir = path.join(configRoot, 'notes', 'memory');
+    const memoryDir = globalMemoryDir(configRoot);
     return fs.existsSync(memoryDir) ? ['--add-dir', memoryDir] : [];
+}
+function globalMemoryDir(configRoot) {
+    return path.join(configRoot, 'notes', 'memory');
 }
 function postflightProjectCheck(projectRoot, agentDir, code) {
     const localAiFiles = findLocalAiFiles(projectRoot, agentDir);
@@ -2216,6 +2220,12 @@ function defaultToolInstructionsTemplate(isClaude) {
         '{{ paths.memoriesDir }}',
         '```',
         '',
+        'Global memory directory:',
+        '',
+        '```text',
+        '{{ paths.globalMemoryDir }}',
+        '```',
+        '',
         'Changes file:',
         '',
         '```text',
@@ -2251,7 +2261,8 @@ function defaultCodexConfigTemplate() {
         '[sandbox_workspace_write]',
         'writable_roots = [',
         '  "{{ projectRoot }}",',
-        '  "{{ agentDir }}"',
+        '  "{{ agentDir }}",',
+        '  "{{ paths.globalMemoryDir }}"',
         ']',
         'network_access = false',
         ''
@@ -2262,7 +2273,8 @@ function defaultClaudeSettingsTemplate() {
         '{',
         '  "env": {',
         '    "AGENT_DIR": "{{ agentDir }}",',
-        '    "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}"',
+        '    "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",',
+        '    "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}"',
         '  }',
         '}',
         ''
@@ -2278,7 +2290,8 @@ function defaultCodexConfigContent(context) {
         '[sandbox_workspace_write]',
         'writable_roots = [',
         `  ${jsonString(context.projectRoot)},`,
-        `  ${jsonString(context.agentDir)}`,
+        `  ${jsonString(context.agentDir)},`,
+        `  ${jsonString(context.paths.globalMemoryDir)}`,
         ']',
         'network_access = false',
         ''
@@ -2288,7 +2301,8 @@ function defaultClaudeSettingsContent(context) {
     return `${JSON.stringify({
         env: {
             AGENT_DIR: context.agentDir,
-            AGENT_RUN_PROJECT_ROOT: context.projectRoot
+            AGENT_RUN_PROJECT_ROOT: context.projectRoot,
+            AGENT_GLOBAL_MEMORY_DIR: context.paths.globalMemoryDir
         }
     }, null, 2)}\n`;
 }

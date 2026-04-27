@@ -87,10 +87,15 @@ assert_contains "$AGENT_DIR/AGENTS.md" "Starter AGENTS for starter/basic-project
 assert_contains "$AGENT_DIR/AGENTS.md" "Starter Code Agent"
 assert_contains "$AGENT_DIR/AGENTS.md" 'Use the project root at `'
 assert_contains "$AGENT_DIR/AGENTS.md" 'Store durable notes in `'
+assert_contains "$AGENT_DIR/AGENTS.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
 assert_contains "$AGENT_DIR/AGENTS.md" '`triage`: Use this profile-specific triage workflow'
 assert_contains "$AGENT_DIR/CLAUDE.md" "Starter CLAUDE for starter/basic-project"
+assert_contains "$AGENT_DIR/CLAUDE.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
 assert_contains "$AGENT_DIR/config.toml" "Starter profile Codex override"
+assert_contains "$AGENT_DIR/config.toml" "$EXAMPLE/agent-config/notes/memory"
 assert_contains "$AGENT_DIR/.claude/settings.json" '"STARTER_OVERRIDE": "true"'
+assert_contains "$AGENT_DIR/.claude/settings.json" '"AGENT_GLOBAL_MEMORY_DIR":'
+assert_contains "$AGENT_DIR/.claude/settings.json" "$EXAMPLE/agent-config/notes/memory"
 assert_contains "$AGENT_DIR/.agents/skills/triage/SKILL.md" "Starter Triage"
 assert_contains "$AGENT_DIR/.claude/skills/commit-workflow/SKILL.md" "Use when preparing commits"
 assert_contains "$EXAMPLE/agent-config/.gitignore" "**/AGENTS.md"

@@ -1,6 +1,10 @@
 CHANGES
 =======
 
+Version 0.99.15 (2026-04-30)
+----------------------------
+* Add `--generate` for Codex and Claude runs to render generated files without launching the underlying tool.
+
 Version 0.99.14 (2026-04-30)
 ----------------------------
 * Add `--show` for Codex and Claude runs to print the tool-specific source templates/includes and generated files without launching the underlying tool.

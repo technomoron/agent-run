@@ -110,6 +110,9 @@ Global flag:
 `agent-run codex --help` and `agent-run claude --help` still pass `--help`
 through to the underlying tool.
 
+For `codex` and `claude`, use `--generate` to generate profile files without
+launching the underlying tool.
+
 Codex defaults to `--danger`, which launches Codex with `-a never -s danger-full-access`,
 sets `CODEX_HOME` under the private agent directory, starts the Codex process
 from that private directory, passes the project root with `-C`, and keeps
@@ -153,6 +156,13 @@ Regenerate the generated files for the current repo:
 
 ```sh
 agent-run update
+```
+
+You can also generate from a tool command and stop before launch:
+
+```sh
+agent-run codex --generate
+agent-run claude --generate
 ```
 
 This reads `agent-run.jsonc` and Nunjucks templates from the mapped profile

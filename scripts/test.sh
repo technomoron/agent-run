@@ -161,6 +161,13 @@ assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.agents/skills/commit-workf
 assert_not_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.claude/agent-run-settings.json"
 assert_not_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md"
 
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-generate-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --generate >"$TMP_DIR/codex-generate.out")
+assert_no_file "$TMP_DIR/codex-generate-args.out"
+assert_contains "$TMP_DIR/codex-generate.out" "OK profile"
+assert_contains "$TMP_DIR/codex-generate.out" "Generated files:"
+assert_file "$LIVE_DIR/AGENTS.md"
+assert_file "$LIVE_DIR/CLAUDE.md"
+
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check)
 assert_contains "$TMP_DIR/claude-args.out" "--add-dir"
 assert_contains "$TMP_DIR/claude-args.out" "$EXAMPLE/agent-config/notes/memory"
@@ -263,6 +270,7 @@ assert.deepEqual(parseInvocation('agent-run', ['--create', 'claude', 'hello']), 
 		create: true,
 		local: false,
 		show: false,
+		generate: false,
 		codexSandboxMode: null,
 		codexNetwork: false
 	}
@@ -270,6 +278,7 @@ assert.deepEqual(parseInvocation('agent-run', ['--create', 'claude', 'hello']), 
 
 assert.equal(parseInvocation('agent-run', ['--local', 'codex']).wrapperArgs.local, true);
 assert.equal(parseInvocation('agent-run', ['codex', '--show']).wrapperArgs.show, true);
+assert.equal(parseInvocation('agent-run', ['codex', '--generate']).wrapperArgs.generate, true);
 assert.equal(parseInvocation('agent-run', ['--all', 'check', '.']).command, 'check');
 assert.deepEqual(parseInvocation('agent-run', ['--init', '/tmp/agent-config']), {
 	command: 'init-config',

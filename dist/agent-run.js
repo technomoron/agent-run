@@ -203,6 +203,7 @@ function parseRunCommand(command, inputArgs) {
         create: false,
         local: false,
         show: false,
+        generate: false,
         codexSandboxMode: null,
         codexNetwork: false
     };
@@ -231,6 +232,10 @@ function parseRunCommand(command, inputArgs) {
         }
         if (arg === '--show') {
             wrapperArgs.show = true;
+            continue;
+        }
+        if (arg === '--generate') {
+            wrapperArgs.generate = true;
             continue;
         }
         if (arg === '--danger') {
@@ -407,9 +412,9 @@ function renderHelp(topic) {
                 '  agent-run --init [config-root]',
                 '',
                 'Commands:',
-                '  codex [--none] [--create] [--local] [--show] [--danger|--sandboxed] [--network] [args...]',
+                '  codex [--none] [--create] [--local] [--show] [--generate] [--danger|--sandboxed] [--network] [args...]',
                 '                                           Run codex with generated private config',
-                '  claude [--none] [--create] [--local] [--show] [args...]',
+                '  claude [--none] [--create] [--local] [--show] [--generate] [args...]',
                 '                                           Run claude with generated private config',
                 '  check [--all] [path]                  Validate generated profile output',
                 '  init [path]                           Create profile source files and render output',
@@ -427,6 +432,7 @@ function renderHelp(topic) {
                 'Run wrapper options:',
                 '  --local            Warn about local AI files instead of failing',
                 '  --show             Show read/include and generated files without running the tool',
+                '  --generate         Generate files without running the tool',
                 '',
                 'Codex wrapper options:',
                 '  --danger           Run Codex with no sandbox: -a never -s danger-full-access (default)',
@@ -487,8 +493,17 @@ function runTool(parsed) {
     if (wrapperArgs.show && wrapperArgs.none) {
         fail('--show cannot be combined with --none');
     }
+    if (wrapperArgs.generate && wrapperArgs.none) {
+        fail('--generate cannot be combined with --none');
+    }
+    if (wrapperArgs.generate && wrapperArgs.show) {
+        fail('--generate cannot be combined with --show');
+    }
     if (wrapperArgs.show && isIgnoredDir(projectRoot)) {
         fail(`cannot show generated ${command} files for ignored project: ${projectRoot}`);
+    }
+    if (wrapperArgs.generate && isIgnoredDir(projectRoot)) {
+        fail(`cannot generate ${command} files for ignored project: ${projectRoot}`);
     }
     if (wrapperArgs.none || isIgnoredDir(projectRoot)) {
         const realBinary = findRealBinary(command);
@@ -508,6 +523,15 @@ function runTool(parsed) {
         showToolProfile(command, projectRoot, agentDir);
         return;
     }
+    if (wrapperArgs.create) {
+        runInit({ command: 'init', targetPath: projectRoot });
+    }
+    ensureRunnableProfile(configRoot, agentDir, profile);
+    if (wrapperArgs.generate) {
+        const rendered = syncAgentProfile(projectRoot, agentDir);
+        printUpdateSummary(rendered);
+        return;
+    }
     const localAiFiles = findLocalAiFiles(projectRoot, agentDir);
     if (localAiFiles.length > 0) {
         if (!wrapperArgs.local) {
@@ -517,10 +541,6 @@ function runTool(parsed) {
     }
     const realBinary = findRealBinary(command);
     const permissionArgs = getPermissionArgs(command);
-    if (wrapperArgs.create) {
-        runInit({ command: 'init', targetPath: projectRoot });
-    }
-    ensureRunnableProfile(configRoot, agentDir, profile);
     syncAgentProfile(projectRoot, agentDir);
     if (command === 'codex') {
         runCodex(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot, wrapperArgs);

@@ -147,10 +147,35 @@ assert_contains "$TMP_DIR/codex-args.out" "--add-dir"
 assert_contains "$TMP_DIR/codex-args.out" "$EXAMPLE/agent-config/notes/memory"
 assert_contains "$TMP_DIR/codex-args.out" "-C"
 
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-show-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --show >"$TMP_DIR/codex-show.out")
+assert_no_file "$TMP_DIR/codex-show-args.out"
+assert_contains "$TMP_DIR/codex-show.out" "Agent: codex"
+assert_contains "$TMP_DIR/codex-show.out" "Reads/includes:"
+assert_contains "$TMP_DIR/codex-show.out" "$AGENT_DIR/agent-run.jsonc"
+assert_contains "$TMP_DIR/codex-show.out" "$EXAMPLE/agent-config/global/snippets/git-rules.md.njk"
+assert_contains "$TMP_DIR/codex-show.out" "$AGENT_DIR/local.md.njk"
+assert_contains "$TMP_DIR/codex-show.out" "Generates:"
+assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/AGENTS.md"
+assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/config.toml"
+assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.agents/skills/commit-workflow/SKILL.md"
+assert_not_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.claude/agent-run-settings.json"
+assert_not_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md"
+
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check)
 assert_contains "$TMP_DIR/claude-args.out" "--add-dir"
 assert_contains "$TMP_DIR/claude-args.out" "$EXAMPLE/agent-config/notes/memory"
 assert_contains "$TMP_DIR/claude-args.out" "$LIVE_DIR"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-show-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --show >"$TMP_DIR/claude-show.out")
+assert_no_file "$TMP_DIR/claude-show-args.out"
+assert_contains "$TMP_DIR/claude-show.out" "Agent: claude"
+assert_contains "$TMP_DIR/claude-show.out" "$AGENT_DIR/agent-run.jsonc"
+assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/CLAUDE.md"
+assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/CLAUDE.md"
+assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/agent-run-settings.json"
+assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md"
+assert_not_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/config.toml"
+assert_not_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.agents/skills/commit-workflow/SKILL.md"
 
 cat >"$LIVE_DIR/.claude/settings.json" <<JSON
 {
@@ -203,6 +228,10 @@ set -e
 [ "$local_ai_status" -ne 0 ] || fail "expected local AI file check to fail"
 assert_contains "$TMP_DIR/local-ai.out" "local AI file in project"
 
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/local-show-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --show >"$TMP_DIR/local-show.out")
+assert_no_file "$TMP_DIR/local-show-args.out"
+assert_contains "$TMP_DIR/local-show.out" "Agent: codex"
+
 set +e
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/local-run-blocked-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --sandboxed >"$TMP_DIR/local-run-blocked.out" 2>&1)
 local_run_blocked_status=$?
@@ -233,12 +262,14 @@ assert.deepEqual(parseInvocation('agent-run', ['--create', 'claude', 'hello']), 
 		none: false,
 		create: true,
 		local: false,
+		show: false,
 		codexSandboxMode: null,
 		codexNetwork: false
 	}
 });
 
 assert.equal(parseInvocation('agent-run', ['--local', 'codex']).wrapperArgs.local, true);
+assert.equal(parseInvocation('agent-run', ['codex', '--show']).wrapperArgs.show, true);
 assert.equal(parseInvocation('agent-run', ['--all', 'check', '.']).command, 'check');
 assert.deepEqual(parseInvocation('agent-run', ['--init', '/tmp/agent-config']), {
 	command: 'init-config',

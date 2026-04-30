@@ -202,6 +202,7 @@ function parseRunCommand(command, inputArgs) {
         none: false,
         create: false,
         local: false,
+        show: false,
         codexSandboxMode: null,
         codexNetwork: false
     };
@@ -226,6 +227,10 @@ function parseRunCommand(command, inputArgs) {
         }
         if (arg === '--local') {
             wrapperArgs.local = true;
+            continue;
+        }
+        if (arg === '--show') {
+            wrapperArgs.show = true;
             continue;
         }
         if (arg === '--danger') {
@@ -402,9 +407,9 @@ function renderHelp(topic) {
                 '  agent-run --init [config-root]',
                 '',
                 'Commands:',
-                '  codex [--none] [--create] [--local] [--danger|--sandboxed] [--network] [args...]',
+                '  codex [--none] [--create] [--local] [--show] [--danger|--sandboxed] [--network] [args...]',
                 '                                           Run codex with generated private config',
-                '  claude [--none] [--create] [--local] [args...]',
+                '  claude [--none] [--create] [--local] [--show] [args...]',
                 '                                           Run claude with generated private config',
                 '  check [--all] [path]                  Validate generated profile output',
                 '  init [path]                           Create profile source files and render output',
@@ -419,8 +424,11 @@ function renderHelp(topic) {
                 '  --config-root DIR  Override the agent-config root',
                 '  --init [DIR]       Copy the packaged starter config root to DIR (default ~/.agent-config)',
                 '',
-                'Codex wrapper options:',
+                'Run wrapper options:',
                 '  --local            Warn about local AI files instead of failing',
+                '  --show             Show read/include and generated files without running the tool',
+                '',
+                'Codex wrapper options:',
                 '  --danger           Run Codex with no sandbox: -a never -s danger-full-access (default)',
                 '  --sandboxed        Run Codex with workspace-write sandbox',
                 '  --network          Enable network for --sandboxed via config override',
@@ -474,30 +482,41 @@ function normalizeCommandName(value) {
 }
 function runTool(parsed) {
     const { args, command, wrapperArgs } = parsed;
-    const realBinary = findRealBinary(command);
-    const permissionArgs = getPermissionArgs(command);
     const projectRoot = findProjectRoot(process.cwd());
     verbose(`run ${command}: cwd=${process.cwd()} projectRoot=${projectRoot}`);
+    if (wrapperArgs.show && wrapperArgs.none) {
+        fail('--show cannot be combined with --none');
+    }
+    if (wrapperArgs.show && isIgnoredDir(projectRoot)) {
+        fail(`cannot show generated ${command} files for ignored project: ${projectRoot}`);
+    }
     if (wrapperArgs.none || isIgnoredDir(projectRoot)) {
+        const realBinary = findRealBinary(command);
+        const permissionArgs = getPermissionArgs(command);
         verbose(`wrapper bypassed for ${command}${wrapperArgs.none ? ' via --none' : ' because project is ignored'}`);
         execTool(realBinary, [...permissionArgs, ...args]);
         return;
     }
     const profileResult = resolveProfileResult(projectRoot);
-    const excludedDir = profileResult.profile === null ? null : resolveAgentDir(projectRoot);
-    const localAiFiles = findLocalAiFiles(projectRoot, excludedDir);
-    if (localAiFiles.length > 0) {
-        if (!wrapperArgs.local) {
-            failForLocalAiFiles(command, projectRoot, localAiFiles);
-        }
-        warnForLocalAiFiles(command, projectRoot, localAiFiles);
-    }
     if (profileResult.profile === null) {
         fail(profileResult.reason);
     }
     const profile = profileResult.profile;
     const configRoot = defaultConfigRoot(projectRoot);
     const agentDir = resolveAgentDir(projectRoot);
+    if (wrapperArgs.show) {
+        showToolProfile(command, projectRoot, agentDir);
+        return;
+    }
+    const localAiFiles = findLocalAiFiles(projectRoot, agentDir);
+    if (localAiFiles.length > 0) {
+        if (!wrapperArgs.local) {
+            failForLocalAiFiles(command, projectRoot, localAiFiles);
+        }
+        warnForLocalAiFiles(command, projectRoot, localAiFiles);
+    }
+    const realBinary = findRealBinary(command);
+    const permissionArgs = getPermissionArgs(command);
     if (wrapperArgs.create) {
         runInit({ command: 'init', targetPath: projectRoot });
     }
@@ -508,6 +527,31 @@ function runTool(parsed) {
         return;
     }
     runClaude(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot, wrapperArgs);
+}
+function showToolProfile(command, projectRoot, agentDir) {
+    const trace = { sourceFiles: new Set() };
+    const rendered = renderProfile(projectRoot, agentDir, true, command, trace);
+    const generatedFiles = uniqueSorted(rendered.files.map((file) => file.path));
+    const sourceFiles = uniqueSorted([...trace.sourceFiles]);
+    process.stdout.write([
+        `Agent: ${command}`,
+        `Profile: ${rendered.profile}`,
+        `Project root: ${projectRoot}`,
+        `Profile dir: ${agentDir}`,
+        '',
+        'Reads/includes:',
+        ...formatPathList(sourceFiles),
+        '',
+        'Generates:',
+        ...formatPathList(generatedFiles),
+        ''
+    ].join('\n'));
+}
+function uniqueSorted(values) {
+    return [...new Set(values.map((value) => path.resolve(value)))].sort((a, b) => a.localeCompare(b));
+}
+function formatPathList(paths) {
+    return paths.length === 0 ? ['  (none)'] : paths.map((entry) => `  ${entry}`);
 }
 function runInit(parsed) {
     const projectRoot = findProjectRoot(parsed.targetPath);
@@ -859,7 +903,7 @@ function createDefaultLocalFile(agentDir, profile) {
 function ensureProfileOverridesDir(agentDir) {
     fs.mkdirSync(path.join(agentDir, 'overrides'), { recursive: true });
 }
-function loadManifest(_configRoot, agentDir, profile) {
+function loadManifest(_configRoot, agentDir, profile, trace) {
     const manifestPath = path.join(agentDir, MANIFEST_FILE_NAME);
     if (!fs.existsSync(manifestPath)) {
         const manifest = defaultManifest(profile);
@@ -879,6 +923,7 @@ function loadManifest(_configRoot, agentDir, profile) {
         }
         return manifest;
     }
+    trace?.sourceFiles.add(manifestPath);
     const text = fs.readFileSync(manifestPath, 'utf8');
     const errors = [];
     const parsed = (0, jsonc_parser_1.parse)(text, errors, { allowTrailingComma: true });
@@ -1037,18 +1082,47 @@ function resolveRuntimePath(configRoot, pathTemplate, env, context) {
     const rendered = renderInlineTemplate(env, pathTemplate, context);
     return path.isAbsolute(rendered) ? path.resolve(rendered) : path.resolve(configRoot, rendered);
 }
-function renderTemplateFile(env, configRoot, templatePath, context) {
+function renderTemplateFile(env, configRoot, templatePath, context, trace) {
     const resolvedPath = resolveConfigPath(configRoot, templatePath, context);
     if (!fs.existsSync(resolvedPath)) {
         throw new Error(`missing template: ${resolvedPath}`);
     }
     const relativePath = path.relative(configRoot, resolvedPath).replace(/\\/g, '/');
     let content = fs.readFileSync(resolvedPath, 'utf8');
+    traceTemplateSource(configRoot, resolvedPath, content, context, trace);
     if (path.basename(resolvedPath) === 'AGENTS-MODS.md') {
-        content = renderLegacyAgentsMods(resolvedPath);
+        content = renderLegacyAgentsMods(resolvedPath, [], trace);
         return renderInlineTemplate(env, content, context);
     }
     return env.render(relativePath, context);
+}
+function traceTemplateSource(configRoot, sourcePath, content, context, trace, stack = []) {
+    if (trace === undefined) {
+        return;
+    }
+    const resolvedSource = path.resolve(sourcePath);
+    trace.sourceFiles.add(resolvedSource);
+    if (stack.includes(resolvedSource)) {
+        return;
+    }
+    const nextStack = [...stack, resolvedSource];
+    const includeRe = /{%\s*(?:include|extends|import)\s+["']([^"']+)["']|{%\s*from\s+["']([^"']+)["']/g;
+    for (;;) {
+        const match = includeRe.exec(content);
+        if (match === null) {
+            break;
+        }
+        const includePath = match[1] ?? match[2];
+        if (!includePath) {
+            continue;
+        }
+        const includedPath = resolveConfigPath(configRoot, includePath, context);
+        if (!fs.existsSync(includedPath)) {
+            continue;
+        }
+        const includedContent = fs.readFileSync(includedPath, 'utf8');
+        traceTemplateSource(configRoot, includedPath, includedContent, context, trace, nextStack);
+    }
 }
 function renderInlineTemplate(env, source, context) {
     return env.renderString(source, context);
@@ -1090,11 +1164,11 @@ function copySkeletonTree(sourceDir, targetDir) {
         fs.copyFileSync(sourcePath, targetPath);
     }
 }
-function renderProfile(projectRoot, agentDir, checkOnly = false) {
+function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = null, trace) {
     const configRoot = defaultConfigRoot(projectRoot);
     const profile = resolveProfile(projectRoot);
     const env = createNunjucksEnv(configRoot);
-    const manifest = normalizeManifest(loadManifest(configRoot, agentDir, profile), profile);
+    const manifest = normalizeManifest(loadManifest(configRoot, agentDir, profile, trace), profile);
     if (manifest.profile !== profile) {
         const parsed = parseProfile(manifest.profile, `${path.join(agentDir, MANIFEST_FILE_NAME)} profile`);
         if (parsed.profile === null) {
@@ -1105,7 +1179,7 @@ function renderProfile(projectRoot, agentDir, checkOnly = false) {
         ensureConfigRootGitignore(configRoot);
     }
     const context = buildRenderContext(projectRoot, agentDir, configRoot, manifest, env);
-    const sections = [renderTemplateFile(env, configRoot, manifest.agent.base, context)];
+    const sections = [renderTemplateFile(env, configRoot, manifest.agent.base, context, trace)];
     for (const include of manifest.agent.includes) {
         const includePath = resolveConfigPath(configRoot, include, context);
         if (!fs.existsSync(includePath)) {
@@ -1114,26 +1188,31 @@ function renderProfile(projectRoot, agentDir, checkOnly = false) {
             }
             throw new Error(`missing template: ${includePath}`);
         }
-        sections.push(renderTemplateFile(env, configRoot, include, context));
+        sections.push(renderTemplateFile(env, configRoot, include, context, trace));
     }
     context.renderedAgentSections = sections.map((section, index) => {
         const label = index === 0 ? manifest.agent.base : manifest.agent.includes[index - 1] ?? `section ${index}`;
         assertNoUnexpandedTemplateVars(label, section);
         return section.trimEnd();
     });
-    context.skills = renderSkills(env, configRoot, manifest, context);
+    context.skills = renderSkills(env, configRoot, manifest, context, trace);
     const files = [];
-    const agentsContent = renderToolInstructions('AGENTS.md', env, configRoot, context, false);
-    const claudeContent = renderToolInstructions('CLAUDE.md', env, configRoot, context, true);
-    files.push({ path: path.join(context.paths.liveDir, 'AGENTS.md'), content: agentsContent });
-    files.push({ path: path.join(context.paths.liveDir, 'CLAUDE.md'), content: claudeContent });
-    files.push({ path: path.join(context.paths.liveDir, '.claude', 'CLAUDE.md'), content: claudeContent });
-    files.push({ path: path.join(context.paths.liveDir, 'config.toml'), content: renderCodexConfig(env, configRoot, context) });
-    files.push({
-        path: path.join(context.paths.liveDir, '.claude', 'agent-run-settings.json'),
-        content: renderClaudeSettings(env, configRoot, context)
-    });
-    files.push(...renderNativeSkillFiles(context));
+    if (targetTool === null || targetTool === 'codex') {
+        const agentsContent = renderToolInstructions('AGENTS.md', env, configRoot, context, false, trace);
+        files.push({ path: path.join(context.paths.liveDir, 'AGENTS.md'), content: agentsContent });
+        files.push({ path: path.join(context.paths.liveDir, 'config.toml'), content: renderCodexConfig(env, configRoot, context, trace) });
+        files.push(...renderNativeSkillFiles(context, 'codex'));
+    }
+    if (targetTool === null || targetTool === 'claude') {
+        const claudeContent = renderToolInstructions('CLAUDE.md', env, configRoot, context, true, trace);
+        files.push({ path: path.join(context.paths.liveDir, 'CLAUDE.md'), content: claudeContent });
+        files.push({ path: path.join(context.paths.liveDir, '.claude', 'CLAUDE.md'), content: claudeContent });
+        files.push({
+            path: path.join(context.paths.liveDir, '.claude', 'agent-run-settings.json'),
+            content: renderClaudeSettings(env, configRoot, context, trace)
+        });
+        files.push(...renderNativeSkillFiles(context, 'claude'));
+    }
     files.push(...renderGuardShims(context));
     return {
         agentDir,
@@ -1225,7 +1304,7 @@ function checkRenderedProfile(projectRoot, agentDir) {
     }
     return findings;
 }
-function renderSkills(env, configRoot, manifest, context) {
+function renderSkills(env, configRoot, manifest, context, trace) {
     const skills = [];
     for (const name of manifest.skills.install) {
         const sourceTemplate = manifest.skills.overrides[name] ?? `global/skills/${name}/SKILL.md.njk`;
@@ -1233,7 +1312,7 @@ function renderSkills(env, configRoot, manifest, context) {
         if (!fs.existsSync(sourcePath)) {
             throw new Error(`missing skill template for ${name}: ${sourcePath}`);
         }
-        const renderedContent = renderTemplateFile(env, configRoot, sourceTemplate, context);
+        const renderedContent = renderTemplateFile(env, configRoot, sourceTemplate, context, trace);
         assertNoUnexpandedTemplateVars(`skill ${name}`, renderedContent);
         validateRenderedSkill(renderedContent, sourcePath);
         const description = extractSkillDescription(renderedContent);
@@ -1241,41 +1320,45 @@ function renderSkills(env, configRoot, manifest, context) {
     }
     return skills;
 }
-function renderNativeSkillFiles(context) {
+function renderNativeSkillFiles(context, targetTool = null) {
     const files = [];
     for (const skill of context.skills) {
-        files.push({
-            path: path.join(context.paths.codexSkillsDir, skill.name, 'SKILL.md'),
-            content: skill.renderedContent
-        });
-        files.push({
-            path: path.join(context.paths.claudeSkillsDir, skill.name, 'SKILL.md'),
-            content: skill.renderedContent
-        });
+        if (targetTool === null || targetTool === 'codex') {
+            files.push({
+                path: path.join(context.paths.codexSkillsDir, skill.name, 'SKILL.md'),
+                content: skill.renderedContent
+            });
+        }
+        if (targetTool === null || targetTool === 'claude') {
+            files.push({
+                path: path.join(context.paths.claudeSkillsDir, skill.name, 'SKILL.md'),
+                content: skill.renderedContent
+            });
+        }
     }
     return files;
 }
-function renderToolInstructions(templateName, env, configRoot, context, isClaude) {
+function renderToolInstructions(templateName, env, configRoot, context, isClaude, trace) {
     const templatePath = `global/tool-templates/${templateName}.njk`;
     const absoluteTemplate = path.join(configRoot, templatePath);
     const content = fs.existsSync(absoluteTemplate)
-        ? renderTemplateFile(env, configRoot, templatePath, context)
+        ? renderTemplateFile(env, configRoot, templatePath, context, trace)
         : renderInlineTemplate(env, defaultToolInstructionsTemplate(isClaude), context);
     assertNoUnexpandedTemplateVars(templateName, content);
     return content.replace(/\n*$/, '\n');
 }
-function renderCodexConfig(env, configRoot, context) {
+function renderCodexConfig(env, configRoot, context, trace) {
     const templatePath = resolveProfileOverrideTemplate(configRoot, context, 'codex-config.toml.njk', 'global/tool-templates/codex-config.toml.njk');
     const content = templatePath !== null
-        ? renderTemplateFile(env, configRoot, templatePath, context)
+        ? renderTemplateFile(env, configRoot, templatePath, context, trace)
         : defaultCodexConfigContent(context);
     assertNoUnexpandedTemplateVars('config.toml', content);
     return content.replace(/\n*$/, '\n');
 }
-function renderClaudeSettings(env, configRoot, context) {
+function renderClaudeSettings(env, configRoot, context, trace) {
     const templatePath = resolveProfileOverrideTemplate(configRoot, context, 'claude-settings.json.njk', 'global/tool-templates/claude-settings.json.njk');
     const content = templatePath !== null
-        ? renderTemplateFile(env, configRoot, templatePath, context)
+        ? renderTemplateFile(env, configRoot, templatePath, context, trace)
         : defaultClaudeSettingsContent(context);
     assertNoUnexpandedTemplateVars('claude settings.json', content);
     return content.replace(/\n*$/, '\n');
@@ -1347,8 +1430,9 @@ function extractSkillDescription(content) {
     }
     return '';
 }
-function renderLegacyAgentsMods(sourceFile, stack = []) {
+function renderLegacyAgentsMods(sourceFile, stack = [], trace) {
     const resolvedSource = path.resolve(sourceFile);
+    trace?.sourceFiles.add(resolvedSource);
     if (stack.includes(resolvedSource)) {
         throw new Error(`Include cycle detected: ${[...stack, resolvedSource].join(' -> ')}`);
     }
@@ -1368,7 +1452,9 @@ function renderLegacyAgentsMods(sourceFile, stack = []) {
             if (!includePath) {
                 continue;
             }
-            output.push(renderLegacyAgentsMods(resolveIncludePath(resolvedSource, includePath), nextStack));
+            const resolvedInclude = resolveIncludePath(resolvedSource, includePath);
+            trace?.sourceFiles.add(resolvedInclude);
+            output.push(renderLegacyAgentsMods(resolvedInclude, nextStack, trace));
             if (!contentStarted) {
                 sawLeadingInclude = true;
             }

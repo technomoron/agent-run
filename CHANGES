@@ -1,6 +1,10 @@
 CHANGES
 =======
 
+Version 0.99.14 (2026-04-30)
+----------------------------
+* Add `--show` for Codex and Claude runs to print the tool-specific source templates/includes and generated files without launching the underlying tool.
+
 Version 0.99.13 (2026-04-27)
 ----------------------------
 * Render each profile's generated files and runtime state under `live/`, leaving the profile root for source config and templates.

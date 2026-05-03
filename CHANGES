@@ -1,6 +1,12 @@
 CHANGES
 =======
 
+Version 0.99.16 (2026-05-03)
+----------------------------
+* Move review history out of generated `live/` directories into persistent profile `reviews/` directories and migrate legacy live review files.
+* Rename the built-in review skill to `code-review-organizer` and remove stale generated `code-review` skill directories.
+* Add the `release-package-check` skill to replace the external `repo-check` package release checklist.
+
 Version 0.99.15 (2026-04-30)
 ----------------------------
 * Add `--generate` for Codex and Claude runs to render generated files without launching the underlying tool.

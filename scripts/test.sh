@@ -18,6 +18,10 @@ assert_no_file() {
 	[ ! -f "$1" ] || fail "unexpected file: $1"
 }
 
+assert_no_dir() {
+	[ ! -d "$1" ] || fail "unexpected directory: $1"
+}
+
 assert_dir() {
 	[ -d "$1" ] || fail "missing directory: $1"
 }
@@ -96,7 +100,7 @@ assert_file "$LIVE_DIR/config.toml"
 assert_file "$LIVE_DIR/.claude/agent-run-settings.json"
 assert_file "$LIVE_DIR/.agents/skills/triage/SKILL.md"
 assert_file "$LIVE_DIR/.claude/skills/triage/SKILL.md"
-assert_dir "$LIVE_DIR/reviews"
+assert_dir "$AGENT_DIR/reviews"
 assert_dir "$LIVE_DIR/memories"
 assert_dir "$LIVE_DIR/memories/codex-home"
 assert_dir "$AGENT_DIR/overrides"
@@ -109,6 +113,7 @@ assert_contains "$LIVE_DIR/AGENTS.md" 'Store durable notes in `'
 assert_contains "$LIVE_DIR/AGENTS.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
 assert_contains "$LIVE_DIR/AGENTS.md" '`triage`: Use this profile-specific triage workflow'
 assert_contains "$LIVE_DIR/AGENTS.md" "profileDir: \`$AGENT_DIR\`"
+assert_contains "$LIVE_DIR/AGENTS.md" "reviewConsolidatedFile: \`$AGENT_DIR/reviews/REVIEW.md\`"
 assert_contains "$LIVE_DIR/CLAUDE.md" "Starter CLAUDE for starter/basic-project"
 assert_contains "$LIVE_DIR/CLAUDE.md" "globalMemoryDir: \`$EXAMPLE/agent-config/notes/memory\`"
 assert_contains "$LIVE_DIR/config.toml" "Starter profile Codex override"
@@ -121,6 +126,8 @@ assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm test)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(git *)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(npm *)"
 assert_contains "$LIVE_DIR/.agents/skills/triage/SKILL.md" "Starter Triage"
+assert_contains "$LIVE_DIR/.agents/skills/release-package-check/SKILL.md" "instead of an external \`repo-check\` command"
+assert_contains "$LIVE_DIR/.agents/skills/code-review-organizer/SKILL.md" "$AGENT_DIR/reviews/REVIEW.md"
 assert_contains "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md" "Use when preparing commits"
 assert_contains "$EXAMPLE/agent-config/.gitignore" "**/live/"
 
@@ -158,6 +165,8 @@ assert_contains "$TMP_DIR/codex-show.out" "Generates:"
 assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/AGENTS.md"
 assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/config.toml"
 assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.agents/skills/commit-workflow/SKILL.md"
+assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.agents/skills/release-package-check/SKILL.md"
+assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.agents/skills/code-review-organizer/SKILL.md"
 assert_not_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.claude/agent-run-settings.json"
 assert_not_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md"
 
@@ -181,6 +190,8 @@ assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/CLAUDE.md"
 assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/CLAUDE.md"
 assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/agent-run-settings.json"
 assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md"
+assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/skills/release-package-check/SKILL.md"
+assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/skills/code-review-organizer/SKILL.md"
 assert_not_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/config.toml"
 assert_not_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.agents/skills/commit-workflow/SKILL.md"
 
@@ -210,6 +221,26 @@ set -e
 assert_contains "$TMP_DIR/git.out" "blocked git commit"
 assert_contains "$TMP_DIR/pnpm.out" "blocked pnpm publish"
 assert_contains "$TMP_DIR/gh.out" "blocked gh release create"
+
+mkdir -p "$LIVE_DIR/.agents/skills/code-review" "$LIVE_DIR/.claude/skills/code-review"
+printf 'stale codex skill\n' >"$LIVE_DIR/.agents/skills/code-review/SKILL.md"
+printf 'stale claude skill\n' >"$LIVE_DIR/.claude/skills/code-review/SKILL.md"
+node "$BIN" update "$PROJECT" >/dev/null
+assert_no_dir "$LIVE_DIR/.agents/skills/code-review"
+assert_no_dir "$LIVE_DIR/.claude/skills/code-review"
+
+mkdir -p "$LIVE_DIR/reviews"
+printf 'legacy review\n' >"$LIVE_DIR/reviews/legacy.md"
+node "$BIN" update "$PROJECT" >/dev/null
+assert_file "$AGENT_DIR/reviews/legacy.md"
+assert_no_file "$LIVE_DIR/reviews/legacy.md"
+mkdir -p "$LIVE_DIR/reviews"
+printf 'different legacy review\n' >"$LIVE_DIR/reviews/legacy.md"
+printf 'existing serialized review\n' >"$AGENT_DIR/reviews/legacy.1.md"
+node "$BIN" update "$PROJECT" >/dev/null
+assert_file "$AGENT_DIR/reviews/legacy.2.md"
+assert_contains "$AGENT_DIR/reviews/legacy.2.md" "different legacy review"
+assert_no_file "$LIVE_DIR/reviews/legacy.md"
 
 node "$BIN" check "$PROJECT" >"$TMP_DIR/check.out"
 assert_contains "$TMP_DIR/check.out" "OK no issues found"

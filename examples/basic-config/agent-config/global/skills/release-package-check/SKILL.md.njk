@@ -1,0 +1,14 @@
+---
+name: release-package-check
+description: Use before package releases in {{ profile }}.
+---
+
+# Release Package Check
+
+Use this checklist instead of an external `repo-check` command.
+
+Run configured checks after package metadata, release notes, workflow, lockfile, and git-state review:
+
+{% for check in checks %}
+- `{{ check }}`
+{% endfor %}

@@ -23,7 +23,7 @@ const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
 const MANIFEST_FILE_NAME = 'agent-run.jsonc';
 const LOCAL_TEMPLATE_FILE_NAME = 'local.md.njk';
 const LIVE_DIR_NAME = 'live';
-const PACKAGE_VERSION = '0.99.10';
+const PACKAGE_VERSION = '0.99.16';
 const UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 const agentRunEnvCache = new Map();
 const GENERATED_GITIGNORE_ENTRIES = [
@@ -43,7 +43,8 @@ const REQUIRED_GLOBAL_TEMPLATES = [
     'global/tool-templates/claude-settings.json.njk',
     'global/skills/commit-workflow/SKILL.md.njk',
     'global/skills/github-release/SKILL.md.njk',
-    'global/skills/code-review/SKILL.md.njk'
+    'global/skills/release-package-check/SKILL.md.njk',
+    'global/skills/code-review-organizer/SKILL.md.njk'
 ];
 function main(invokedTool, argv) {
     const parsed = parseInvocation(invokedTool, argv);
@@ -758,7 +759,8 @@ function ensureDefaultGlobalTemplates(configRoot) {
         ['global/tool-templates/claude-settings.json.njk', defaultClaudeSettingsTemplate()],
         ['global/skills/commit-workflow/SKILL.md.njk', defaultCommitWorkflowSkill()],
         ['global/skills/github-release/SKILL.md.njk', defaultGithubReleaseSkill()],
-        ['global/skills/code-review/SKILL.md.njk', defaultCodeReviewSkill()]
+        ['global/skills/release-package-check/SKILL.md.njk', defaultReleasePackageCheckSkill()],
+        ['global/skills/code-review-organizer/SKILL.md.njk', defaultCodeReviewOrganizerSkill()]
     ]);
     for (const [relativePath, content] of defaults) {
         const filePath = path.join(configRoot, relativePath);
@@ -966,13 +968,13 @@ function defaultManifest(profile) {
             includes: [`{{ profile }}/${LOCAL_TEMPLATE_FILE_NAME}`]
         },
         skills: {
-            install: ['commit-workflow', 'github-release', 'code-review']
+            install: ['commit-workflow', 'github-release', 'release-package-check', 'code-review-organizer']
         },
         tools: {
             codex: true,
             claude: true
         },
-        checks: ['agent-run check .', 'repo-check check .', 'pnpm run cleanbuild'],
+        checks: ['agent-run check .', 'pnpm run cleanbuild'],
         guardrails: {
             blockGitWrite: true,
             blockPublish: true,
@@ -981,8 +983,8 @@ function defaultManifest(profile) {
         },
         paths: {
             changesFile: '{{ projectRoot }}/CHANGES',
-            reviewDir: '{{ agentDir }}/reviews',
-            reviewFile: '{{ agentDir }}/reviews/REVIEW-{{ date }}.md',
+            reviewDir: '{{ profileDir }}/reviews',
+            reviewFile: '{{ profileDir }}/reviews/REVIEW-{{ date }}.md',
             memoriesDir: '{{ agentDir }}/memories'
         }
     };
@@ -993,6 +995,8 @@ function normalizeManifest(manifest, profile) {
         ? manifest.skills
         : manifest.skills?.install ?? asSkillObject(baseManifest.skills).install;
     const overrides = Array.isArray(manifest.skills) ? {} : manifest.skills?.overrides ?? {};
+    const reviewDir = normalizeLegacyDefaultReviewPath(manifest.paths?.reviewDir ?? baseManifest.paths?.reviewDir ?? '{{ profileDir }}/reviews');
+    const reviewFile = normalizeLegacyDefaultReviewPath(manifest.paths?.reviewFile ?? baseManifest.paths?.reviewFile ?? '{{ profileDir }}/reviews/REVIEW-{{ date }}.md');
     return {
         profile: manifest.profile ?? profile,
         kind: manifest.kind ?? baseManifest.kind ?? 'code',
@@ -1001,7 +1005,7 @@ function normalizeManifest(manifest, profile) {
             includes: manifest.agent?.includes ?? defaultAgentIncludesForProfile(profile)
         },
         skills: {
-            install: installedSkills,
+            install: normalizeInstalledSkills(installedSkills),
             overrides
         },
         tools: {
@@ -1017,11 +1021,27 @@ function normalizeManifest(manifest, profile) {
         },
         paths: {
             changesFile: manifest.paths?.changesFile ?? baseManifest.paths?.changesFile ?? '{{ projectRoot }}/CHANGES',
-            reviewDir: manifest.paths?.reviewDir ?? baseManifest.paths?.reviewDir ?? '{{ agentDir }}/reviews',
-            reviewFile: manifest.paths?.reviewFile ?? baseManifest.paths?.reviewFile ?? '{{ agentDir }}/reviews/REVIEW-{{ date }}.md',
+            reviewDir,
+            reviewFile,
+            reviewConsolidatedFile: manifest.paths?.reviewConsolidatedFile ?? baseManifest.paths?.reviewConsolidatedFile,
             memoriesDir: manifest.paths?.memoriesDir ?? baseManifest.paths?.memoriesDir ?? '{{ agentDir }}/memories'
         }
     };
+}
+function normalizeSkillName(name) {
+    return name === 'code-review' ? 'code-review-organizer' : name;
+}
+function normalizeInstalledSkills(names) {
+    return [...new Set(names.map(normalizeSkillName))];
+}
+function normalizeLegacyDefaultReviewPath(value) {
+    if (value === '{{ agentDir }}/reviews') {
+        return '{{ profileDir }}/reviews';
+    }
+    if (value === '{{ agentDir }}/reviews/REVIEW-{{ date }}.md') {
+        return '{{ profileDir }}/reviews/REVIEW-{{ date }}.md';
+    }
+    return value;
 }
 function asSkillObject(skills) {
     if (Array.isArray(skills)) {
@@ -1057,12 +1077,16 @@ function buildRenderContext(projectRoot, profileDir, configRoot, manifest, env) 
         checks: manifest.checks,
         guardrails: manifest.guardrails
     };
+    const reviewDir = resolveRuntimePath(configRoot, manifest.paths.reviewDir, env, baseContext);
     const paths = {
         profileDir,
         liveDir,
         changesFile: resolveRuntimePath(configRoot, manifest.paths.changesFile, env, baseContext),
-        reviewDir: resolveRuntimePath(configRoot, manifest.paths.reviewDir, env, baseContext),
+        reviewDir,
         reviewFile: resolveRuntimePath(configRoot, manifest.paths.reviewFile, env, baseContext),
+        reviewConsolidatedFile: manifest.paths.reviewConsolidatedFile
+            ? resolveRuntimePath(configRoot, manifest.paths.reviewConsolidatedFile, env, baseContext)
+            : path.join(reviewDir, 'REVIEW.md'),
         memoriesDir: resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext),
         globalMemoryDir: globalMemoryDir(configRoot),
         codexHomeDir: path.join(resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext), 'codex-home'),
@@ -1419,6 +1443,70 @@ function syncRuntimeDirs(context) {
         path.join(context.paths.liveDir, '.claude')
     ]) {
         fs.mkdirSync(dir, { recursive: true });
+    }
+    migrateLiveReviewFiles(context);
+    removeLegacyCodeReviewSkillDirs(context);
+}
+function removeLegacyCodeReviewSkillDirs(context) {
+    if (!context.skills.some((skill) => skill.name === 'code-review-organizer')) {
+        return;
+    }
+    for (const dir of [
+        path.join(context.paths.codexSkillsDir, 'code-review'),
+        path.join(context.paths.claudeSkillsDir, 'code-review')
+    ]) {
+        if (fs.existsSync(dir)) {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    }
+}
+function migrateLiveReviewFiles(context) {
+    const legacyReviewDir = path.join(context.paths.liveDir, 'reviews');
+    if (path.resolve(legacyReviewDir) === path.resolve(context.paths.reviewDir) || !fs.existsSync(legacyReviewDir)) {
+        return;
+    }
+    fs.mkdirSync(context.paths.reviewDir, { recursive: true });
+    for (const entry of fs.readdirSync(legacyReviewDir, { withFileTypes: true })) {
+        if (!entry.isFile()) {
+            continue;
+        }
+        const sourcePath = path.join(legacyReviewDir, entry.name);
+        let targetPath = path.join(context.paths.reviewDir, entry.name);
+        if (fs.existsSync(targetPath)) {
+            if (filesHaveSameContent(sourcePath, targetPath)) {
+                fs.rmSync(sourcePath);
+                continue;
+            }
+            targetPath = nextAvailablePath(context.paths.reviewDir, entry.name);
+        }
+        moveFile(sourcePath, targetPath);
+    }
+}
+function filesHaveSameContent(leftPath, rightPath) {
+    const left = fs.readFileSync(leftPath);
+    const right = fs.readFileSync(rightPath);
+    return left.length === right.length && left.equals(right);
+}
+function nextAvailablePath(dir, filename) {
+    const parsed = path.parse(filename);
+    for (let sequence = 1;; sequence += 1) {
+        const candidate = path.join(dir, `${parsed.name}.${sequence}${parsed.ext}`);
+        if (!fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+}
+function moveFile(sourcePath, targetPath) {
+    try {
+        fs.renameSync(sourcePath, targetPath);
+    }
+    catch (error) {
+        const code = error.code;
+        if (code !== 'EXDEV') {
+            throw error;
+        }
+        fs.copyFileSync(sourcePath, targetPath);
+        fs.rmSync(sourcePath);
     }
 }
 function validateRenderedSkill(content, sourcePath) {
@@ -2348,18 +2436,62 @@ function defaultGithubReleaseSkill() {
         ''
     ].join('\n');
 }
-function defaultCodeReviewSkill() {
+function defaultReleasePackageCheckSkill() {
     return [
         '---',
-        'name: code-review',
-        'description: Use for code review, PR review, and diff review.',
+        'name: release-package-check',
+        'description: Use before package releases and publish-ready changes to verify package metadata, release notes, lockfiles, workflows, git state, and agent-file hygiene.',
         '---',
         '',
-        '# Code Review',
+        '# Release Package Check',
         '',
-        'Save review notes to {{ paths.reviewFile }}. If the file exists, update it.',
-        'Also include findings in the final user-facing reply.',
+        'Use this skill instead of an external `repo-check` command.',
+        'For package release or publish-ready work, verify the relevant package directory before finalizing:',
+        '',
+        '- The directory contains `package.json` and is inside a git repository.',
+        '- The repository path follows `<org>/<repo>`, and `package.json.name` is `@<org>/<package-dir-name>`.',
+        '- `package.json.version`, `package.json.license`, and `package.json.copyright` are present and non-empty.',
+        '- A package-local `LICENSE` file exists and contains the exact copyright string from `package.json.copyright`.',
+        '- A package-local `CHANGES` file exists.',
+        '- The first `Version ...` line in `CHANGES` matches `Version <package.json.version> (<YYYY-MM-DD>)`.',
+        '- The year in the top `CHANGES` version line appears in `package.json.copyright`.',
+        '- The git `origin` remote matches `<org>/<repo>`.',
+        '- The current branch has an upstream configured and is in sync with it after fetching.',
+        '- The repository does not contain agent files or directories such as `AGENTS.md`, `CLAUDE.md`, `codex.md`, `.claude`, or `.codex`.',
+        '- The repository root has a lockfile: `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `bun.lockb`, or `bun.lock`.',
+        '- GitHub workflows under `.github/workflows` use `actions/setup-node@v6` and `node-version: 24`.',
+        '- GitHub workflows do not reference `node20` or `node22`.',
+        '- The git working tree is clean for files under the checked package directory.',
+        '- If files beyond `CHANGES` changed in the checked package directory, that package `CHANGES` file is also changed.',
+        '',
+        'Run the configured checks after this checklist:',
+        '',
+        '{% for check in checks %}',
+        '- `{{ check }}`',
+        '{% endfor %}',
+        ''
+    ].join('\n');
+}
+function defaultCodeReviewOrganizerSkill() {
+    return [
+        '---',
+        'name: code-review-organizer',
+        'description: Use for organizing code review findings, review files, and review follow-up state.',
+        '---',
+        '',
+        '# Code Review Organizer',
+        '',
+        'On review startup, move any files from {{ paths.liveDir }}/reviews into {{ paths.reviewDir }} so review history persists outside the ephemeral live directory.',
+        'Before doing any code review, read the generated AGENTS.md file and the current consolidated review file: {{ paths.reviewConsolidatedFile }}.',
+        'Save each active review to {{ paths.reviewDir }}/yyyy-mm-dd-[sequence].md, where the sequence increments for multiple reviews on the same date.',
+        'Whenever a saved review is created or changed, update {{ paths.reviewConsolidatedFile }} with the consolidated current review findings.',
+        'In {{ paths.reviewConsolidatedFile }}, include each active finding with its review date and source review filename.',
+        'When a finding is fixed, remove it from {{ paths.reviewConsolidatedFile }} and move it to {{ paths.reviewDir }}/DONE.md with the time it was fixed.',
+        'When a finding is intentionally not fixed, remove it from {{ paths.reviewConsolidatedFile }} and move it to {{ paths.reviewDir }}/DONE.md with the time it was marked intentional and a note that it was intentionally left as-is.',
+        'When a dated review file has no remaining active findings, delete it.',
+        'Also include active findings in the final user-facing reply.',
         'Do not save review files inside the project repo.',
+        'Before the final reply for review work, verify that no REVIEW*.md files exist in {{ projectRoot }}, active dated review files exist only when they still contain active findings, and the consolidated REVIEW.md file was updated.',
         ''
     ].join('\n');
 }
@@ -2408,6 +2540,12 @@ function defaultToolInstructionsTemplate(isClaude) {
         '',
         '```text',
         '{{ paths.reviewFile }}',
+        '```',
+        '',
+        'Consolidated review file:',
+        '',
+        '```text',
+        '{{ paths.reviewConsolidatedFile }}',
         '```',
         '',
         'Memories directory:',

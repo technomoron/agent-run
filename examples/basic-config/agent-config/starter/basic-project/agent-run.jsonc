@@ -12,7 +12,8 @@
     "install": [
       "commit-workflow",
       "github-release",
-      "code-review",
+      "release-package-check",
+      "code-review-organizer",
       "triage"
     ],
     "overrides": {
@@ -36,8 +37,8 @@
   },
   "paths": {
     "changesFile": "{{ projectRoot }}/CHANGES",
-    "reviewDir": "{{ agentDir }}/reviews",
-    "reviewFile": "{{ agentDir }}/reviews/REVIEW-{{ date }}.md",
+    "reviewDir": "{{ profileDir }}/reviews",
+    "reviewFile": "{{ profileDir }}/reviews/REVIEW-{{ date }}.md",
     "memoriesDir": "{{ agentDir }}/memories"
   }
 }

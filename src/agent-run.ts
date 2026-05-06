@@ -1379,6 +1379,8 @@ function buildRenderContext(
 		guardrails: manifest.guardrails
 	};
 	const reviewDir = resolveRuntimePath(configRoot, manifest.paths.reviewDir, env, baseContext);
+	const memoriesDir = resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext);
+	const codexHomeDir = path.join(memoriesDir, 'codex-home');
 	const paths = {
 		profileDir,
 		liveDir,
@@ -1388,14 +1390,11 @@ function buildRenderContext(
 		reviewConsolidatedFile: manifest.paths.reviewConsolidatedFile
 			? resolveRuntimePath(configRoot, manifest.paths.reviewConsolidatedFile, env, baseContext)
 			: path.join(reviewDir, 'REVIEW.md'),
-		memoriesDir: resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext),
+		memoriesDir,
 		globalMemoryDir: globalMemoryDir(configRoot),
-		codexHomeDir: path.join(
-			resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext),
-			'codex-home'
-		),
+		codexHomeDir,
 		overridesDir: path.join(profileDir, 'overrides'),
-		codexSkillsDir: path.join(liveDir, '.agents', 'skills'),
+		codexSkillsDir: path.join(codexHomeDir, 'skills'),
 		claudeSkillsDir: path.join(liveDir, '.claude', 'skills'),
 		binDir: path.join(liveDir, 'bin')
 	};
@@ -1832,7 +1831,21 @@ function syncRuntimeDirs(context: RenderContext): void {
 		fs.mkdirSync(dir, { recursive: true });
 	}
 	migrateLiveReviewFiles(context);
+	removeLegacyCodexSkillDirs(context);
 	removeLegacyCodeReviewSkillDirs(context);
+}
+
+function removeLegacyCodexSkillDirs(context: RenderContext): void {
+	const legacyCodexSkillsDir = path.join(context.paths.liveDir, '.agents', 'skills');
+	if (path.resolve(legacyCodexSkillsDir) === path.resolve(context.paths.codexSkillsDir)) {
+		return;
+	}
+	for (const skill of context.skills) {
+		const legacySkillDir = path.join(legacyCodexSkillsDir, skill.name);
+		if (fs.existsSync(legacySkillDir)) {
+			fs.rmSync(legacySkillDir, { recursive: true, force: true });
+		}
+	}
 }
 
 function removeLegacyCodeReviewSkillDirs(context: RenderContext): void {
@@ -1840,6 +1853,7 @@ function removeLegacyCodeReviewSkillDirs(context: RenderContext): void {
 		return;
 	}
 	for (const dir of [
+		path.join(context.paths.liveDir, '.agents', 'skills', 'code-review'),
 		path.join(context.paths.codexSkillsDir, 'code-review'),
 		path.join(context.paths.claudeSkillsDir, 'code-review')
 	]) {

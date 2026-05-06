@@ -1,6 +1,11 @@
 CHANGES
 =======
 
+Version 0.99.17 (2026-05-06)
+----------------------------
+* Generate Codex native skills under `CODEX_HOME/skills` so runtime skill discovery matches generated profiles.
+* Remove stale legacy Codex skill copies from `live/.agents/skills` during profile updates.
+
 Version 0.99.16 (2026-05-03)
 ----------------------------
 * Move review history out of generated `live/` directories into persistent profile `reviews/` directories and migrate legacy live review files.

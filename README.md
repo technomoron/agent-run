@@ -171,7 +171,7 @@ directory and rewrites generated files:
 - `AGENTS.md`
 - `CLAUDE.md`
 - `config.toml`
-- `.agents/skills/**`
+- `memories/codex-home/skills/**`
 - `.claude/**`
 - `bin/**`
 

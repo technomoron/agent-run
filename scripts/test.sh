@@ -48,6 +48,7 @@ cp -R "$ROOT/examples/basic-config" "$EXAMPLE"
 PROJECT="$EXAMPLE/project"
 AGENT_DIR="$EXAMPLE/agent-config/starter/basic-project"
 LIVE_DIR="$AGENT_DIR/live"
+CODEX_SKILLS_DIR="$LIVE_DIR/memories/codex-home/skills"
 BIN="$ROOT/dist/agent-run.js"
 PACKAGE_VERSION="$(node -p "require('$ROOT/package.json').version")"
 
@@ -98,7 +99,7 @@ assert_file "$LIVE_DIR/CLAUDE.md"
 assert_file "$LIVE_DIR/.claude/CLAUDE.md"
 assert_file "$LIVE_DIR/config.toml"
 assert_file "$LIVE_DIR/.claude/agent-run-settings.json"
-assert_file "$LIVE_DIR/.agents/skills/triage/SKILL.md"
+assert_file "$CODEX_SKILLS_DIR/triage/SKILL.md"
 assert_file "$LIVE_DIR/.claude/skills/triage/SKILL.md"
 assert_dir "$AGENT_DIR/reviews"
 assert_dir "$LIVE_DIR/memories"
@@ -125,9 +126,9 @@ assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "\"AGENT_PROFILE_DIR
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm test)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(git *)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(npm *)"
-assert_contains "$LIVE_DIR/.agents/skills/triage/SKILL.md" "Starter Triage"
-assert_contains "$LIVE_DIR/.agents/skills/release-package-check/SKILL.md" "instead of an external \`repo-check\` command"
-assert_contains "$LIVE_DIR/.agents/skills/code-review-organizer/SKILL.md" "$AGENT_DIR/reviews/REVIEW.md"
+assert_contains "$CODEX_SKILLS_DIR/triage/SKILL.md" "Starter Triage"
+assert_contains "$CODEX_SKILLS_DIR/release-package-check/SKILL.md" "instead of an external \`repo-check\` command"
+assert_contains "$CODEX_SKILLS_DIR/code-review-organizer/SKILL.md" "$AGENT_DIR/reviews/REVIEW.md"
 assert_contains "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md" "Use when preparing commits"
 assert_contains "$EXAMPLE/agent-config/.gitignore" "**/live/"
 
@@ -164,9 +165,9 @@ assert_contains "$TMP_DIR/codex-show.out" "$AGENT_DIR/local.md.njk"
 assert_contains "$TMP_DIR/codex-show.out" "Generates:"
 assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/AGENTS.md"
 assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/config.toml"
-assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.agents/skills/commit-workflow/SKILL.md"
-assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.agents/skills/release-package-check/SKILL.md"
-assert_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.agents/skills/code-review-organizer/SKILL.md"
+assert_contains "$TMP_DIR/codex-show.out" "$CODEX_SKILLS_DIR/commit-workflow/SKILL.md"
+assert_contains "$TMP_DIR/codex-show.out" "$CODEX_SKILLS_DIR/release-package-check/SKILL.md"
+assert_contains "$TMP_DIR/codex-show.out" "$CODEX_SKILLS_DIR/code-review-organizer/SKILL.md"
 assert_not_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.claude/agent-run-settings.json"
 assert_not_contains "$TMP_DIR/codex-show.out" "$LIVE_DIR/.claude/skills/commit-workflow/SKILL.md"
 
@@ -193,7 +194,7 @@ assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/skills/commit-work
 assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/skills/release-package-check/SKILL.md"
 assert_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.claude/skills/code-review-organizer/SKILL.md"
 assert_not_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/config.toml"
-assert_not_contains "$TMP_DIR/claude-show.out" "$LIVE_DIR/.agents/skills/commit-workflow/SKILL.md"
+assert_not_contains "$TMP_DIR/claude-show.out" "$CODEX_SKILLS_DIR/commit-workflow/SKILL.md"
 
 cat >"$LIVE_DIR/.claude/settings.json" <<JSON
 {
@@ -228,6 +229,11 @@ printf 'stale claude skill\n' >"$LIVE_DIR/.claude/skills/code-review/SKILL.md"
 node "$BIN" update "$PROJECT" >/dev/null
 assert_no_dir "$LIVE_DIR/.agents/skills/code-review"
 assert_no_dir "$LIVE_DIR/.claude/skills/code-review"
+
+mkdir -p "$LIVE_DIR/.agents/skills/commit-workflow"
+printf 'stale codex skill\n' >"$LIVE_DIR/.agents/skills/commit-workflow/SKILL.md"
+node "$BIN" update "$PROJECT" >/dev/null
+assert_no_dir "$LIVE_DIR/.agents/skills/commit-workflow"
 
 mkdir -p "$LIVE_DIR/reviews"
 printf 'legacy review\n' >"$LIVE_DIR/reviews/legacy.md"

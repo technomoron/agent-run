@@ -2763,7 +2763,7 @@ function windowsShim(name) {
                 `echo agent-run: blocked ${name} publish. Review and run it manually, or set AGENT_RUN_ALLOW_PUBLISH=1 for this invocation. 1>&2`,
                 'exit /b 42'
             ];
-    return ['@echo off', ...guard, ':run', `${name}.exe %*`, ''].join('\r\n');
+    return ['@echo off', ...guard, ':run', `${name}.exe %*`, ''].join('\n');
 }
 function isVerbose() {
     return parseBooleanEnv(process.env[VERBOSE_ENV]);

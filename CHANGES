@@ -1,6 +1,11 @@
 CHANGES
 =======
 
+Version 0.99.18 (2026-05-26)
+----------------------------
+* Remove extensionless Node command shim lookup on Windows so generated guard shims resolve real executables correctly.
+* Generate Windows guard shims with LF endings so generated-file checks stay stable with repository line-ending rules.
+
 Version 0.99.17 (2026-05-06)
 ----------------------------
 * Generate Codex native skills under `CODEX_HOME/skills` so runtime skill discovery matches generated profiles.

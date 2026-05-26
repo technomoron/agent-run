@@ -2212,7 +2212,7 @@ function getExecutableExtensions(tool) {
         .split(';')
         .filter((entry) => entry.length > 0)
         .map((entry) => entry.toLowerCase());
-    return [''].concat(pathExt);
+    return pathExt;
 }
 function isExecutable(filePath) {
     try {

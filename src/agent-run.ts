@@ -2713,7 +2713,7 @@ function getExecutableExtensions(tool: string): string[] {
 		.split(';')
 		.filter((entry) => entry.length > 0)
 		.map((entry) => entry.toLowerCase());
-	return [''].concat(pathExt);
+	return pathExt;
 }
 
 function isExecutable(filePath: string): boolean {

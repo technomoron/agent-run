@@ -255,6 +255,40 @@ review files into `reviews/`, moves loose `memory*.md` files into `memories/`,
 and moves old Codex runtime files into `memories/codex-home` when doing so does
 not overwrite existing files.
 
+## Systemd Jobs
+
+The repo includes optional systemd units for keeping global AI tooling current.
+
+Install the global AI tools updater:
+
+```sh
+sudo scripts/install-systemd-jobs.sh --ai-tools
+```
+
+This installs and enables `ai-tools-update.timer`, which runs hourly. The
+package list is configurable through systemd environment overrides:
+
+```text
+AI_TOOLS_NPM_PACKAGES="npm pnpm netlify-cli@latest @openai/codex@latest @anthropic-ai/claude-code@latest @technomoron/agent-run@latest @technomoron/repo-check@latest"
+AI_TOOLS_APT_PACKAGES="gh"
+```
+
+## Login Warning
+
+For user-owned machines, `scripts/agent-config-login-warning.sh` can be called
+from a shell startup file to print a large warning when `~/.agent-config` is a
+dirty git checkout:
+
+```csh
+if ( -x "$HOME/bin/agent-config-login-warning" ) then
+    "$HOME/bin/agent-config-login-warning"
+endif
+```
+
+The helper only reads the git status and exits quietly when the checkout is
+clean or absent. Set `AGENT_CONFIG_TARGET` before calling it to check a
+different config tree.
+
 ## Install
 
 ```sh

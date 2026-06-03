@@ -1,0 +1,11 @@
+[Unit]
+Description=Update global AI and developer CLI packages
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+Environment=NPM_CONFIG_PREFIX=/usr
+Environment=PNPM_HOME=/usr/local/bin
+ExecStart=/usr/local/lib/agent-run/update-ai-tools.sh

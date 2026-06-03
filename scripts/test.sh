@@ -58,6 +58,33 @@ node "$BIN" --help >"$TMP_DIR/help.out"
 assert_contains "$TMP_DIR/help.out" "agent-run $PACKAGE_VERSION"
 assert_contains "$TMP_DIR/help.out" "-V, --version"
 
+bash -n "$ROOT/scripts/update-ai-tools.sh"
+bash -n "$ROOT/scripts/agent-config-login-warning.sh"
+bash -n "$ROOT/scripts/install-systemd-jobs.sh"
+assert_file "$ROOT/ops/systemd/ai-tools-update.service"
+assert_file "$ROOT/ops/systemd/ai-tools-update.timer"
+"$ROOT/scripts/install-systemd-jobs.sh" --dry-run --ai-tools >"$TMP_DIR/install-ai-tools.out"
+assert_contains "$TMP_DIR/install-ai-tools.out" "ai-tools-update.timer"
+
+CONFIG_SOURCE="$TMP_DIR/agent-config-source"
+CONFIG_TARGET="$TMP_DIR/synced-agent-config"
+mkdir -p "$CONFIG_SOURCE"
+git -C "$CONFIG_SOURCE" init -b main >/dev/null
+git -C "$CONFIG_SOURCE" config user.email test@example.com
+git -C "$CONFIG_SOURCE" config user.name "Agent Run Test"
+printf 'agent config\n' >"$CONFIG_SOURCE/README.md"
+git -C "$CONFIG_SOURCE" add README.md
+git -C "$CONFIG_SOURCE" commit -m "Initial config" >/dev/null
+git clone "$CONFIG_SOURCE" "$CONFIG_TARGET" >/dev/null 2>&1
+assert_dir "$CONFIG_TARGET/.git"
+printf 'dirty\n' >"$CONFIG_TARGET/dirty.txt"
+AGENT_CONFIG_TARGET="$CONFIG_TARGET" "$ROOT/scripts/agent-config-login-warning.sh" >"$TMP_DIR/login-warning.out"
+assert_contains "$TMP_DIR/login-warning.out" "WARNING: ~/.agent-config HAS UNCOMMITTED LOCAL CHANGES"
+assert_contains "$TMP_DIR/login-warning.out" "?? dirty.txt"
+rm "$CONFIG_TARGET/dirty.txt"
+AGENT_CONFIG_TARGET="$CONFIG_TARGET" "$ROOT/scripts/agent-config-login-warning.sh" >"$TMP_DIR/login-warning-clean.out"
+[ ! -s "$TMP_DIR/login-warning-clean.out" ] || fail "expected clean agent config warning to stay quiet"
+
 FAKE_GUARD_BIN="$TMP_DIR/fake-guard-bin"
 FAKE_REAL_BIN="$TMP_DIR/fake-real-bin"
 mkdir -p "$FAKE_GUARD_BIN" "$FAKE_REAL_BIN"

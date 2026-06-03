@@ -1,6 +1,11 @@
 CHANGES
 =======
 
+Version 0.99.20 (2026-06-03)
+----------------------------
+* Add systemd unit templates and install tooling for the global AI tools updater.
+* Add a login warning helper that prints a large banner when `~/.agent-config` has uncommitted changes.
+
 Version 0.99.19 (2026-06-03)
 ----------------------------
 * Link per-profile Codex `auth.json` files to the shared `~/.codex/auth.json` login cache when available.

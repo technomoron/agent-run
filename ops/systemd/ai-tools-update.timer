@@ -1,0 +1,11 @@
+[Unit]
+Description=Run AI tool updater hourly
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=1h
+AccuracySec=5m
+Unit=ai-tools-update.service
+
+[Install]
+WantedBy=timers.target

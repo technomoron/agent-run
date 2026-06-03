@@ -1,6 +1,6 @@
 {
   "name": "@technomoron/agent-run",
-  "version": "0.99.19",
+  "version": "0.99.20",
   "packageManager": "pnpm@10.28.1",
   "bin": {
     "agent-run": "dist/agent-run.js"
@@ -8,6 +8,10 @@
   "files": [
     "dist/",
     "examples/",
+    "ops/",
+    "scripts/agent-config-login-warning.sh",
+    "scripts/install-systemd-jobs.sh",
+    "scripts/update-ai-tools.sh",
     "README.md",
     "LICENSE",
     "CHANGES"

@@ -119,6 +119,9 @@ from that private directory, passes the project root with `-C`, and keeps
 generated guard shims on `PATH`. Use `--sandboxed` to request Codex
 `workspace-write`; add `--network` with `--sandboxed` to set
 `sandbox_workspace_write.network_access=true`.
+When `~/.codex/auth.json` exists, profile-specific Codex homes link their
+`auth.json` to that shared login cache so changing profiles does not require a
+new ChatGPT login.
 
 Claude Code currently has no `--cd` equivalent. `agent-run` keeps Claude's
 process cwd at the project root, passes the generated `.claude/agent-run-settings.json`
@@ -157,6 +160,16 @@ Regenerate the generated files for the current repo:
 ```sh
 agent-run update
 ```
+
+Regenerate every profile under the config root without requiring matching code
+checkouts:
+
+```sh
+agent-run update --all ~/.agent-config
+```
+
+If the config root argument is omitted, `update --all` uses the normal configured
+root such as `$HOME/.agent-config`.
 
 You can also generate from a tool command and stop before launch:
 

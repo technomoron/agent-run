@@ -318,17 +318,22 @@ function parseEditCommand(inputArgs) {
     return { command: 'edit', targetPath: path.resolve(targetPath) };
 }
 function parseUpdateCommand(inputArgs) {
+    let all = false;
     let targetPath = process.cwd();
     for (const arg of inputArgs) {
         if (isHelpFlag(arg)) {
             printHelp('update');
+        }
+        if (arg === '--all') {
+            all = true;
+            continue;
         }
         if (arg.startsWith('--')) {
             fail(`unknown update option: ${arg}`);
         }
         targetPath = arg;
     }
-    return { command: 'update', targetPath: path.resolve(targetPath) };
+    return { all, command: 'update', targetPath: path.resolve(targetPath) };
 }
 function parseMigrateConfigCommand(inputArgs) {
     let configRoot = defaultConfigRoot();
@@ -390,9 +395,10 @@ function renderHelp(topic) {
         case 'update':
             return [
                 'Usage:',
-                '  agent-run update [path]',
+                '  agent-run update [--all] [path]',
                 '',
                 'Render generated files, native skills, config, and guard shims for the repo at path.',
+                'With --all, render every profile found under the config root without requiring code checkouts.',
                 ''
             ].join('\n');
         case 'migrate-config':
@@ -420,7 +426,7 @@ function renderHelp(topic) {
                 '  check [--all] [path]                  Validate generated profile output',
                 '  init [path]                           Create profile source files and render output',
                 '  edit [path]                           Open local.md.njk or legacy AGENTS-MODS.md',
-                '  update [path]                         Regenerate profile output',
+                '  update [--all] [path]                 Regenerate profile output',
                 '  migrate-config [config-root]           Convert existing config tree layout',
                 '',
                 'Global options:',
@@ -632,6 +638,10 @@ function runEdit(parsed) {
     openEditor(editPath);
 }
 function runUpdate(parsed) {
+    if (parsed.all) {
+        runUpdateAll(parsed.targetPath);
+        return;
+    }
     const projectRoot = findProjectRoot(parsed.targetPath);
     verbose(`update target=${parsed.targetPath} projectRoot=${projectRoot}`);
     if (isIgnoredDir(projectRoot)) {
@@ -651,6 +661,31 @@ function runUpdate(parsed) {
     createDefaultLocalFile(agentDir, profile);
     const rendered = syncAgentProfile(projectRoot, agentDir);
     printUpdateSummary(rendered);
+}
+function runUpdateAll(targetPath) {
+    const configRoot = targetPath === path.resolve(process.cwd()) ? defaultConfigRoot() : path.resolve(targetPath);
+    verbose(`update --all configRoot=${configRoot}`);
+    if (!fs.existsSync(configRoot)) {
+        fail(`missing config root: ${configRoot}`);
+    }
+    ensureConfigRootLayout(configRoot);
+    ensureConfigRootGitignore(configRoot);
+    ensureDefaultGlobalTemplates(configRoot);
+    const profileDirs = findProfileDirs(configRoot);
+    let updated = 0;
+    for (const agentDir of profileDirs) {
+        const profile = path.relative(configRoot, agentDir).replace(/\\/g, '/');
+        const projectRoot = projectRootForProfile(profile);
+        verbose(`update --all profile=${profile} syntheticProjectRoot=${projectRoot}`);
+        ensureProfileOverridesDir(agentDir);
+        convertLegacyProfileIfNeeded(configRoot, agentDir, profile);
+        createDefaultManifestFile(agentDir, profile);
+        createDefaultLocalFile(agentDir, profile);
+        syncAgentProfile(projectRoot, agentDir, { configRoot, profile });
+        process.stdout.write(`OK ${profile}\n`);
+        updated += 1;
+    }
+    process.stdout.write(`Updated profiles: ${updated}\n`);
 }
 function runMigrateConfig(parsed) {
     const configRoot = parsed.configRoot;
@@ -789,6 +824,23 @@ function findLegacyProfileDirs(configRoot) {
             return 'skip';
         }
         if (fs.existsSync(path.join(fullPath, 'AGENTS-MODS.md'))) {
+            dirs.push(fullPath);
+            return 'skip';
+        }
+        return undefined;
+    });
+    return dirs.sort();
+}
+function findProfileDirs(configRoot) {
+    const dirs = [];
+    walkConfigTree(configRoot, 0, (fullPath, entry) => {
+        if (!entry.isDirectory()) {
+            return undefined;
+        }
+        if (shouldPruneConfigEntry(entry)) {
+            return 'skip';
+        }
+        if (fs.existsSync(path.join(fullPath, MANIFEST_FILE_NAME)) || fs.existsSync(path.join(fullPath, LOCAL_TEMPLATE_FILE_NAME))) {
             dirs.push(fullPath);
             return 'skip';
         }
@@ -1210,9 +1262,9 @@ function copySkeletonTree(sourceDir, targetDir) {
         fs.copyFileSync(sourcePath, targetPath);
     }
 }
-function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = null, trace) {
-    const configRoot = defaultConfigRoot(projectRoot);
-    const profile = resolveProfile(projectRoot);
+function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = null, trace, options) {
+    const configRoot = options?.configRoot ?? defaultConfigRoot(projectRoot);
+    const profile = options?.profile ?? resolveProfile(projectRoot);
     const env = createNunjucksEnv(configRoot);
     const manifest = normalizeManifest(loadManifest(configRoot, agentDir, profile, trace), profile);
     if (manifest.profile !== profile) {
@@ -1269,8 +1321,8 @@ function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = nu
         skills: context.skills
     };
 }
-function syncAgentProfile(projectRoot, agentDir) {
-    const rendered = renderProfile(projectRoot, agentDir, false);
+function syncAgentProfile(projectRoot, agentDir, options) {
+    const rendered = renderProfile(projectRoot, agentDir, false, null, undefined, options);
     syncRuntimeDirs(rendered.context);
     for (const file of rendered.files) {
         writeGeneratedFile(file.path, file.content, file.executable ?? false);
@@ -1449,6 +1501,69 @@ function syncRuntimeDirs(context) {
     migrateLiveReviewFiles(context);
     removeLegacyCodexSkillDirs(context);
     removeLegacyCodeReviewSkillDirs(context);
+    ensureSharedCodexAuth(context.paths.codexHomeDir);
+}
+function ensureSharedCodexAuth(codexHomeDir) {
+    const sharedAuthPath = path.join(os.homedir(), '.codex', 'auth.json');
+    if (!fs.existsSync(sharedAuthPath)) {
+        return;
+    }
+    const profileAuthPath = path.join(codexHomeDir, 'auth.json');
+    if (path.resolve(profileAuthPath) === path.resolve(sharedAuthPath)) {
+        return;
+    }
+    if (fs.existsSync(profileAuthPath) || isSymlink(profileAuthPath)) {
+        if (isSymlinkTo(profileAuthPath, sharedAuthPath)) {
+            return;
+        }
+        const backupPath = nextBackupPath(profileAuthPath);
+        fs.renameSync(profileAuthPath, backupPath);
+        verbose(`backed up profile Codex auth ${profileAuthPath} -> ${backupPath}`);
+    }
+    fs.mkdirSync(path.dirname(profileAuthPath), { recursive: true });
+    try {
+        fs.symlinkSync(sharedAuthPath, profileAuthPath);
+        verbose(`linked profile Codex auth ${profileAuthPath} -> ${sharedAuthPath}`);
+    }
+    catch (error) {
+        if (IS_WINDOWS) {
+            fs.copyFileSync(sharedAuthPath, profileAuthPath);
+            verbose(`copied shared Codex auth ${sharedAuthPath} -> ${profileAuthPath}`);
+            return;
+        }
+        throw error;
+    }
+}
+function isSymlink(filePath) {
+    try {
+        return fs.lstatSync(filePath).isSymbolicLink();
+    }
+    catch {
+        return false;
+    }
+}
+function isSymlinkTo(filePath, targetPath) {
+    try {
+        if (!fs.lstatSync(filePath).isSymbolicLink()) {
+            return false;
+        }
+        const linkTarget = fs.readlinkSync(filePath);
+        const resolvedTarget = path.resolve(path.dirname(filePath), linkTarget);
+        return path.resolve(resolvedTarget) === path.resolve(targetPath);
+    }
+    catch {
+        return false;
+    }
+}
+function nextBackupPath(filePath) {
+    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+    let candidate = `${filePath}.bak.${timestamp}`;
+    let index = 1;
+    while (fs.existsSync(candidate) || isSymlink(candidate)) {
+        candidate = `${filePath}.bak.${timestamp}.${index}`;
+        index += 1;
+    }
+    return candidate;
 }
 function removeLegacyCodexSkillDirs(context) {
     const legacyCodexSkillsDir = path.join(context.paths.liveDir, '.agents', 'skills');
@@ -2070,6 +2185,9 @@ function parseProfile(profile, source) {
         return { profile: null, reason: `${source} must be a clean relative path like org/my-project` };
     }
     return { profile: segments.join('/'), reason: '' };
+}
+function projectRootForProfile(profile) {
+    return path.join(os.homedir(), ...profile.split('/'));
 }
 function readAgentRunEnv(dir) {
     const resolvedDir = path.resolve(dir);

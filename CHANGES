@@ -1,6 +1,11 @@
 CHANGES
 =======
 
+Version 0.99.19 (2026-06-03)
+----------------------------
+* Link per-profile Codex `auth.json` files to the shared `~/.codex/auth.json` login cache when available.
+* Add `agent-run update --all [config-root]` to regenerate every profile from the config tree without requiring code checkouts.
+
 Version 0.99.18 (2026-05-26)
 ----------------------------
 * Remove extensionless Node command shim lookup on Windows so generated guard shims resolve real executables correctly.

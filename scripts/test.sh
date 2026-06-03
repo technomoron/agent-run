@@ -107,6 +107,22 @@ assert_dir "$LIVE_DIR/memories/codex-home"
 assert_dir "$AGENT_DIR/overrides"
 assert_dir "$LIVE_DIR/bin"
 
+TEST_HOME="$TMP_DIR/home"
+mkdir -p "$TEST_HOME/.codex"
+printf '{"token":"shared"}\n' >"$TEST_HOME/.codex/auth.json"
+HOME="$TEST_HOME" node "$BIN" update "$PROJECT" >"$TMP_DIR/update-auth.out"
+assert_contains "$TMP_DIR/update-auth.out" "OK profile starter/basic-project"
+[ -L "$LIVE_DIR/memories/codex-home/auth.json" ] || fail "expected profile auth.json symlink"
+[ "$(readlink "$LIVE_DIR/memories/codex-home/auth.json")" = "$TEST_HOME/.codex/auth.json" ] || fail "expected profile auth.json to link shared auth"
+
+rm "$LIVE_DIR/AGENTS.md"
+HOME="$TEST_HOME" node "$BIN" update --all "$EXAMPLE/agent-config" >"$TMP_DIR/update-all.out"
+assert_contains "$TMP_DIR/update-all.out" "OK starter/basic-project"
+assert_contains "$TMP_DIR/update-all.out" "Updated profiles: 1"
+assert_file "$LIVE_DIR/AGENTS.md"
+
+node "$BIN" update "$PROJECT" >/dev/null
+
 assert_contains "$LIVE_DIR/AGENTS.md" "Starter AGENTS for starter/basic-project"
 assert_contains "$LIVE_DIR/AGENTS.md" "Starter Code Agent"
 assert_contains "$LIVE_DIR/AGENTS.md" 'Use the project root at `'
@@ -317,6 +333,11 @@ assert.equal(parseInvocation('agent-run', ['--local', 'codex']).wrapperArgs.loca
 assert.equal(parseInvocation('agent-run', ['codex', '--show']).wrapperArgs.show, true);
 assert.equal(parseInvocation('agent-run', ['codex', '--generate']).wrapperArgs.generate, true);
 assert.equal(parseInvocation('agent-run', ['--all', 'check', '.']).command, 'check');
+assert.deepEqual(parseInvocation('agent-run', ['update', '--all', '/tmp/agent-config']), {
+	all: true,
+	command: 'update',
+	targetPath: '/tmp/agent-config'
+});
 assert.deepEqual(parseInvocation('agent-run', ['--init', '/tmp/agent-config']), {
 	command: 'init-config',
 	targetPath: '/tmp/agent-config'

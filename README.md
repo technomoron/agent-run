@@ -3,8 +3,8 @@
 Small wrapper for AI coding CLIs like Codex and Claude.
 
 It keeps agent files out of normal repos and stores them in a separate
-agent config tree. That tree can live anywhere; it does not need to sit
-inside the source tree.
+agent config tree. By default, that tree lives beside owner/repo checkouts
+under the same code root.
 
 ## Model
 
@@ -18,27 +18,26 @@ Example:
 
 ```text
 ~/source/
+  agent-config/
+    org/
+      my-api/
+        agent-run.jsonc
+        local.md.njk
+        overrides/
+        AGENTS.md
+        CLAUDE.md
+        config.toml
+        .agents/
+        .claude/
+        bin/
   org/
     my-api/
-
-~/.agent-config/
-  org/
-    my-api/
-      agent-run.jsonc
-      local.md.njk
-      overrides/
-      AGENTS.md
-      CLAUDE.md
-      config.toml
-      .agents/
-      .claude/
-      bin/
 ```
 
-If your source repo is `~/source/org/my-api`, `agent-run` can map it to:
+If your source repo is `~/source/org/my-api`, `agent-run` maps it to:
 
 ```text
-~/.agent-config/org/my-api
+~/source/agent-config/org/my-api
 ```
 
 The source repo stays clean. The agent files live in the matching path under
@@ -93,7 +92,7 @@ AGENT_RUN_PROFILE=org/my-api
 
 Config root:
 
-- default: `~/.agent-config`
+- default for a project at `[code]/owner/repo`: `[code]/agent-config`
 - override with `--config-root /path/to/agent-configs`
 - override with `AGENT_CONFIG_DIR=/path/to/agent-configs`
 - override with `AGENT_CONFIG_ROOT=/path/to/agent-configs`
@@ -169,7 +168,8 @@ agent-run update --all ~/.agent-config
 ```
 
 If the config root argument is omitted, `update --all` uses the normal configured
-root such as `$HOME/.agent-config`.
+root. Without a project path, that falls back to `$HOME/.agent-config`; for
+project commands, the default is `[code]/agent-config`.
 
 You can also generate from a tool command and stop before launch:
 

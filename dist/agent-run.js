@@ -675,7 +675,7 @@ function runUpdateAll(targetPath) {
     let updated = 0;
     for (const agentDir of profileDirs) {
         const profile = path.relative(configRoot, agentDir).replace(/\\/g, '/');
-        const projectRoot = projectRootForProfile(profile);
+        const projectRoot = projectRootForProfile(profile, configRoot);
         verbose(`update --all profile=${profile} syntheticProjectRoot=${projectRoot}`);
         ensureProfileOverridesDir(agentDir);
         convertLegacyProfileIfNeeded(configRoot, agentDir, profile);
@@ -2186,7 +2186,10 @@ function parseProfile(profile, source) {
     }
     return { profile: segments.join('/'), reason: '' };
 }
-function projectRootForProfile(profile) {
+function projectRootForProfile(profile, configRoot) {
+    if (configRoot && path.basename(configRoot) === 'agent-config') {
+        return path.join(path.dirname(configRoot), ...profile.split('/'));
+    }
     return path.join(os.homedir(), ...profile.split('/'));
 }
 function readAgentRunEnv(dir) {
@@ -2251,7 +2254,19 @@ function defaultConfigRoot(projectRoot) {
             return path.resolve(projectRoot, localConfigRoot);
         }
     }
+    if (projectRoot) {
+        return defaultCodeConfigRoot(projectRoot);
+    }
     return path.join(os.homedir(), '.agent-config');
+}
+function defaultCodeConfigRoot(projectRoot) {
+    const resolvedProjectRoot = path.resolve(projectRoot);
+    const ownerDir = path.dirname(resolvedProjectRoot);
+    const codeRoot = path.dirname(ownerDir);
+    if (ownerDir === resolvedProjectRoot || codeRoot === ownerDir) {
+        return path.join(os.homedir(), '.agent-config');
+    }
+    return path.join(codeRoot, 'agent-config');
 }
 function findRealBinary(tool) {
     const pathValue = process.env.PATH || '';

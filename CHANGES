@@ -1,6 +1,12 @@
 CHANGES
 =======
 
+Version 0.99.21 (2026-06-27)
+----------------------------
+* Default project commands for `[code]/owner/repo` checkouts to `[code]/agent-config`.
+* Make `update --all` map profiles under a colocated `agent-config` root back to their matching project roots.
+* Expand integration coverage for the colocated config-root layout and Windows command/path behavior.
+
 Version 0.99.20 (2026-06-03)
 ----------------------------
 * Add systemd unit templates and install tooling for the global AI tools updater.

@@ -29,6 +29,10 @@ if [ ! -f "$ROOT/package.json" ]; then
 	echo "Missing package.json at $ROOT" >&2
 	exit 1
 fi
+PACKAGE_JSON="$ROOT/package.json"
+if command -v cygpath >/dev/null 2>&1; then
+	PACKAGE_JSON="$(cygpath -w "$PACKAGE_JSON")"
+fi
 
 REPO_ROOT="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$REPO_ROOT" ]; then
@@ -64,9 +68,9 @@ if ! is_local_mode && ! is_ci_mode; then
 	fi
 fi
 
-NAME="$(node -p "require('$ROOT/package.json').name")"
-VERSION="$(node -p "require('$ROOT/package.json').version")"
-PRIVATE="$(node -p "Boolean(require('$ROOT/package.json').private)")"
+NAME="$(node -p "require(process.argv[1]).name" "$PACKAGE_JSON")"
+VERSION="$(node -p "require(process.argv[1]).version" "$PACKAGE_JSON")"
+PRIVATE="$(node -p "Boolean(require(process.argv[1]).private)" "$PACKAGE_JSON")"
 
 if [ "$PRIVATE" = "true" ]; then
 	skip "${NAME}: private package."

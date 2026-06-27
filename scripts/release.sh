@@ -2,6 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PACKAGE_JSON="$ROOT/package.json"
+if command -v cygpath >/dev/null 2>&1; then
+	PACKAGE_JSON="$(cygpath -w "$PACKAGE_JSON")"
+fi
 
 cd "$ROOT"
 set +e
@@ -16,8 +20,8 @@ if [ "$status" -ne 0 ]; then
 	exit "$status"
 fi
 
-NAME="$(node -p "require('$ROOT/package.json').name")"
-VERSION="$(node -p "require('$ROOT/package.json').version")"
+NAME="$(node -p "require(process.argv[1]).name" "$PACKAGE_JSON")"
+VERSION="$(node -p "require(process.argv[1]).version" "$PACKAGE_JSON")"
 TAG="${NAME}@${VERSION}"
 
 if git -C "$ROOT" rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then

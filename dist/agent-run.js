@@ -7,6 +7,7 @@ exports.resolveAgentDir = resolveAgentDir;
 exports.findProjectRoot = findProjectRoot;
 exports.resolveProfile = resolveProfile;
 exports.defaultConfigRoot = defaultConfigRoot;
+exports.defaultConfigRootSearchCandidates = defaultConfigRootSearchCandidates;
 const childProcess = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -23,7 +24,7 @@ const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
 const MANIFEST_FILE_NAME = 'agent-run.jsonc';
 const LOCAL_TEMPLATE_FILE_NAME = 'local.md.njk';
 const LIVE_DIR_NAME = 'live';
-const PACKAGE_VERSION = '0.99.16';
+const PACKAGE_VERSION = '0.99.22';
 const UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 const agentRunEnvCache = new Map();
 const GENERATED_GITIGNORE_ENTRIES = [
@@ -524,15 +525,19 @@ function runTool(parsed) {
         fail(profileResult.reason);
     }
     const profile = profileResult.profile;
-    const configRoot = defaultConfigRoot(projectRoot);
-    const agentDir = resolveAgentDir(projectRoot);
     if (wrapperArgs.show) {
+        const configRoot = defaultConfigRoot(projectRoot);
+        const agentDir = path.join(configRoot, profile);
+        verbose(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
         showToolProfile(command, projectRoot, agentDir);
         return;
     }
     if (wrapperArgs.create) {
         runInit({ command: 'init', targetPath: projectRoot });
     }
+    const configRoot = defaultConfigRoot(projectRoot);
+    const agentDir = path.join(configRoot, profile);
+    verbose(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
     ensureRunnableProfile(configRoot, agentDir, profile);
     if (wrapperArgs.generate) {
         const rendered = syncAgentProfile(projectRoot, agentDir);
@@ -588,8 +593,9 @@ function runInit(parsed) {
         return;
     }
     const profile = resolveProfile(projectRoot);
-    const configRoot = defaultConfigRoot(projectRoot);
-    const agentDir = resolveAgentDir(projectRoot);
+    const configRoot = defaultConfigRoot(projectRoot, { preferProjectRoot: true });
+    const agentDir = path.join(configRoot, profile);
+    verbose(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
     ensureConfigRootLayout(configRoot);
     ensureConfigRootGitignore(configRoot);
     ensureDefaultGlobalTemplates(configRoot);
@@ -2232,7 +2238,7 @@ function parseBooleanEnv(value) {
     const normalized = value.trim().toLowerCase();
     return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
-function defaultConfigRoot(projectRoot) {
+function defaultConfigRoot(projectRoot, options = {}) {
     const overrideRoot = process.env[CONFIG_ROOT_OVERRIDE_ENV];
     if (overrideRoot) {
         return path.resolve(overrideRoot);
@@ -2255,9 +2261,15 @@ function defaultConfigRoot(projectRoot) {
         }
     }
     if (projectRoot) {
-        return defaultCodeConfigRoot(projectRoot);
+        const projectConfigRoot = defaultCodeConfigRoot(projectRoot);
+        if (options.preferProjectRoot || fs.existsSync(projectConfigRoot)) {
+            return projectConfigRoot;
+        }
+        const discoveredConfigRoot = findExistingConfigRoot(defaultConfigRootSearchCandidates());
+        return discoveredConfigRoot ?? projectConfigRoot;
     }
-    return path.join(os.homedir(), '.agent-config');
+    const discoveredConfigRoot = findExistingConfigRoot(defaultConfigRootSearchCandidates());
+    return discoveredConfigRoot ?? path.join(os.homedir(), '.agent-config');
 }
 function defaultCodeConfigRoot(projectRoot) {
     const resolvedProjectRoot = path.resolve(projectRoot);
@@ -2267,6 +2279,39 @@ function defaultCodeConfigRoot(projectRoot) {
         return path.join(os.homedir(), '.agent-config');
     }
     return path.join(codeRoot, 'agent-config');
+}
+function findExistingConfigRoot(candidates) {
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+    return null;
+}
+function defaultConfigRootSearchCandidates(_projectRoot, options = {}) {
+    const platform = options.platform ?? process.platform;
+    const pathApi = platform === 'win32' ? path.win32 : path.posix;
+    const homeDir = options.homeDir ?? os.homedir();
+    const configNames = ['agent-config', 'agent-configs'];
+    const candidates = [];
+    if (platform === 'win32') {
+        for (const codeRoot of [pathApi.join(homeDir, 'Documents', 'code'), pathApi.join(homeDir, 'Desktop', 'code'), 'C:\\code']) {
+            for (const configName of configNames) {
+                candidates.push(pathApi.join(codeRoot, configName));
+            }
+        }
+        return candidates;
+    }
+    for (const configName of configNames) {
+        candidates.push(pathApi.join(homeDir, 'code', configName));
+    }
+    for (const configName of configNames) {
+        candidates.push(pathApi.join(homeDir, configName));
+    }
+    for (const configName of configNames) {
+        candidates.push(pathApi.join(homeDir, `.${configName}`));
+    }
+    return candidates;
 }
 function findRealBinary(tool) {
     const pathValue = process.env.PATH || '';
@@ -2740,7 +2785,7 @@ function defaultCodexConfigTemplate() {
         '# Generated by agent-run. Do not edit directly.',
         '',
         'project_doc_max_bytes = 65536',
-        'sandbox_mode = "workspace-write"',
+        'sandbox_mode = "danger-full-access"',
         '',
         '[sandbox_workspace_write]',
         'writable_roots = [',
@@ -2782,7 +2827,7 @@ function defaultCodexConfigContent(context) {
         '# Generated by agent-run. Do not edit directly.',
         '',
         'project_doc_max_bytes = 65536',
-        'sandbox_mode = "workspace-write"',
+        'sandbox_mode = "danger-full-access"',
         '',
         '[sandbox_workspace_write]',
         'writable_roots = [',

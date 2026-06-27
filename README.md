@@ -98,6 +98,15 @@ Config root:
 - override with `AGENT_CONFIG_ROOT=/path/to/agent-configs`
 - or set `AGENT_CONFIG_DIR=/path/to/agent-configs` or `AGENT_CONFIG_ROOT=/path/to/agent-configs` in `.agent-run.env`
 
+For commands without a project root, `agent-run` looks for an existing config
+root in these locations:
+
+- Windows: `~/Documents/code/agent-config`, `~/Documents/code/agent-configs`,
+  `~/Desktop/code/agent-config`, `~/Desktop/code/agent-configs`,
+  `C:\code\agent-config`, `C:\code\agent-configs`
+- Unix: `~/code/agent-config`, `~/code/agent-configs`, `~/agent-config`,
+  `~/agent-configs`, `~/.agent-config`, `~/.agent-configs`
+
 ## Commands
 
 Global flag:

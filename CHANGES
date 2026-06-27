@@ -1,6 +1,12 @@
 CHANGES
 =======
 
+Version 0.99.22 (2026-06-27)
+----------------------------
+* Default generated Codex configs to `danger-full-access` while keeping `--sandboxed` as an explicit opt-in.
+* Search common global config-root locations on Windows and Unix, including both `agent-config` and `agent-configs`.
+* Document the config-root discovery order and add regression coverage for the generated sandbox mode and search candidates.
+
 Version 0.99.21 (2026-06-27)
 ----------------------------
 * Default project commands for `[code]/owner/repo` checkouts to `[code]/agent-config`.

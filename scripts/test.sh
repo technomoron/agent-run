@@ -210,6 +210,7 @@ assert_file "$LIVE_DIR/AGENTS.md"
 assert_file "$LIVE_DIR/CLAUDE.md"
 assert_file "$LIVE_DIR/.claude/CLAUDE.md"
 assert_file "$LIVE_DIR/config.toml"
+assert_contains "$LIVE_DIR/config.toml" 'sandbox_mode = "danger-full-access"'
 assert_file "$LIVE_DIR/.claude/agent-run-settings.json"
 assert_file "$CODEX_SKILLS_DIR/triage/SKILL.md"
 assert_file "$LIVE_DIR/.claude/skills/triage/SKILL.md"
@@ -444,7 +445,7 @@ node "$BIN" check "$PROJECT" >/dev/null
 node --input-type=module <<'EOF'
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { parseInvocation } from './dist/agent-run.js';
+import { defaultConfigRootSearchCandidates, parseInvocation } from './dist/agent-run.js';
 
 assert.deepEqual(
 	parseInvocation('agent-run', ['codex', '--sandboxed', '--network', 'hello']),
@@ -478,6 +479,22 @@ assert.deepEqual(parseInvocation('agent-run', ['--init', '/tmp/agent-config']), 
 	command: 'init-config',
 	targetPath: path.resolve('/tmp/agent-config')
 });
+assert.deepEqual(defaultConfigRootSearchCandidates(undefined, { platform: 'win32', homeDir: 'C:\\Users\\alice' }), [
+	'C:\\Users\\alice\\Documents\\code\\agent-config',
+	'C:\\Users\\alice\\Documents\\code\\agent-configs',
+	'C:\\Users\\alice\\Desktop\\code\\agent-config',
+	'C:\\Users\\alice\\Desktop\\code\\agent-configs',
+	'C:\\code\\agent-config',
+	'C:\\code\\agent-configs'
+]);
+assert.deepEqual(defaultConfigRootSearchCandidates(undefined, { platform: 'linux', homeDir: '/home/alice' }), [
+	'/home/alice/code/agent-config',
+	'/home/alice/code/agent-configs',
+	'/home/alice/agent-config',
+	'/home/alice/agent-configs',
+	'/home/alice/.agent-config',
+	'/home/alice/.agent-configs'
+]);
 EOF
 
 echo "All tests passed"

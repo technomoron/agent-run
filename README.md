@@ -285,6 +285,7 @@ package list is configurable through systemd environment overrides:
 
 ```text
 AI_TOOLS_NPM_PACKAGES="npm@latest pnpm@latest corepack@latest fallow@latest ripgrep@latest pm2@latest tsx@latest typescript@latest @openai/codex@latest @anthropic-ai/claude-code@latest @technomoron/agent-run@latest"
+AI_TOOLS_PNPM_PACKAGE="pnpm@latest"
 AI_TOOLS_APT_PACKAGES="gh"
 ```
 

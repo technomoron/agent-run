@@ -10,6 +10,7 @@ NPM_BIN="${AI_TOOLS_NPM_BIN:-/usr/local/bin/npm}"
 APT_GET_BIN="${AI_TOOLS_APT_GET_BIN:-/usr/bin/apt-get}"
 
 AI_TOOLS_NPM_PACKAGES="${AI_TOOLS_NPM_PACKAGES:-npm@latest pnpm@latest corepack@latest fallow@latest ripgrep@latest pm2@latest tsx@latest typescript@latest @openai/codex@latest @anthropic-ai/claude-code@latest @technomoron/agent-run@latest}"
+AI_TOOLS_PNPM_PACKAGE="${AI_TOOLS_PNPM_PACKAGE:-pnpm@latest}"
 AI_TOOLS_APT_PACKAGES="${AI_TOOLS_APT_PACKAGES:-gh}"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -20,6 +21,13 @@ fi
 if [ -n "$AI_TOOLS_NPM_PACKAGES" ]; then
 	read -r -a npm_packages <<<"$AI_TOOLS_NPM_PACKAGES"
 	"$NPM_BIN" install -g --force "${npm_packages[@]}"
+fi
+
+# corepack and pnpm both own the pnpm/pnpx shims; install pnpm last so npm's
+# current pnpm package remains the command users execute.
+if [ -n "$AI_TOOLS_PNPM_PACKAGE" ]; then
+	read -r -a pnpm_packages <<<"$AI_TOOLS_PNPM_PACKAGE"
+	"$NPM_BIN" install -g --force "${pnpm_packages[@]}"
 fi
 
 CLAUDE_INSTALL="$("$NPM_BIN" root -g)/@anthropic-ai/claude-code/install.cjs"

@@ -5,6 +5,8 @@ Unreleased
 ----------
 * Allow failed tag releases to be retried through a manual workflow dispatch,
   and omit npm provenance when the GitHub source repository is private.
+* Reinstall pnpm after Corepack updates so `/usr/local/bin/pnpm` runs the latest
+  npm-installed pnpm while projects keep honoring their pinned package manager.
 
 Version 0.99.23 (2026-07-11)
 ----------------------------

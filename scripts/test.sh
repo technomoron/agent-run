@@ -138,6 +138,8 @@ assert_contains "$ROOT/ops/systemd/ai-tools-update.service" "ExecStart=/usr/loca
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "/etc/environment"
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "/etc/npmrc"
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "rm -"
+assert_contains "$ROOT/scripts/update-ai-tools.sh" "AI_TOOLS_PNPM_PACKAGE"
+assert_contains "$ROOT/scripts/update-ai-tools.sh" "install -g --force \"\${pnpm_packages[@]}\""
 "$ROOT/scripts/install-systemd-jobs.sh" --dry-run --ai-tools >"$TMP_DIR/install-ai-tools.out"
 assert_contains "$TMP_DIR/install-ai-tools.out" "ai-tools-update.timer"
 

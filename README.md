@@ -19,11 +19,12 @@ Example:
 ```text
 ~/source/
   agent-config/
+    agent-run.defaults.jsonc
     org/
       my-api/
         agent-run.jsonc
-        local.md.njk
-        overrides/
+        local.md.njk       # optional
+        overrides/         # optional
         live/
           CLAUDE.md
           .claude/
@@ -48,8 +49,9 @@ the agent config tree.
 
 ## File Roles
 
-- `agent-run.jsonc`: profile manifest
-- `local.md.njk`: source file you edit for project-specific instructions
+- `agent-run.defaults.jsonc`: config-root defaults shared by every profile
+- `agent-run.jsonc`: sparse profile manifest and profile-discovery marker
+- `local.md.njk`: optional project-specific instructions
 - `overrides/`: optional per-profile template overrides
 - `live/memories/codex-home/AGENTS.md`: generated Codex instructions
 - `live/memories/codex-home/config.toml`: generated Codex config
@@ -57,7 +59,30 @@ the agent config tree.
 - `live/CLAUDE.md`: generated Claude instructions
 - `live/.claude/`: generated Claude settings and local plugin skills
 
-Edit `local.md.njk` and `agent-run.jsonc`. `agent-run` keeps generated files in sync.
+Edit only the root defaults and profile overrides that differ. `agent-run` keeps
+generated files in sync.
+
+## Manifest Defaults
+
+Manifest values are resolved in this order:
+
+1. built-in defaults
+2. `<config-root>/agent-run.defaults.jsonc`
+3. `<config-root>/<profile>/agent-run.jsonc`
+
+Nested manifest objects are merged. Arrays such as `checks`, `agent.includes`,
+and `skills.install` replace the inherited array instead of being appended.
+The profile name is always inferred from project mapping; the root defaults file
+must not set `profile`.
+
+A profile with no differences from the root defaults needs only this marker:
+
+```json
+{}
+```
+
+`local.md.njk` and `overrides/` are not created unless they contain actual
+profile-specific configuration.
 
 ## Profile Resolution
 
@@ -153,12 +178,9 @@ Initialize mapped files for the current repo:
 agent-run init
 ```
 
-This creates the mapped profile directory if needed and ensures these source
-files/directories exist:
-
-- `agent-run.jsonc`
-- `local.md.njk`
-- `overrides/`
+This creates `<config-root>/agent-run.defaults.jsonc` when needed and a minimal
+`agent-run.jsonc` marker for the mapped profile. It does not create empty local
+instruction or override files.
 
 Edit the source file for the current repo:
 
@@ -166,14 +188,18 @@ Edit the source file for the current repo:
 agent-run edit
 ```
 
-This creates missing files, syncs generated files, then opens `local.md.njk`
-in your editor.
+This creates `local.md.njk` when needed, syncs generated files, then opens it in
+your editor.
 
 Regenerate the generated files for the current repo:
 
 ```sh
 agent-run update
 ```
+
+`update` requires an existing profile marker or local/legacy instruction file;
+it does not silently scaffold an unconfigured project. Use `agent-run init` or
+the tool command's `--create` option first.
 
 Regenerate every profile under the config root without requiring matching code
 checkouts:
@@ -193,15 +219,15 @@ agent-run codex --generate
 agent-run claude --generate
 ```
 
-This reads `agent-run.jsonc` and Nunjucks templates from the mapped profile
-directory and rewrites generated files:
+This reads the root defaults, sparse profile manifest, and Nunjucks templates,
+then rewrites generated files:
 
-- `CLAUDE.md`
-- `memories/codex-home/AGENTS.md`
-- `memories/codex-home/config.toml`
-- `memories/codex-home/skills/**`
-- `.claude/**`
-- `bin/**`
+- `live/CLAUDE.md`
+- `live/memories/codex-home/AGENTS.md`
+- `live/memories/codex-home/config.toml`
+- `live/memories/codex-home/skills/**`
+- `live/.claude/**`
+- `live/bin/**`
 
 Per-profile override templates can be placed in:
 
@@ -211,10 +237,10 @@ Per-profile override templates can be placed in:
 ## Starter Config
 
 A complete starter lives in `examples/basic-config`. It includes a minimal
-project, `.agent-run.env`, a config root with global templates and snippets,
-profile-local templates, skill templates, a personal memory skill, profile
-skill overrides, tool config overrides, guardrails, checks, and generated
-runtime paths.
+project, `.agent-run.env`, root manifest defaults, global templates and
+snippets, profile-local templates, skill templates, a personal memory skill,
+profile skill overrides, tool config overrides, guardrails, checks, and
+generated runtime paths.
 
 To copy the packaged starter config root into your default config location:
 
@@ -264,11 +290,11 @@ Migrate an existing config tree to the manifest/template layout:
 agent-run migrate-config ~/.agent-config
 ```
 
-This preserves `AGENTS-MODS.md`, creates `local.md.njk`, `agent-run.jsonc`, and
-`overrides/` for legacy profiles, creates the `global/` templates, moves loose
-review files into `reviews/`, moves loose `memory*.md` files into `memories/`,
-and moves old Codex runtime files into `memories/codex-home` when doing so does
-not overwrite existing files.
+This preserves `AGENTS-MODS.md`, creates `local.md.njk` and a sparse
+`agent-run.jsonc` marker for legacy profiles, creates the root defaults and
+`global/` templates, moves loose review files into `reviews/`, moves loose
+`memory*.md` files into `memories/`, and moves old Codex runtime files into
+`live/memories/codex-home` without overwriting existing files.
 
 ## Systemd Jobs
 

@@ -1,6 +1,16 @@
 CHANGES
 =======
 
+Version 0.99.25 (2026-07-11)
+----------------------------
+* Add config-root `agent-run.defaults.jsonc` inheritance so project manifests
+  contain only overrides, with nested-object merging and array replacement.
+* Stop creating empty local templates and override directories, require an
+  explicit sparse profile marker for updates and tool runs, and keep `edit` as
+  the command that creates local instructions.
+* Split the TypeScript CLI into focused parsing, configuration, rendering,
+  project-discovery, checking, process, and tool-runtime modules.
+
 Version 0.99.24 (2026-07-11)
 ----------------------------
 * Allow failed tag releases to be retried through a manual workflow dispatch,

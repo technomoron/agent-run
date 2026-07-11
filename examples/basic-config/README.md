@@ -7,9 +7,9 @@ It contains two pieces:
 
 - `project/`: a minimal project with `.agent-run.env` pointing at the bundled
   config root.
-- `agent-config/`: a complete config root with global templates, snippets,
-  skill templates, a personal memory skill, a profile manifest, profile-local
-  instructions, and profile overrides.
+- `agent-config/`: a complete config root with shared manifest defaults, global
+  templates, snippets, skill templates, a personal memory skill, a sparse
+  profile manifest, profile-local instructions, and profile overrides.
 
 Try it from this repository after building:
 

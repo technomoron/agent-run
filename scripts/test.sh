@@ -102,6 +102,7 @@ if command -v cygpath >/dev/null 2>&1; then
 	EXPECTED_CODEX_CONFIG_FILE="$EXPECTED_CODEX_HOME_DIR\\config.toml"
 	EXPECTED_CODEX_SKILLS_DIR="$EXPECTED_CODEX_HOME_DIR\\skills"
 	EXPECTED_AGENT_CONFIG_FILE="$EXPECTED_AGENT_DIR\\agent-run.jsonc"
+	EXPECTED_ROOT_DEFAULTS_FILE="$EXPECTED_EXAMPLE\\agent-config\\agent-run.defaults.jsonc"
 	EXPECTED_LOCAL_FILE="$EXPECTED_AGENT_DIR\\local.md.njk"
 	EXPECTED_GLOBAL_SNIPPET="$EXPECTED_EXAMPLE\\agent-config\\global\\snippets\\git-rules.md.njk"
 else
@@ -114,6 +115,7 @@ else
 	EXPECTED_CODEX_CONFIG_FILE="$EXPECTED_CODEX_HOME_DIR/config.toml"
 	EXPECTED_CODEX_SKILLS_DIR="$EXPECTED_CODEX_HOME_DIR/skills"
 	EXPECTED_AGENT_CONFIG_FILE="$EXPECTED_AGENT_DIR/agent-run.jsonc"
+	EXPECTED_ROOT_DEFAULTS_FILE="$EXPECTED_EXAMPLE/agent-config/agent-run.defaults.jsonc"
 	EXPECTED_LOCAL_FILE="$EXPECTED_AGENT_DIR/local.md.njk"
 	EXPECTED_GLOBAL_SNIPPET="$EXPECTED_EXAMPLE/agent-config/global/snippets/git-rules.md.njk"
 fi
@@ -191,6 +193,7 @@ SKELETON_INIT="$TMP_DIR/copied-agent-config"
 node "$BIN" --init "$SKELETON_INIT" >"$TMP_DIR/init-config.out"
 assert_contains "$TMP_DIR/init-config.out" "OK copied starter config to"
 assert_file "$SKELETON_INIT/.gitignore"
+assert_file "$SKELETON_INIT/agent-run.defaults.jsonc"
 assert_file "$SKELETON_INIT/global/agents/code.md.njk"
 assert_file "$SKELETON_INIT/global/tool-templates/AGENTS.md.njk"
 assert_file "$SKELETON_INIT/global/skills/triage/SKILL.md.njk"
@@ -218,14 +221,42 @@ JSON
 node "$BIN" init "$DEFAULT_PROJECT" >"$TMP_DIR/default-code-root-init.out"
 assert_contains "$TMP_DIR/default-code-root-init.out" "OK profile acme/widget"
 assert_file "$DEFAULT_CONFIG_ROOT/.gitignore"
+assert_file "$DEFAULT_CONFIG_ROOT/agent-run.defaults.jsonc"
 assert_file "$DEFAULT_AGENT_DIR/agent-run.jsonc"
-assert_file "$DEFAULT_AGENT_DIR/local.md.njk"
+assert_contains "$DEFAULT_AGENT_DIR/agent-run.jsonc" "{}"
+assert_no_file "$DEFAULT_AGENT_DIR/local.md.njk"
+assert_no_dir "$DEFAULT_AGENT_DIR/overrides"
 assert_file "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
 assert_no_dir "$TMP_DIR/.agent-config"
 rm "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
 node "$BIN" update --all "$DEFAULT_CONFIG_ROOT" >"$TMP_DIR/default-code-root-update-all.out"
 assert_contains "$TMP_DIR/default-code-root-update-all.out" "OK acme/widget"
 assert_file "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
+
+UNCONFIGURED_PROJECT="$DEFAULT_CODE_ROOT/acme/unconfigured"
+UNCONFIGURED_AGENT_DIR="$DEFAULT_CONFIG_ROOT/acme/unconfigured"
+mkdir -p "$UNCONFIGURED_PROJECT"
+printf '{"name":"@acme/unconfigured","private":true}\n' >"$UNCONFIGURED_PROJECT/package.json"
+set +e
+node "$BIN" update "$UNCONFIGURED_PROJECT" >"$TMP_DIR/unconfigured-update.out" 2>&1
+unconfigured_update_status=$?
+set -e
+[ "$unconfigured_update_status" -ne 0 ] || fail "expected update to reject an unconfigured profile"
+assert_contains "$TMP_DIR/unconfigured-update.out" "run \`agent-run init\`"
+assert_no_dir "$UNCONFIGURED_AGENT_DIR"
+
+CREATE_HOME="$TMP_DIR/create-home"
+CREATE_CODE_ROOT="$TMP_DIR/create-code"
+CREATE_PROJECT="$CREATE_CODE_ROOT/acme/created"
+CREATE_AGENT_DIR="$CREATE_CODE_ROOT/agent-config/acme/created"
+mkdir -p "$CREATE_HOME/.agent-config" "$CREATE_PROJECT"
+printf '{"name":"@acme/created","private":true}\n' >"$CREATE_PROJECT/package.json"
+(cd "$CREATE_PROJECT" && HOME="$CREATE_HOME" USERPROFILE="$CREATE_HOME" node "$BIN" codex --create --generate >"$TMP_DIR/create-generate.out")
+assert_contains "$TMP_DIR/create-generate.out" "OK profile acme/created"
+assert_file "$CREATE_AGENT_DIR/agent-run.jsonc"
+assert_no_file "$CREATE_AGENT_DIR/local.md.njk"
+assert_no_dir "$CREATE_AGENT_DIR/overrides"
+assert_no_dir "$CREATE_HOME/.agent-config/acme/created"
 
 node "$BIN" update "$PROJECT" >"$TMP_DIR/update.out"
 assert_contains "$TMP_DIR/update.out" "OK profile starter/basic-project"
@@ -270,6 +301,8 @@ else
 fi
 
 rm "$CODEX_AGENTS_FILE"
+mkdir -p "$EXAMPLE/agent-config/orphaned/acme/old-profile"
+printf '{}\n' >"$EXAMPLE/agent-config/orphaned/acme/old-profile/agent-run.jsonc"
 HOME="$TEST_HOME" USERPROFILE="$TEST_HOME" node "$BIN" update --all "$EXAMPLE/agent-config" >"$TMP_DIR/update-all.out"
 assert_contains "$TMP_DIR/update-all.out" "OK starter/basic-project"
 assert_contains "$TMP_DIR/update-all.out" "Updated profiles: 1"
@@ -295,6 +328,7 @@ assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"AGENT_GLOBAL_MEMOR
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "$EXPECTED_MEMORY_DIR"
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "\"AGENT_PROFILE_DIR\": \"$EXPECTED_AGENT_DIR\""
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm test)"
+assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm run cleanbuild)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(git *)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(npm *)"
 assert_contains "$CODEX_SKILLS_DIR/triage/SKILL.md" "Starter Triage"
@@ -395,6 +429,7 @@ assert_no_file "$TMP_DIR/codex-show-args.out"
 assert_contains "$TMP_DIR/codex-show.out" "Agent: codex"
 assert_contains "$TMP_DIR/codex-show.out" "Reads/includes:"
 assert_contains "$TMP_DIR/codex-show.out" "$EXPECTED_AGENT_CONFIG_FILE"
+assert_contains "$TMP_DIR/codex-show.out" "$EXPECTED_ROOT_DEFAULTS_FILE"
 assert_contains "$TMP_DIR/codex-show.out" "$EXPECTED_GLOBAL_SNIPPET"
 assert_contains "$TMP_DIR/codex-show.out" "$EXPECTED_LOCAL_FILE"
 assert_contains "$TMP_DIR/codex-show.out" "Generates:"
@@ -489,6 +524,7 @@ node - "$AGENT_DIR/agent-run.jsonc" <<'NODE'
 const fs = require('node:fs');
 const file = process.argv[2];
 const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+manifest.tools ??= {};
 manifest.tools.codex = false;
 fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
@@ -508,6 +544,7 @@ node - "$AGENT_DIR/agent-run.jsonc" <<'NODE'
 const fs = require('node:fs');
 const file = process.argv[2];
 const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+manifest.tools ??= {};
 manifest.tools.codex = true;
 manifest.tools.claude = false;
 fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -531,6 +568,7 @@ node - "$AGENT_DIR/agent-run.jsonc" <<'NODE'
 const fs = require('node:fs');
 const file = process.argv[2];
 const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+manifest.guardrails ??= {};
 manifest.guardrails.blockGitWrite = false;
 manifest.guardrails.blockPublish = false;
 manifest.guardrails.blockGithubRelease = false;
@@ -658,6 +696,7 @@ node - "$AGENT_DIR/agent-run.jsonc" <<'NODE'
 const fs = require('node:fs');
 const file = process.argv[2];
 const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+manifest.guardrails ??= {};
 manifest.guardrails.forbidRepoAiFiles = false;
 fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE

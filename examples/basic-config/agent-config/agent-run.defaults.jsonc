@@ -1,0 +1,38 @@
+{
+  // Shared defaults; profile manifests contain only differences.
+  "kind": "code",
+  "agent": {
+    "base": "global/agents/code.md.njk",
+    "includes": [
+      "{{ profile }}/local.md.njk"
+    ]
+  },
+  "skills": {
+    "install": [
+      "commit-workflow",
+      "github-release",
+      "release-package-check",
+      "code-review-organizer"
+    ]
+  },
+  "tools": {
+    "codex": true,
+    "claude": true
+  },
+  "checks": [
+    "agent-run check .",
+    "pnpm run cleanbuild"
+  ],
+  "guardrails": {
+    "blockGitWrite": true,
+    "blockPublish": true,
+    "blockGithubRelease": true,
+    "forbidRepoAiFiles": true
+  },
+  "paths": {
+    "changesFile": "{{ projectRoot }}/CHANGES",
+    "reviewDir": "{{ profileDir }}/reviews",
+    "reviewFile": "{{ profileDir }}/reviews/REVIEW-{{ date }}.md",
+    "memoriesDir": "{{ agentDir }}/memories"
+  }
+}

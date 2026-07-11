@@ -1,8 +1,5 @@
 {
-  "profile": "starter/basic-project",
-  "kind": "code",
   "agent": {
-    "base": "global/agents/code.md.njk",
     "includes": [
       "{{ profile }}/local.md.njk",
       "{{ profile }}/project-rules.md.njk"
@@ -20,25 +17,8 @@
       "triage": "{{ profile }}/overrides/triage.SKILL.md.njk"
     }
   },
-  "tools": {
-    "codex": true,
-    "claude": true
-  },
   "checks": [
     "agent-run check .",
-    "pnpm run cleanbuild",
     "pnpm test"
-  ],
-  "guardrails": {
-    "blockGitWrite": true,
-    "blockPublish": true,
-    "blockGithubRelease": true,
-    "forbidRepoAiFiles": true
-  },
-  "paths": {
-    "changesFile": "{{ projectRoot }}/CHANGES",
-    "reviewDir": "{{ profileDir }}/reviews",
-    "reviewFile": "{{ profileDir }}/reviews/REVIEW-{{ date }}.md",
-    "memoriesDir": "{{ agentDir }}/memories"
-  }
+  ]
 }

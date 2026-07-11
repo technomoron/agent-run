@@ -208,7 +208,7 @@ const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
 const MANIFEST_FILE_NAME = 'agent-run.jsonc';
 const LOCAL_TEMPLATE_FILE_NAME = 'local.md.njk';
 const LIVE_DIR_NAME = 'live';
-const PACKAGE_VERSION = '0.99.23';
+const PACKAGE_VERSION = '0.99.24';
 const UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 const agentRunEnvCache = new Map<string, Record<string, string>>();
 

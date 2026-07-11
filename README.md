@@ -24,12 +24,15 @@ Example:
         agent-run.jsonc
         local.md.njk
         overrides/
-        AGENTS.md
-        CLAUDE.md
-        config.toml
-        .agents/
-        .claude/
-        bin/
+        live/
+          CLAUDE.md
+          .claude/
+          bin/
+          memories/
+            codex-home/
+              AGENTS.md
+              config.toml
+              skills/
   org/
     my-api/
 ```
@@ -48,10 +51,11 @@ the agent config tree.
 - `agent-run.jsonc`: profile manifest
 - `local.md.njk`: source file you edit for project-specific instructions
 - `overrides/`: optional per-profile template overrides
-- `AGENTS.md`: generated Codex instructions
-- `CLAUDE.md`: generated Claude instructions
-- `config.toml`: generated Codex config
-- `.agents/` and `.claude/`: generated native skill/config homes
+- `live/memories/codex-home/AGENTS.md`: generated Codex instructions
+- `live/memories/codex-home/config.toml`: generated Codex config
+- `live/memories/codex-home/skills/`: generated Codex skills
+- `live/CLAUDE.md`: generated Claude instructions
+- `live/.claude/`: generated Claude settings and local plugin skills
 
 Edit `local.md.njk` and `agent-run.jsonc`. `agent-run` keeps generated files in sync.
 
@@ -121,25 +125,27 @@ through to the underlying tool.
 For `codex` and `claude`, use `--generate` to generate profile files without
 launching the underlying tool.
 
-Codex defaults to `--danger`, which launches Codex with `-a never -s danger-full-access`,
-sets `CODEX_HOME` under the private agent directory, starts the Codex process
-from that private directory, passes the project root with `-C`, and keeps
-generated guard shims on `PATH`. Use `--sandboxed` to request Codex
-`workspace-write`; add `--network` with `--sandboxed` to set
-`sandbox_workspace_write.network_access=true`.
+Codex defaults to `-a on-request -s workspace-write`. `agent-run` sets
+`CODEX_HOME` under the private agent directory, where Codex discovers the
+generated `AGENTS.md`, `config.toml`, and skills natively. It starts Codex from
+that private directory, passes the project root with `-C`, and keeps generated
+guard shims on `PATH`. Use `--danger` explicitly for
+`-a never -s danger-full-access`; use `--network` to enable network access in
+the workspace-write sandbox.
 When `~/.codex/auth.json` exists, profile-specific Codex homes link their
 `auth.json` to that shared login cache so changing profiles does not require a
 new ChatGPT login.
 
 Claude Code currently has no `--cd` equivalent. `agent-run` keeps Claude's
-process cwd at the project root, passes the generated `.claude/agent-run-settings.json`
-with `--settings`, and allows both the project root and private agent directory
-with `--add-dir`.
+process cwd at the project root, appends the generated `CLAUDE.md` with
+`--append-system-prompt-file`, passes generated settings with `--settings`, and
+loads generated skills from a local plugin with `--plugin-dir`. It does not
+replace the user's normal `CLAUDE_CONFIG_DIR`.
 
 By default, `agent-run codex` and `agent-run claude` fail when local AI files
-such as `AGENTS.md`, `CLAUDE.md`, `.agents`, `.claude`, or `.codex` are present
-inside the project repository. Use `--local` to warn and continue for a specific
-invocation.
+such as `AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.agents`,
+`.claude`, or `.codex` are present inside the project repository. Use `--local`
+to warn and continue for a specific invocation.
 
 Initialize mapped files for the current repo:
 
@@ -190,9 +196,9 @@ agent-run claude --generate
 This reads `agent-run.jsonc` and Nunjucks templates from the mapped profile
 directory and rewrites generated files:
 
-- `AGENTS.md`
 - `CLAUDE.md`
-- `config.toml`
+- `memories/codex-home/AGENTS.md`
+- `memories/codex-home/config.toml`
 - `memories/codex-home/skills/**`
 - `.claude/**`
 - `bin/**`
@@ -242,7 +248,7 @@ This reports:
 
 - local AI files accidentally present in the source repo
 - missing mapped files
-- stale `AGENTS.md`
+- stale generated Codex instructions or config
 - invalid `CLAUDE.md`
 - profile resolution problems
 
@@ -278,7 +284,7 @@ This installs and enables `ai-tools-update.timer`, which runs hourly. The
 package list is configurable through systemd environment overrides:
 
 ```text
-AI_TOOLS_NPM_PACKAGES="npm pnpm netlify-cli@latest @openai/codex@latest @anthropic-ai/claude-code@latest @technomoron/agent-run@latest @technomoron/repo-check@latest"
+AI_TOOLS_NPM_PACKAGES="npm@latest pnpm@latest corepack@latest fallow@latest ripgrep@latest pm2@latest tsx@latest typescript@latest @openai/codex@latest @anthropic-ai/claude-code@latest @technomoron/agent-run@latest"
 AI_TOOLS_APT_PACKAGES="gh"
 ```
 

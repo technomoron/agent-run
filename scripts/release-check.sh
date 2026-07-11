@@ -47,7 +47,7 @@ fi
 
 if ! is_local_mode && ! is_ci_mode; then
 	BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
-	UPSTREAM="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || true)"
+	UPSTREAM="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
 	if [ -z "$UPSTREAM" ]; then
 		echo "No upstream configured for ${BRANCH} in ${REPO_ROOT}. Set upstream before release." >&2
 		exit 1
@@ -58,9 +58,7 @@ if ! is_local_mode && ! is_ci_mode; then
 		exit 1
 	fi
 
-	set -- $(git -C "$REPO_ROOT" rev-list --left-right --count "${UPSTREAM}...HEAD")
-	BEHIND="$1"
-	AHEAD="$2"
+	read -r BEHIND AHEAD < <(git -C "$REPO_ROOT" rev-list --left-right --count "${UPSTREAM}...HEAD")
 	if [ "$BEHIND" -ne 0 ] || [ "$AHEAD" -ne 0 ]; then
 		echo "Branch ${BRANCH} is not in sync with ${UPSTREAM} in ${REPO_ROOT} (behind ${BEHIND}, ahead ${AHEAD})." >&2
 		echo "Pull/push until branch matches upstream before release." >&2
@@ -152,7 +150,13 @@ if [ -z "$BASE_REF" ]; then
 	BASE_REF="$(git -C "$REPO_ROOT" rev-list --max-parents=0 HEAD | head -n1)"
 fi
 
-if ! git -C "$REPO_ROOT" diff --name-only "$BASE_REF"..HEAD -- . | grep -q .; then
+if is_local_mode; then
+	CHANGED_FILES="$(git -C "$REPO_ROOT" diff --name-only "$BASE_REF" -- .)"
+else
+	CHANGED_FILES="$(git -C "$REPO_ROOT" diff --name-only "$BASE_REF"..HEAD -- .)"
+fi
+
+if [ -z "$CHANGED_FILES" ]; then
 	skip "${NAME}: no changes since ${LAST_TAG:-initial commit}."
 fi
 

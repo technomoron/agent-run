@@ -1,13 +1,12 @@
 # Starter global Codex config
 project_doc_max_bytes = 32768
-sandbox_mode = "danger-full-access"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
 
 [sandbox_workspace_write]
 writable_roots = [
-  "{{ projectRoot }}",
-  "{{ agentDir }}",
-  "{{ profileDir }}",
-  "{{ paths.memoriesDir }}",
-  "{{ paths.globalMemoryDir }}"
+  {{ projectRoot | dump }},
+  {{ paths.reviewDir | dump }},
+  {{ paths.memoriesDir | dump }}
 ]
 network_access = false

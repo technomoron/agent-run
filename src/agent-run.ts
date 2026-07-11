@@ -4,6 +4,7 @@ import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import crossSpawn = require('cross-spawn');
 import { parse as parseJsonc, ParseError, printParseErrorCode } from 'jsonc-parser';
 import * as nunjucks from 'nunjucks';
 
@@ -148,6 +149,7 @@ type RenderContext = {
 	configRoot: string;
 	date: string;
 	checks: string[];
+	tools: NormalizedManifest['tools'];
 	guardrails: NormalizedManifest['guardrails'];
 	permissionsAllow: string[];
 	paths: {
@@ -190,14 +192,23 @@ type RenderTrace = {
 const IS_WINDOWS = process.platform === 'win32';
 const ENV_FILE_NAME = '.agent-run.env';
 const IGNORE_FILE_NAME = '.agent-run-ignore';
-const LOCAL_AI_FILE_NAMES = new Set(['AGENTS.md', 'AGENTS-MODS.md', 'AGENTS.override.md', 'CLAUDE.md', 'codex.md']);
+const LOCAL_AI_FILE_NAMES = new Set([
+	'AGENTS.md',
+	'AGENTS-MODS.md',
+	'AGENTS.override.md',
+	'CLAUDE.md',
+	'CLAUDE.local.md',
+	'.mcp.json',
+	'codex.md'
+]);
+const LOCAL_AI_DIRECTORY_NAMES = new Set(['.agents', '.claude', '.codex']);
 const CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
 const CONFIG_DIR_ENV = 'AGENT_CONFIG_DIR';
 const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
 const MANIFEST_FILE_NAME = 'agent-run.jsonc';
 const LOCAL_TEMPLATE_FILE_NAME = 'local.md.njk';
 const LIVE_DIR_NAME = 'live';
-const PACKAGE_VERSION = '0.99.22';
+const PACKAGE_VERSION = '0.99.23';
 const UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 const agentRunEnvCache = new Map<string, Record<string, string>>();
 
@@ -206,7 +217,24 @@ const GENERATED_GITIGNORE_ENTRIES = [
 	'**/live/',
 	'',
 	'# Optional generated caches',
-	'**/.agent-run-cache/'
+	'**/.agent-run-cache/',
+	'',
+	'# Legacy Codex runtime state',
+	'**/auth.json',
+	'**/history.jsonl',
+	'**/sessions/',
+	'**/archived_sessions/',
+	'**/log/',
+	'**/logs/',
+	'**/shell_snapshots/',
+	'**/*.sqlite*',
+	'**/models_cache.json',
+	'**/cache/',
+	'**/.tmp/',
+	'**/installation_id',
+	'**/version.json',
+	'**/.personality_migration',
+	'**/skills/.system/'
 ];
 
 const REQUIRED_GLOBAL_TEMPLATES = [
@@ -416,6 +444,7 @@ function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
 		}
 		if (arg === '--') {
 			passthrough = true;
+			args.push(arg);
 			continue;
 		}
 		if (arg === '--none') {
@@ -460,7 +489,7 @@ function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
 		}
 		if (arg === '--network') {
 			if (command !== 'codex') {
-				fail('--network is only supported for agent-run codex --sandboxed');
+				fail('--network is only supported for agent-run codex');
 			}
 			wrapperArgs.codexNetwork = true;
 			continue;
@@ -468,8 +497,8 @@ function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
 		args.push(arg);
 	}
 
-	if (wrapperArgs.codexNetwork && wrapperArgs.codexSandboxMode !== 'sandboxed') {
-		fail('--network is only meaningful with agent-run codex --sandboxed');
+	if (wrapperArgs.codexNetwork && wrapperArgs.codexSandboxMode === 'danger') {
+		fail('--network cannot be combined with agent-run codex --danger');
 	}
 
 	return { args, command, wrapperArgs };
@@ -655,9 +684,9 @@ function renderHelp(topic: 'general' | 'check' | 'init' | 'edit' | 'update' | 'm
 				'  --generate         Generate files without running the tool',
 				'',
 				'Codex wrapper options:',
-				'  --danger           Run Codex with no sandbox: -a never -s danger-full-access (default)',
-				'  --sandboxed        Run Codex with workspace-write sandbox',
-				'  --network          Enable network for --sandboxed via config override',
+				'  --danger           Run Codex with no sandbox: -a never -s danger-full-access',
+				'  --sandboxed        Run Codex with workspace-write sandbox (default)',
+				'  --network          Enable network for the workspace-write sandbox',
 				''
 			].join('\n');
 	}
@@ -759,6 +788,8 @@ function runTool(parsed: RunCommand): void {
 	verbose(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
 
 	ensureRunnableProfile(configRoot, agentDir, profile);
+	const preview = renderProfile(projectRoot, agentDir, true, command);
+	ensureToolEnabled(preview.context, command);
 	if (wrapperArgs.generate) {
 		const rendered = syncAgentProfile(projectRoot, agentDir);
 		printUpdateSummary(rendered);
@@ -766,7 +797,7 @@ function runTool(parsed: RunCommand): void {
 	}
 
 	const localAiFiles = findLocalAiFiles(projectRoot, agentDir);
-	if (localAiFiles.length > 0) {
+	if (preview.context.guardrails.forbidRepoAiFiles && localAiFiles.length > 0) {
 		if (!wrapperArgs.local) {
 			failForLocalAiFiles(command, projectRoot, localAiFiles);
 		}
@@ -775,19 +806,20 @@ function runTool(parsed: RunCommand): void {
 
 	const realBinary = findRealBinary(command);
 	const permissionArgs = getPermissionArgs(command);
-	syncAgentProfile(projectRoot, agentDir);
+	const rendered = syncAgentProfile(projectRoot, agentDir);
 
 	if (command === 'codex') {
-		runCodex(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot, wrapperArgs);
+		runCodex(realBinary, permissionArgs, rendered.context, args, wrapperArgs);
 		return;
 	}
 
-	runClaude(realBinary, permissionArgs, agentDir, configRoot, args, projectRoot, wrapperArgs);
+	runClaude(realBinary, permissionArgs, rendered.context, args, wrapperArgs);
 }
 
 function showToolProfile(command: ToolName, projectRoot: string, agentDir: string): void {
 	const trace: RenderTrace = { sourceFiles: new Set<string>() };
 	const rendered = renderProfile(projectRoot, agentDir, true, command, trace);
+	ensureToolEnabled(rendered.context, command);
 	const generatedFiles = uniqueSorted(rendered.files.map((file) => file.path));
 	const sourceFiles = uniqueSorted([...trace.sourceFiles]);
 
@@ -806,6 +838,12 @@ function showToolProfile(command: ToolName, projectRoot: string, agentDir: strin
 			''
 		].join('\n')
 	);
+}
+
+function ensureToolEnabled(context: RenderContext, command: ToolName): void {
+	if (!context.tools[command]) {
+		fail(`${command} is disabled for agent-run profile ${context.profile}`);
+	}
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -1177,30 +1215,23 @@ function convertLegacyTemplateVars(content: string): string {
 }
 
 function migrateCodexRuntimeFiles(agentDir: string): number {
-	const runtimeNames = [
-		'.personality_migration',
-		'.tmp',
-		'auth.json',
-		'cache',
-		'history.jsonl',
-		'installation_id',
-		'log',
-		'logs_2.sqlite',
-		'models_cache.json',
-		'sessions',
-		'shell_snapshots',
-		'skills',
-		'state_5.sqlite',
-		'tmp',
-		'version.json'
-	];
-	const codexHome = path.join(agentDir, 'memories', 'codex-home');
+	const runtimeNames = fs
+		.readdirSync(agentDir)
+		.filter((name) =>
+			/^(?:\.personality_migration|\.tmp|auth\.json|cache|history\.jsonl|installation_id|log|logs|models_cache\.json|sessions|archived_sessions|shell_snapshots|skills|tmp|version\.json)$/.test(
+				name
+			) || /^(?:logs|state)_.*\.sqlite(?:-.+)?$/.test(name)
+		);
+	const codexHome = path.join(agentDir, LIVE_DIR_NAME, 'memories', 'codex-home');
 	let moved = 0;
 	for (const name of runtimeNames) {
 		const source = path.join(agentDir, name);
-		const target = path.join(codexHome, name);
-		if (!fs.existsSync(source) || fs.existsSync(target)) {
+		if (!fs.existsSync(source) && !isSymlink(source)) {
 			continue;
+		}
+		let target = path.join(codexHome, name);
+		if (fs.existsSync(target) || isSymlink(target)) {
+			target = nextBackupPath(target);
 		}
 		fs.mkdirSync(path.dirname(target), { recursive: true });
 		fs.renameSync(source, target);
@@ -1380,7 +1411,11 @@ function normalizeManifest(manifest: AgentRunManifest, profile: string): Normali
 }
 
 function normalizeSkillName(name: string): string {
-	return name === 'code-review' ? 'code-review-organizer' : name;
+	const normalized = name === 'code-review' ? 'code-review-organizer' : name;
+	if (!/^[A-Za-z0-9._-]+$/.test(normalized)) {
+		throw new Error(`invalid skill name: ${name}`);
+	}
+	return normalized;
 }
 
 function normalizeInstalledSkills(names: string[]): string[] {
@@ -1412,12 +1447,13 @@ function defaultAgentIncludesForProfile(profile: string): string[] {
 }
 
 function createNunjucksEnv(configRoot: string): nunjucks.Environment {
-	return new nunjucks.Environment(new nunjucks.FileSystemLoader(configRoot, { noCache: true }), {
+	const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(configRoot, { noCache: true }), {
 		autoescape: false,
 		trimBlocks: true,
 		lstripBlocks: true,
 		throwOnUndefined: true
 	});
+	return env;
 }
 
 function buildRenderContext(
@@ -1438,6 +1474,7 @@ function buildRenderContext(
 		configRoot,
 		date,
 		checks: manifest.checks,
+		tools: manifest.tools,
 		guardrails: manifest.guardrails
 	};
 	const reviewDir = resolveRuntimePath(configRoot, manifest.paths.reviewDir, env, baseContext);
@@ -1648,19 +1685,22 @@ function renderProfile(
 	context.skills = renderSkills(env, configRoot, manifest, context, trace);
 
 	const files: RenderedProfile['files'] = [];
-	if (targetTool === null || targetTool === 'codex') {
+	if (context.tools.codex && (targetTool === null || targetTool === 'codex')) {
 		const agentsContent = renderToolInstructions('AGENTS.md', env, configRoot, context, false, trace);
-		files.push({ path: path.join(context.paths.liveDir, 'AGENTS.md'), content: agentsContent });
-		files.push({ path: path.join(context.paths.liveDir, 'config.toml'), content: renderCodexConfig(env, configRoot, context, trace) });
+		files.push({ path: path.join(context.paths.codexHomeDir, 'AGENTS.md'), content: agentsContent });
+		files.push({ path: path.join(context.paths.codexHomeDir, 'config.toml'), content: renderCodexConfig(env, configRoot, context, trace) });
 		files.push(...renderNativeSkillFiles(context, 'codex'));
 	}
-	if (targetTool === null || targetTool === 'claude') {
+	if (context.tools.claude && (targetTool === null || targetTool === 'claude')) {
 		const claudeContent = renderToolInstructions('CLAUDE.md', env, configRoot, context, true, trace);
 		files.push({ path: path.join(context.paths.liveDir, 'CLAUDE.md'), content: claudeContent });
-		files.push({ path: path.join(context.paths.liveDir, '.claude', 'CLAUDE.md'), content: claudeContent });
 		files.push({
 			path: path.join(context.paths.liveDir, '.claude', 'agent-run-settings.json'),
 			content: renderClaudeSettings(env, configRoot, context, trace)
+		});
+		files.push({
+			path: path.join(context.paths.liveDir, '.claude', '.claude-plugin', 'plugin.json'),
+			content: claudePluginManifestContent(context)
 		});
 		files.push(...renderNativeSkillFiles(context, 'claude'));
 	}
@@ -1683,11 +1723,71 @@ function syncAgentProfile(
 ): RenderedProfile {
 	const rendered = renderProfile(projectRoot, agentDir, false, null, undefined, options);
 	syncRuntimeDirs(rendered.context);
+	removeStaleGeneratedEntries(rendered);
 	for (const file of rendered.files) {
 		writeGeneratedFile(file.path, file.content, file.executable ?? false);
 	}
+	removeLegacyGeneratedCodexFiles(rendered.context);
 	removeLegacyGeneratedClaudeSettings(rendered.context);
 	return rendered;
+}
+
+function removeStaleGeneratedEntries(rendered: RenderedProfile): void {
+	const expectedFiles = new Set(rendered.files.map((file) => path.resolve(file.path)));
+	for (const filePath of [
+		path.join(rendered.context.paths.codexHomeDir, 'AGENTS.md'),
+		path.join(rendered.context.paths.codexHomeDir, 'config.toml'),
+		path.join(rendered.context.paths.liveDir, 'CLAUDE.md'),
+		path.join(rendered.context.paths.liveDir, '.claude', 'CLAUDE.md'),
+		path.join(rendered.context.paths.liveDir, '.claude', 'agent-run-settings.json'),
+		path.join(rendered.context.paths.liveDir, '.claude', '.claude-plugin', 'plugin.json')
+	]) {
+		if (!expectedFiles.has(path.resolve(filePath))) {
+			fs.rmSync(filePath, { force: true });
+		}
+	}
+	for (const name of ['git', 'git.cmd', 'npm', 'npm.cmd', 'pnpm', 'pnpm.cmd', 'gh', 'gh.cmd']) {
+		const filePath = path.join(rendered.context.paths.binDir, name);
+		if (!expectedFiles.has(path.resolve(filePath))) {
+			fs.rmSync(filePath, { force: true });
+		}
+	}
+
+	const skillNames = new Set(rendered.skills.map((skill) => skill.name));
+	removeStaleGeneratedSkills(
+		rendered.context.paths.codexSkillsDir,
+		rendered.context.tools.codex ? skillNames : new Set<string>(),
+		new Set(['.system'])
+	);
+	removeStaleGeneratedSkills(
+		rendered.context.paths.claudeSkillsDir,
+		rendered.context.tools.claude ? skillNames : new Set<string>()
+	);
+}
+
+function removeStaleGeneratedSkills(dir: string, expectedNames: Set<string>, preservedNames = new Set<string>()): void {
+	if (!fs.existsSync(dir)) {
+		return;
+	}
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		if (expectedNames.has(entry.name) || preservedNames.has(entry.name)) {
+			continue;
+		}
+		fs.rmSync(path.join(dir, entry.name), { recursive: true, force: true });
+	}
+}
+
+function removeLegacyGeneratedCodexFiles(context: RenderContext): void {
+	for (const legacyPath of [
+		path.join(context.paths.liveDir, 'AGENTS.md'),
+		path.join(context.paths.liveDir, 'config.toml')
+	]) {
+		if (!fs.existsSync(legacyPath)) {
+			continue;
+		}
+		fs.rmSync(legacyPath);
+		verbose(`removed legacy generated Codex file ${legacyPath}`);
+	}
 }
 
 function removeLegacyGeneratedClaudeSettings(context: RenderContext): void {
@@ -1849,7 +1949,27 @@ function renderClaudeSettings(env: nunjucks.Environment, configRoot: string, con
 		? renderTemplateFile(env, configRoot, templatePath, context, trace)
 		: defaultClaudeSettingsContent(context);
 	assertNoUnexpandedTemplateVars('claude settings.json', content);
+	try {
+		JSON.parse(content);
+	} catch (error) {
+		throw new Error(`invalid generated Claude settings JSON: ${formatError(error)}`);
+	}
 	return content.replace(/\n*$/, '\n');
+}
+
+function claudePluginManifestContent(context: RenderContext): string {
+	return `${JSON.stringify(
+			{
+				name: 'agent-run-profile',
+				description: `Generated skills for agent-run profile ${context.profile}`,
+				version: '1.0.0',
+				author: {
+					name: 'Technomoron'
+				}
+			},
+		null,
+		2
+	)}\n`;
 }
 
 function resolveProfileOverrideTemplate(
@@ -1869,19 +1989,33 @@ function resolveProfileOverrideTemplate(
 }
 
 function renderGuardShims(context: RenderContext): RenderedProfile['files'] {
+	const names: string[] = [];
+	if (context.guardrails.blockGitWrite) {
+		names.push('git');
+	}
+	if (context.guardrails.blockPublish) {
+		names.push('npm', 'pnpm');
+	}
+	if (context.guardrails.blockGithubRelease) {
+		names.push('gh');
+	}
 	if (IS_WINDOWS) {
-		return ['git', 'npm', 'pnpm', 'gh'].map((name) => ({
+		return names.map((name) => ({
 			path: path.join(context.paths.binDir, `${name}.cmd`),
 			content: windowsShim(name)
 		}));
 	}
 
-	return [
-		{ path: path.join(context.paths.binDir, 'git'), content: posixGitShim(), executable: true },
-		{ path: path.join(context.paths.binDir, 'npm'), content: posixPublishShim('npm'), executable: true },
-		{ path: path.join(context.paths.binDir, 'pnpm'), content: posixPublishShim('pnpm'), executable: true },
-		{ path: path.join(context.paths.binDir, 'gh'), content: posixGhShim(), executable: true }
-	];
+	return names.map((name) => ({
+		path: path.join(context.paths.binDir, name),
+		content:
+			name === 'git'
+				? posixGitShim()
+				: name === 'gh'
+					? posixGhShim()
+					: posixPublishShim(name as 'npm' | 'pnpm'),
+		executable: true
+	}));
 }
 
 function syncRuntimeDirs(context: RenderContext): void {
@@ -1970,16 +2104,11 @@ function nextBackupPath(filePath: string): string {
 }
 
 function removeLegacyCodexSkillDirs(context: RenderContext): void {
-	const legacyCodexSkillsDir = path.join(context.paths.liveDir, '.agents', 'skills');
-	if (path.resolve(legacyCodexSkillsDir) === path.resolve(context.paths.codexSkillsDir)) {
+	const legacyCodexDir = path.join(context.paths.liveDir, '.agents');
+	if (isSamePathOrDescendant(context.paths.codexSkillsDir, legacyCodexDir)) {
 		return;
 	}
-	for (const skill of context.skills) {
-		const legacySkillDir = path.join(legacyCodexSkillsDir, skill.name);
-		if (fs.existsSync(legacySkillDir)) {
-			fs.rmSync(legacySkillDir, { recursive: true, force: true });
-		}
-	}
+	fs.rmSync(legacyCodexDir, { recursive: true, force: true });
 }
 
 function removeLegacyCodeReviewSkillDirs(context: RenderContext): void {
@@ -2093,13 +2222,35 @@ function renderLegacyAgentsMods(sourceFile: string, stack: string[] = [], trace?
 	let sawLeadingInclude = false;
 	let insertedOverrideNote = false;
 	let contentStarted = false;
+	let fence: { character: string; length: number } | null = null;
 
 	for (const line of lines) {
 		const trimmed = line.trim();
+		const isIndentedCode = /^(?: {4}|\t)/.test(line);
+		const fenceMatch = isIndentedCode ? null : /^(`{3,}|~{3,})/.exec(trimmed);
+
+		if (fence !== null) {
+			output.push(line);
+			contentStarted = true;
+			const marker = fenceMatch?.[1];
+			if (
+				marker !== undefined &&
+				marker[0] === fence.character &&
+				marker.length >= fence.length &&
+				trimmed.slice(marker.length).trim() === ''
+			) {
+				fence = null;
+			}
+			continue;
+		}
+
 		if (!contentStarted && trimmed === '') {
 			continue;
 		}
-		if (trimmed.startsWith('@')) {
+		if (fenceMatch?.[1]) {
+			fence = { character: fenceMatch[1][0] ?? '`', length: fenceMatch[1].length };
+		}
+		if (fence === null && !isIndentedCode && trimmed.startsWith('@')) {
 			const includePath = trimmed.slice(1).trim();
 			if (!includePath) {
 				continue;
@@ -2156,18 +2307,30 @@ function checkProject(projectRoot: string): Finding[] {
 	const findings: Finding[] = [];
 	verbose(`checking project ${projectRoot}`);
 	const profileResult = resolveProfileResult(projectRoot);
-	const excludedDir = profileResult.profile === null ? null : resolveAgentDir(projectRoot);
-	const localAiFiles = findLocalAiFiles(projectRoot, excludedDir);
-	for (const file of localAiFiles) {
-		findings.push({ message: `local AI file in project: ${file}`, severity: 'ERROR' });
-	}
-
 	if (profileResult.profile === null) {
+		for (const file of findLocalAiFiles(projectRoot, null)) {
+			findings.push({ message: `local AI file in project: ${file}`, severity: 'ERROR' });
+		}
 		findings.push({ message: profileResult.reason, severity: 'ERROR' });
 		return findings;
 	}
 
 	const agentDir = resolveAgentDir(projectRoot);
+	let forbidRepoAiFiles = true;
+	try {
+		const manifest = normalizeManifest(
+			loadManifest(defaultConfigRoot(projectRoot), agentDir, profileResult.profile),
+			profileResult.profile
+		);
+		forbidRepoAiFiles = manifest.guardrails.forbidRepoAiFiles;
+	} catch {
+		// The profile check below reports malformed or missing source details.
+	}
+	if (forbidRepoAiFiles) {
+		for (const file of findLocalAiFiles(projectRoot, agentDir)) {
+			findings.push({ message: `local AI file in project: ${file}`, severity: 'ERROR' });
+		}
+	}
 	findings.push(...checkAgentDirectory(projectRoot, agentDir));
 	return findings;
 }
@@ -2175,13 +2338,13 @@ function checkProject(projectRoot: string): Finding[] {
 function checkAgentDirectory(projectRoot: string, agentDir: string): Finding[] {
 	const findings: Finding[] = [];
 	const configRoot = defaultConfigRoot(projectRoot);
+	const manifestPath = path.join(agentDir, MANIFEST_FILE_NAME);
+	const legacyPath = path.join(agentDir, 'AGENTS-MODS.md');
+	const localPath = path.join(agentDir, LOCAL_TEMPLATE_FILE_NAME);
 
-	if (!fs.existsSync(path.join(agentDir, MANIFEST_FILE_NAME))) {
-		const legacyPath = path.join(agentDir, 'AGENTS-MODS.md');
-		const localPath = path.join(agentDir, LOCAL_TEMPLATE_FILE_NAME);
-		if (!fs.existsSync(legacyPath) && !fs.existsSync(localPath)) {
-			findings.push({ message: `missing manifest or legacy/local source file in ${agentDir}`, severity: 'ERROR' });
-		}
+	if (!fs.existsSync(manifestPath) && !fs.existsSync(legacyPath) && !fs.existsSync(localPath)) {
+		findings.push({ message: `missing manifest or legacy/local source file in ${agentDir}`, severity: 'ERROR' });
+		return findings;
 	}
 
 	for (const relativeTemplate of REQUIRED_GLOBAL_TEMPLATES) {
@@ -2207,21 +2370,27 @@ function checkSourceTree(rootPath: string): {
 		findings: checkProject(projectRoot),
 		label: projectRoot
 	}));
-	return { entries, hasErrors: entries.some((entry) => hasErrors(entry.findings)), root: rootPath };
+	return { entries, hasErrors: entries.length === 0 || entries.some((entry) => hasErrors(entry.findings)), root: rootPath };
 }
 
 function findSourceRepos(rootPath: string): string[] {
 	const resolvedRoot = path.resolve(rootPath);
 	const repos = new Set<string>();
-	if (!isIgnoredDir(resolvedRoot) && looksLikeRepoRoot(resolvedRoot)) {
-		repos.add(resolvedRoot);
+	if (isIgnoredDir(resolvedRoot)) {
+		return [];
 	}
-	walkSourceTree(resolvedRoot, 0, (fullPath, entry, depth) => {
-		if (entry.isDirectory() && entry.name === '.git') {
-			repos.add(path.dirname(fullPath));
+	if (looksLikeRepoRoot(resolvedRoot)) {
+		return [resolvedRoot];
+	}
+	walkSourceTree(resolvedRoot, 0, (fullPath, entry) => {
+		if (!entry.isDirectory()) {
+			return undefined;
+		}
+		if (shouldPruneSourceTreeEntry(entry) || isIgnoredDir(fullPath)) {
 			return 'skip';
 		}
-		if (entry.isDirectory() && depth >= 3) {
+		if (fs.existsSync(path.join(fullPath, '.git'))) {
+			repos.add(fullPath);
 			return 'skip';
 		}
 		return undefined;
@@ -2231,6 +2400,15 @@ function findSourceRepos(rootPath: string): string[] {
 
 function looksLikeRepoRoot(dir: string): boolean {
 	return fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, 'package.json'));
+}
+
+function shouldPruneSourceTreeEntry(entry: fs.Dirent): boolean {
+	return (
+		entry.name === 'node_modules' ||
+		entry.name === '.pnpm-store' ||
+		entry.name === 'dist' ||
+		entry.name === 'build'
+	);
 }
 
 function printProjectReport(projectRoot: string, findings: Finding[]): void {
@@ -2248,7 +2426,7 @@ function printProjectReport(projectRoot: string, findings: Finding[]): void {
 function printBatchReport(rootPath: string, entries: Array<{ findings: Finding[]; label: string }>): void {
 	process.stdout.write(`Check all: ${rootPath}\n`);
 	if (entries.length === 0) {
-		process.stdout.write('WARN no source repos found\n');
+		process.stdout.write('ERROR no source repos found\n');
 		return;
 	}
 	let totalErrors = 0;
@@ -2287,28 +2465,29 @@ function formatError(error: unknown): string {
 function runCodex(
 	realBinary: string,
 	permissionArgs: string[],
-	agentDir: string,
-	configRoot: string,
+	context: RenderContext,
 	args: string[],
-	projectRoot: string,
 	wrapperArgs: WrapperArgs
 ): void {
-	const liveDir = profileLiveDir(agentDir);
-	const agentsPath = path.join(liveDir, 'AGENTS.md');
+	const liveDir = context.paths.liveDir;
+	const codexHomeDir = context.paths.codexHomeDir;
+	const projectRoot = context.projectRoot;
+	const agentsPath = path.join(codexHomeDir, 'AGENTS.md');
 	if (!fs.existsSync(agentsPath)) {
-		failMissingConfig('codex', agentDir);
+		failMissingConfig('codex', context.profileDir);
 	}
 
 	const guardBin = path.join(liveDir, 'bin');
-	const codexHomeDir = path.join(liveDir, 'memories', 'codex-home');
+	const realPath = process.env.AGENT_RUN_REAL_PATH ?? process.env.PATH ?? '';
 	fs.mkdirSync(codexHomeDir, { recursive: true });
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		CODEX_HOME: codexHomeDir,
 		AGENT_DIR: liveDir,
-		AGENT_PROFILE_DIR: agentDir,
+		AGENT_PROFILE_DIR: context.profileDir,
 		AGENT_RUN_PROJECT_ROOT: projectRoot,
-		PATH: `${guardBin}${path.delimiter}${process.env.PATH ?? ''}`
+		AGENT_RUN_REAL_PATH: realPath,
+		PATH: `${guardBin}${path.delimiter}${realPath}`
 	};
 	const codexRuntimeArgs = buildCodexRuntimeArgs(wrapperArgs);
 
@@ -2317,93 +2496,98 @@ function runCodex(
 		[
 			...permissionArgs,
 			...codexRuntimeArgs,
-			'--config',
-			`system_prompt_file=${agentsPath}`,
-			'--config',
-			'project_doc_max_bytes=65536',
-			...globalMemoryArgs(configRoot),
 			'-C',
 			projectRoot,
-			...(wrapperArgs.codexSandboxMode === 'sandboxed' && wrapperArgs.codexNetwork
+			...(wrapperArgs.codexSandboxMode !== 'danger' && wrapperArgs.codexNetwork
 				? ['--config', 'sandbox_workspace_write.network_access=true']
 				: []),
 			...args
 		],
-		shouldUseShell(realBinary),
 		env,
 		codexHomeDir,
-		(code) => postflightProjectCheck(projectRoot, agentDir, wrapperArgs.local, code)
+		(code) =>
+			postflightProjectCheck(
+				projectRoot,
+				context.profileDir,
+				context.guardrails.forbidRepoAiFiles,
+				wrapperArgs.local,
+				code
+			)
 	);
 }
 
 function buildCodexRuntimeArgs(wrapperArgs: WrapperArgs): string[] {
-	const mode = wrapperArgs.codexSandboxMode ?? 'danger';
-	if (mode === 'sandboxed') {
-		return ['-s', 'workspace-write'];
+	if (wrapperArgs.codexSandboxMode === 'danger') {
+		return ['-a', 'never', '-s', 'danger-full-access'];
 	}
-	return ['-a', 'never', '-s', 'danger-full-access'];
+	return ['-a', 'on-request', '-s', 'workspace-write'];
 }
 
 function runClaude(
 	realBinary: string,
 	permissionArgs: string[],
-	agentDir: string,
-	configRoot: string,
+	context: RenderContext,
 	args: string[],
-	projectRoot: string,
 	wrapperArgs: WrapperArgs
 ): void {
-	const liveDir = profileLiveDir(agentDir);
+	const liveDir = context.paths.liveDir;
+	const projectRoot = context.projectRoot;
 	const claudePath = path.join(liveDir, 'CLAUDE.md');
 	if (!fs.existsSync(claudePath)) {
-		failMissingConfig('claude', agentDir);
+		failMissingConfig('claude', context.profileDir);
 	}
 
 	const guardBin = path.join(liveDir, 'bin');
 	const claudeConfigDir = path.join(liveDir, '.claude');
+	const realPath = process.env.AGENT_RUN_REAL_PATH ?? process.env.PATH ?? '';
 	const env: Record<string, string | undefined> = {
 		...process.env,
-		CLAUDE_CONFIG_DIR: claudeConfigDir,
 		AGENT_DIR: liveDir,
-		AGENT_PROFILE_DIR: agentDir,
+		AGENT_PROFILE_DIR: context.profileDir,
 		AGENT_RUN_PROJECT_ROOT: projectRoot,
-		PATH: `${guardBin}${path.delimiter}${process.env.PATH ?? ''}`
+		AGENT_RUN_REAL_PATH: realPath,
+		PATH: `${guardBin}${path.delimiter}${realPath}`
 	};
 
 	execCommand(
 		realBinary,
 		[
 			...permissionArgs,
+			'--append-system-prompt-file',
+			claudePath,
 			'--settings',
 			path.join(claudeConfigDir, 'agent-run-settings.json'),
-			'--add-dir',
-			projectRoot,
-			'--add-dir',
-			liveDir,
-			...globalMemoryArgs(configRoot),
+			'--plugin-dir',
+			claudeConfigDir,
 			...args
 		],
-			shouldUseShell(realBinary),
-			env,
-			projectRoot,
-			(code) => postflightProjectCheck(projectRoot, agentDir, wrapperArgs.local, code)
-		);
-}
-
-function profileLiveDir(agentDir: string): string {
-	return path.join(agentDir, LIVE_DIR_NAME);
-}
-
-function globalMemoryArgs(configRoot: string): string[] {
-	const memoryDir = globalMemoryDir(configRoot);
-	return fs.existsSync(memoryDir) ? ['--add-dir', memoryDir] : [];
+		env,
+		projectRoot,
+		(code) =>
+			postflightProjectCheck(
+				projectRoot,
+				context.profileDir,
+				context.guardrails.forbidRepoAiFiles,
+				wrapperArgs.local,
+				code
+			)
+	);
 }
 
 function globalMemoryDir(configRoot: string): string {
 	return path.join(configRoot, 'notes', 'memory');
 }
 
-function postflightProjectCheck(projectRoot: string, agentDir: string, allowLocal: boolean, code: number): number {
+function postflightProjectCheck(
+	projectRoot: string,
+	agentDir: string,
+	forbidRepoAiFiles: boolean,
+	allowLocal: boolean,
+	code: number
+): number {
+	if (!forbidRepoAiFiles) {
+		return code;
+	}
 	const localAiFiles = findLocalAiFiles(projectRoot, agentDir);
 	if (localAiFiles.length > 0) {
 		warnForLocalAiFiles(null, projectRoot, localAiFiles);
@@ -2506,9 +2690,8 @@ function isSamePathOrDescendant(candidatePath: string, parentPath: string): bool
 function shouldPruneProjectEntry(entry: fs.Dirent): boolean {
 	return (
 		entry.isDirectory() &&
-		(entry.name === '.git' ||
-			entry.name === '.claude' ||
-			entry.name === 'node_modules' ||
+			(entry.name === '.git' ||
+				entry.name === 'node_modules' ||
 			entry.name === '.pnpm-store' ||
 			entry.name === 'dist' ||
 			entry.name === 'build')
@@ -2516,11 +2699,11 @@ function shouldPruneProjectEntry(entry: fs.Dirent): boolean {
 }
 
 function isLocalAiDirectory(entry: fs.Dirent): boolean {
-	return entry.isDirectory() && (entry.name === '.claude' || entry.name === '.codex' || entry.name === '.agents');
+	return LOCAL_AI_DIRECTORY_NAMES.has(entry.name);
 }
 
 function isLocalAiFile(entry: fs.Dirent): boolean {
-	return entry.isFile() && LOCAL_AI_FILE_NAMES.has(entry.name);
+	return LOCAL_AI_FILE_NAMES.has(entry.name);
 }
 
 function isIgnoredDir(dir: string): boolean {
@@ -2560,12 +2743,12 @@ export function findProjectRoot(cwd: string): string {
 
 	for (;;) {
 		const packagePath = path.join(dir, 'package.json');
+		if (isWorkspaceRoot(dir)) {
+			workspaceRoot = dir;
+		}
 		if (fs.existsSync(packagePath)) {
 			if (!nearestPackageRoot) {
 				nearestPackageRoot = dir;
-			}
-			if (isWorkspaceRoot(dir)) {
-				workspaceRoot = dir;
 			}
 		}
 		if (fs.existsSync(path.join(dir, '.git'))) {
@@ -2649,27 +2832,16 @@ function resolveGitHubProfile(projectRoot: string): string | null {
 }
 
 function readGitOrigin(projectRoot: string): string | null {
-	const configPath = path.join(projectRoot, '.git', 'config');
-	if (!fs.existsSync(configPath)) {
+	const result = childProcess.spawnSync('git', ['-C', projectRoot, 'config', '--get', 'remote.origin.url'], {
+		encoding: 'utf8',
+		shell: false,
+		stdio: ['ignore', 'pipe', 'ignore']
+	});
+	if (result.status !== 0) {
 		return null;
 	}
-
-	const lines = fs.readFileSync(configPath, 'utf8').replace(/\r\n/g, '\n').split('\n');
-	let inOrigin = false;
-	for (const line of lines) {
-		const trimmed = line.trim();
-		if (trimmed.startsWith('[')) {
-			inOrigin = trimmed === '[remote "origin"]';
-			continue;
-		}
-		if (inOrigin && trimmed.startsWith('url')) {
-			const equalsIndex = trimmed.indexOf('=');
-			if (equalsIndex >= 0) {
-				return trimmed.slice(equalsIndex + 1).trim();
-			}
-		}
-	}
-	return null;
+	const remote = result.stdout.trim();
+	return remote || null;
 }
 
 function parseGitHubRemoteProfile(remote: string): string | null {
@@ -2696,7 +2868,10 @@ function parseProfile(profile: string, source: string): { profile: string | null
 		return { profile: null, reason: `${source} must be relative to the config root, not an absolute path` };
 	}
 	const segments = normalized.split('/').filter((segment) => segment.length > 0);
-	if (segments.length === 0 || segments.some((segment) => segment === '.' || segment === '..')) {
+	if (
+		segments.length === 0 ||
+		segments.some((segment) => segment === '.' || segment === '..' || !/^[A-Za-z0-9._-]+$/.test(segment))
+	) {
 		return { profile: null, reason: `${source} must be a clean relative path like org/my-project` };
 	}
 	return { profile: segments.join('/'), reason: '' };
@@ -2927,20 +3102,19 @@ function isExecutable(filePath: string): boolean {
 }
 
 function execTool(command: string, args: string[]): void {
-	verbose(`exec tool: ${formatCommand(command, args)} shell=${String(shouldUseShell(command))}`);
-	execCommand(command, args, shouldUseShell(command));
+	verbose(`exec tool: ${formatCommand(command, args)}`);
+	execCommand(command, args);
 }
 
 function execCommand(
 	command: string,
 	args: string[],
-	shell: boolean,
 	env?: Record<string, string | undefined>,
 	cwd?: string,
 	onExit?: (code: number) => number
 ): void {
-	verbose(`spawn: ${formatCommand(command, args)} shell=${String(shell)} cwd=${cwd ?? process.cwd()}`);
-	const child = childProcess.spawn(command, args, { cwd, env, shell, stdio: 'inherit' });
+	verbose(`spawn: ${formatCommand(command, args)} cwd=${cwd ?? process.cwd()}`);
+	const child = crossSpawn(command, args, { cwd, env, stdio: 'inherit' });
 	child.on('exit', (code, signal) => {
 		if (signal) {
 			process.kill(process.pid, signal);
@@ -2957,33 +3131,110 @@ function execCommand(
 function openEditor(filePath: string): void {
 	const visual = process.env.VISUAL?.trim();
 	if (visual) {
-		execCommand(visual, [filePath], true);
+		runConfiguredEditor(visual, filePath);
 		return;
 	}
 	const editor = process.env.EDITOR?.trim();
 	if (editor) {
-		execCommand(editor, [filePath], true);
+		runConfiguredEditor(editor, filePath);
 		return;
 	}
 	const vscodeCommand = findVsCodeEditorCommand();
 	if (vscodeCommand !== null) {
-		execCommand(vscodeCommand, ['--reuse-window', filePath], shouldUseShell(vscodeCommand));
+		execCommand(vscodeCommand, ['--reuse-window', filePath]);
 		return;
 	}
 	const fallbackEditor = findFallbackEditor();
 	if (fallbackEditor !== null) {
-		execCommand(fallbackEditor, [filePath], shouldUseShell(fallbackEditor));
+		execCommand(fallbackEditor, [filePath]);
 		return;
 	}
 	if (IS_WINDOWS) {
-		execCommand('cmd.exe', ['/c', 'start', '', filePath], false);
+		execCommand('explorer.exe', [filePath]);
 		return;
 	}
 	if (process.platform === 'darwin') {
-		execCommand('open', [filePath], false);
+		execCommand('open', [filePath]);
 		return;
 	}
-	execCommand('xdg-open', [filePath], false);
+	execCommand('xdg-open', [filePath]);
+}
+
+function runConfiguredEditor(commandLine: string, filePath: string): void {
+	let editorArgs: string[];
+	try {
+		editorArgs = parseEditorCommand(commandLine);
+	} catch (error) {
+		fail(`invalid editor command: ${formatError(error)}`);
+	}
+	const [command, ...args] = editorArgs;
+	if (!command) {
+		fail('invalid editor command: command is empty');
+	}
+	execCommand(command, [...args, filePath]);
+}
+
+export function parseEditorCommand(commandLine: string): string[] {
+	const args: string[] = [];
+	let current = '';
+	let quote: "'" | '"' | null = null;
+	let tokenStarted = false;
+
+	for (let index = 0; index < commandLine.length; index += 1) {
+		const character = commandLine[index] ?? '';
+		if (quote !== null) {
+			if (character === quote) {
+				quote = null;
+				continue;
+			}
+			if (character === '\\' && quote === '"') {
+				const next = commandLine[index + 1];
+				if (next === '"' || next === '\\') {
+					current += next;
+					index += 1;
+					continue;
+				}
+			}
+			current += character;
+			continue;
+		}
+
+		if (character === "'" || character === '"') {
+			quote = character;
+			tokenStarted = true;
+			continue;
+		}
+		if (/\s/.test(character)) {
+			if (tokenStarted) {
+				args.push(current);
+				current = '';
+				tokenStarted = false;
+			}
+			continue;
+		}
+		if (character === '\\') {
+			const next = commandLine[index + 1];
+			if (next !== undefined && (/\s/.test(next) || next === "'" || next === '"' || next === '\\')) {
+				current += next;
+				index += 1;
+				tokenStarted = true;
+				continue;
+			}
+		}
+		current += character;
+		tokenStarted = true;
+	}
+
+	if (quote !== null) {
+		throw new Error(`unterminated ${quote} quote`);
+	}
+	if (tokenStarted) {
+		args.push(current);
+	}
+	if (args.length === 0) {
+		throw new Error('command is empty');
+	}
+	return args;
 }
 
 function findVsCodeEditorCommand(): string | null {
@@ -3033,14 +3284,6 @@ function findExecutable(command: string): string | null {
 		}
 	}
 	return null;
-}
-
-function shouldUseShell(command: string): boolean {
-	if (!IS_WINDOWS) {
-		return false;
-	}
-	const extension = path.extname(command).toLowerCase();
-	return extension === '.cmd' || extension === '.bat';
 }
 
 function localDateString(): string {
@@ -3202,7 +3445,8 @@ function defaultReleasePackageCheckSkill(): string {
 		'- The current branch has an upstream configured and is in sync with it after fetching.',
 		'- The repository does not contain agent files or directories such as `AGENTS.md`, `CLAUDE.md`, `codex.md`, `.claude`, or `.codex`.',
 		'- The repository root has a lockfile: `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `bun.lockb`, or `bun.lock`.',
-		'- GitHub workflows under `.github/workflows` use `actions/setup-node@v6` and `node-version: 24`.',
+		'- Every GitHub Actions `uses:` reference is pinned to a full commit SHA.',
+		'- The pinned `actions/setup-node` release is v6-compatible and workflows use `node-version: 24`.',
 		'- GitHub workflows do not reference `node20` or `node22`.',
 		'- The git working tree is clean for files under the checked package directory.',
 		'- If files beyond `CHANGES` changed in the checked package directory, that package `CHANGES` file is also changed.',
@@ -3320,8 +3564,8 @@ function defaultToolInstructionsTemplate(isClaude: boolean): string {
 		'## Tool Note',
 		'',
 		isClaude
-			? 'Claude uses the generated config directory under {{ paths.liveDir }}/.claude and may read {{ paths.liveDir }} via `--add-dir`.'
-			: 'Codex uses {{ agentDir }}/AGENTS.md as `system_prompt_file` and {{ paths.codexHomeDir }} as CODEX_HOME.',
+			? 'Claude receives {{ agentDir }}/CLAUDE.md through `--append-system-prompt-file` and loads generated skills as a local plugin.'
+			: 'Codex loads AGENTS.md, config.toml, and skills natively from {{ paths.codexHomeDir }}.',
 		'',
 		'## Mandatory Path Rule',
 		'',
@@ -3337,14 +3581,14 @@ function defaultCodexConfigTemplate(): string {
 		'# Generated by agent-run. Do not edit directly.',
 		'',
 		'project_doc_max_bytes = 65536',
-		'sandbox_mode = "danger-full-access"',
+		'approval_policy = "on-request"',
+		'sandbox_mode = "workspace-write"',
 		'',
 		'[sandbox_workspace_write]',
 		'writable_roots = [',
-		'  "{{ projectRoot }}",',
-		'  "{{ agentDir }}",',
-		'  "{{ profileDir }}",',
-		'  "{{ paths.globalMemoryDir }}"',
+		'  {{ projectRoot | dump }},',
+		'  {{ paths.reviewDir | dump }},',
+		'  {{ paths.memoriesDir | dump }}',
 		']',
 		'network_access = false',
 		''
@@ -3354,19 +3598,17 @@ function defaultCodexConfigTemplate(): string {
 function defaultClaudeSettingsTemplate(): string {
 	const envBlock = [
 		'  "env": {',
-		'    "AGENT_DIR": "{{ agentDir }}",',
-		'    "AGENT_PROFILE_DIR": "{{ profileDir }}",',
-		'    "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",',
-		'    "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}"',
+		'    "AGENT_DIR": {{ agentDir | dump }},',
+		'    "AGENT_PROFILE_DIR": {{ profileDir | dump }},',
+		'    "AGENT_RUN_PROJECT_ROOT": {{ projectRoot | dump }},',
+		'    "AGENT_GLOBAL_MEMORY_DIR": {{ paths.globalMemoryDir | dump }}',
 		'  }'
 	].join('\n');
 	return [
 		'{% if permissionsAllow.length %}{',
 		envBlock + ',',
 		'  "permissions": {',
-		'    "allow": [',
-		'      "{{ permissionsAllow | join(\'",\\n      "\') }}"',
-		'    ]',
+		'    "allow": {{ permissionsAllow | dump }}',
 		'  }',
 		'}',
 		'{% else %}{',
@@ -3381,14 +3623,14 @@ function defaultCodexConfigContent(context: RenderContext): string {
 		'# Generated by agent-run. Do not edit directly.',
 		'',
 		'project_doc_max_bytes = 65536',
-		'sandbox_mode = "danger-full-access"',
+		'approval_policy = "on-request"',
+		'sandbox_mode = "workspace-write"',
 		'',
 		'[sandbox_workspace_write]',
 		'writable_roots = [',
 		`  ${jsonString(context.projectRoot)},`,
-		`  ${jsonString(context.agentDir)},`,
-		`  ${jsonString(context.profileDir)},`,
-		`  ${jsonString(context.paths.globalMemoryDir)}`,
+		`  ${jsonString(context.paths.reviewDir)},`,
+		`  ${jsonString(context.paths.memoriesDir)}`,
 		']',
 		'network_access = false',
 		''
@@ -3432,18 +3674,17 @@ function posixGitShim(): string {
 	return [
 		'#!/usr/bin/env bash',
 		'set -euo pipefail',
-		'case "${1:-}" in',
-		'  commit|tag|push)',
-		'    if [ "${AGENT_RUN_ALLOW_GIT_WRITE:-}" != "1" ]; then',
-		'      echo "agent-run: blocked git $1. Review and run it manually, or set AGENT_RUN_ALLOW_GIT_WRITE=1 for this invocation." >&2',
-		'      exit 42',
-		'    fi',
-		'    ;;',
-		'esac',
-		'if command -v /usr/bin/git >/dev/null 2>&1; then',
-		'  exec /usr/bin/git "$@"',
-		'fi',
-		'exec git "$@"',
+		'for arg in "$@"; do',
+		'  case "$arg" in',
+		'    commit|tag|push)',
+		'      if [ "${AGENT_RUN_ALLOW_GIT_WRITE:-}" != "1" ]; then',
+		'        echo "agent-run: blocked git $arg. Review and run it manually, or set AGENT_RUN_ALLOW_GIT_WRITE=1 for this invocation." >&2',
+		'        exit 42',
+		'      fi',
+		'      ;;',
+		'  esac',
+		'done',
+		...posixRunRealCommand('git'),
 		''
 	].join('\n');
 }
@@ -3452,14 +3693,13 @@ function posixPublishShim(tool: 'npm' | 'pnpm'): string {
 	return [
 		'#!/usr/bin/env bash',
 		'set -euo pipefail',
-		'if [ "${1:-}" = "publish" ] && [ "${AGENT_RUN_ALLOW_PUBLISH:-}" != "1" ]; then',
-		`  echo "agent-run: blocked ${tool} publish. Review and run it manually, or set AGENT_RUN_ALLOW_PUBLISH=1 for this invocation." >&2`,
-		'  exit 42',
-		'fi',
-		`if command -v /usr/bin/${tool} >/dev/null 2>&1; then`,
-		`  exec /usr/bin/${tool} "$@"`,
-		'fi',
-		`exec ${tool} "$@"`,
+		'for arg in "$@"; do',
+		'  if [ "$arg" = "publish" ] && [ "${AGENT_RUN_ALLOW_PUBLISH:-}" != "1" ]; then',
+		`    echo "agent-run: blocked ${tool} publish. Review and run it manually, or set AGENT_RUN_ALLOW_PUBLISH=1 for this invocation." >&2`,
+		'    exit 42',
+		'  fi',
+		'done',
+		...posixRunRealCommand(tool),
 		''
 	].join('\n');
 }
@@ -3468,46 +3708,98 @@ function posixGhShim(): string {
 	return [
 		'#!/usr/bin/env bash',
 		'set -euo pipefail',
-		'if [ "${1:-}" = "release" ] && [ "${2:-}" = "create" ] && [ "${AGENT_RUN_ALLOW_GITHUB_RELEASE:-}" != "1" ]; then',
-		'  echo "agent-run: blocked gh release create. Review and run it manually, or set AGENT_RUN_ALLOW_GITHUB_RELEASE=1 for this invocation." >&2',
-		'  exit 42',
-		'fi',
-		'if command -v /usr/bin/gh >/dev/null 2>&1; then',
-		'  exec /usr/bin/gh "$@"',
-		'fi',
-		'exec gh "$@"',
+		'saw_release=0',
+		'for arg in "$@"; do',
+		'  if [ "$arg" = "release" ]; then',
+		'    saw_release=1',
+		'  elif [ "$saw_release" = "1" ] && [ "$arg" = "create" ] && [ "${AGENT_RUN_ALLOW_GITHUB_RELEASE:-}" != "1" ]; then',
+		'    echo "agent-run: blocked gh release create. Review and run it manually, or set AGENT_RUN_ALLOW_GITHUB_RELEASE=1 for this invocation." >&2',
+		'    exit 42',
+		'  fi',
+		'done',
+		...posixRunRealCommand('gh'),
 		''
 	].join('\n');
 }
 
+function posixRunRealCommand(tool: string): string[] {
+	return [
+		'shim_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"',
+		'real_path="${AGENT_RUN_REAL_PATH:-}"',
+		'if [ -z "$real_path" ]; then',
+		'  case "${PATH:-}" in',
+		'    "$shim_dir") real_path="" ;;',
+		'    "$shim_dir":*) real_path="${PATH#*:}" ;;',
+		'    *) real_path="${PATH:-}" ;;',
+		'  esac',
+		'fi',
+		`real_command="$(PATH="$real_path" command -v ${tool} || true)"`,
+		'if [ -z "$real_command" ]; then',
+		`  echo "agent-run: cannot find the real ${tool} command outside the guard directory." >&2`,
+		'  exit 127',
+		'fi',
+		`if [ "$real_command" = "$shim_dir/${tool}" ]; then`,
+		`  echo "agent-run: refused recursive ${tool} guard resolution." >&2`,
+		'  exit 127',
+		'fi',
+		'PATH="$real_path" exec "$real_command" "$@"'
+	];
+}
+
 function windowsShim(name: string): string {
+	const executable = name === 'npm' || name === 'pnpm' ? `${name}.cmd` : `${name}.exe`;
 	const guard =
 		name === 'git'
 			? [
-					'if /I "%1"=="commit" goto block_git',
-					'if /I "%1"=="tag" goto block_git',
-					'if /I "%1"=="push" goto block_git',
-					'goto run',
+					':scan',
+					'if "%~1"=="" goto run',
+					'if /I "%~1"=="commit" goto block_git',
+					'if /I "%~1"=="tag" goto block_git',
+					'if /I "%~1"=="push" goto block_git',
+					'shift',
+					'goto scan',
 					':block_git',
 					'if "%AGENT_RUN_ALLOW_GIT_WRITE%"=="1" goto run',
-					'echo agent-run: blocked git %1. Review and run it manually, or set AGENT_RUN_ALLOW_GIT_WRITE=1 for this invocation. 1>&2',
+					'echo agent-run: blocked git write. Review and run it manually, or set AGENT_RUN_ALLOW_GIT_WRITE=1 for this invocation. 1>&2',
 					'exit /b 42'
 			  ]
 			: name === 'gh'
 				? [
-						'if /I not "%1"=="release" goto run',
-						'if /I not "%2"=="create" goto run',
+						'set "SAW_RELEASE=0"',
+						':scan',
+						'if "%~1"=="" goto run',
+						'if /I "%~1"=="release" set "SAW_RELEASE=1"',
+						'if "%SAW_RELEASE%"=="1" if /I "%~1"=="create" goto block_release',
+						'shift',
+						'goto scan',
+						':block_release',
 						'if "%AGENT_RUN_ALLOW_GITHUB_RELEASE%"=="1" goto run',
 						'echo agent-run: blocked gh release create. Review and run it manually, or set AGENT_RUN_ALLOW_GITHUB_RELEASE=1 for this invocation. 1>&2',
 						'exit /b 42'
 				  ]
 				: [
-						'if /I not "%1"=="publish" goto run',
+						':scan',
+						'if "%~1"=="" goto run',
+						'if /I "%~1"=="publish" goto block_publish',
+						'shift',
+						'goto scan',
+						':block_publish',
 						'if "%AGENT_RUN_ALLOW_PUBLISH%"=="1" goto run',
 						`echo agent-run: blocked ${name} publish. Review and run it manually, or set AGENT_RUN_ALLOW_PUBLISH=1 for this invocation. 1>&2`,
 						'exit /b 42'
 				  ];
-	return ['@echo off', ...guard, ':run', `${name}.exe %*`, ''].join('\n');
+	return [
+		'@echo off',
+		...guard,
+		':run',
+		'if defined AGENT_RUN_REAL_PATH (',
+		'  set "PATH=%AGENT_RUN_REAL_PATH%"',
+		') else (',
+		'  for /f "tokens=1,* delims=;" %%A in ("%PATH%") do set "PATH=%%B"',
+		')',
+		`${executable} %*`,
+		''
+	].join('\n');
 }
 
 function isVerbose(): boolean {

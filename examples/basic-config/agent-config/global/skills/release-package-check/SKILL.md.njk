@@ -7,6 +7,9 @@ description: Use before package releases in {{ profile }}.
 
 Use this checklist instead of an external `repo-check` command.
 
+Require every GitHub Actions `uses:` reference to use a full commit SHA. The
+`actions/setup-node` pin must be v6-compatible and use `node-version: 24`.
+
 Run configured checks after package metadata, release notes, workflow, lockfile, and git-state review:
 
 {% for check in checks %}

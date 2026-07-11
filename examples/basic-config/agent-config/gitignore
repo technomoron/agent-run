@@ -3,3 +3,20 @@
 
 # Optional generated caches
 **/.agent-run-cache/
+
+# Legacy Codex runtime state
+**/auth.json
+**/history.jsonl
+**/sessions/
+**/archived_sessions/
+**/log/
+**/logs/
+**/shell_snapshots/
+**/*.sqlite*
+**/models_cache.json
+**/cache/
+**/.tmp/
+**/installation_id
+**/version.json
+**/.personality_migration
+**/skills/.system/

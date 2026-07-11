@@ -1,11 +1,16 @@
 [Unit]
-Description=Update global AI and developer CLI packages
+Description=Update global AI CLI and package-manager tools
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
+KillMode=process
+UMask=0022
+TimeoutStartSec=30min
 Environment=HOME=/root
-Environment=NPM_CONFIG_PREFIX=/usr
-Environment=PNPM_HOME=/usr/local/bin
+Environment=XDG_CONFIG_HOME=/root/.config
+Environment=NPM_CONFIG_PREFIX=/usr/local
+Environment=PNPM_HOME=/usr/local
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/local/lib/agent-run/update-ai-tools.sh

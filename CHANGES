@@ -1,6 +1,28 @@
 CHANGES
 =======
 
+Version 0.99.23 (2026-07-11)
+----------------------------
+* Load Codex instructions, configuration, and skills natively from the private
+  `CODEX_HOME`, and default to `on-request` with the `workspace-write` sandbox.
+* Load Claude instructions through `--append-system-prompt-file`, load generated
+  skills as a strictly valid local plugin, and preserve the user's normal Claude
+  configuration.
+* Prevent shell injection in editor and child-process launches, fix generated
+  command guards, honor guardrail flags, and remove stale generated skills.
+* Fix literal argument forwarding, workspace and worktree resolution, deep and
+  ignored repository discovery, current local-agent detection, and fenced legacy
+  imports.
+* Enforce per-profile tool and local-agent-file switches, and preserve clean
+  executable lookup paths across nested agent-run sessions.
+* Escape generated JSON and TOML paths portably, validate Claude settings, and
+  protect or migrate legacy Codex credentials and runtime state.
+* Make releases reproducible by pinning GitHub Actions, using frozen installs,
+  and publishing the exact packed artifact with npm provenance.
+* Keep the global npm updater under `/usr/local`, avoid modifying distro-owned
+  paths or host-wide configuration, and install Claude's native binary when npm
+  blocks package lifecycle scripts.
+
 Version 0.99.22 (2026-06-27)
 ----------------------------
 * Default generated Codex configs to `danger-full-access` while keeping `--sandboxed` as an explicit opt-in.

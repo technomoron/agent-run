@@ -1,24 +1,22 @@
 {% if permissionsAllow.length %}{
   "env": {
-    "AGENT_DIR": "{{ agentDir }}",
-    "AGENT_PROFILE_DIR": "{{ profileDir }}",
-    "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",
-    "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}",
-    "STARTER_PROFILE": "{{ profile }}"
+    "AGENT_DIR": {{ agentDir | dump }},
+    "AGENT_PROFILE_DIR": {{ profileDir | dump }},
+    "AGENT_RUN_PROJECT_ROOT": {{ projectRoot | dump }},
+    "AGENT_GLOBAL_MEMORY_DIR": {{ paths.globalMemoryDir | dump }},
+    "STARTER_PROFILE": {{ profile | dump }}
   },
   "permissions": {
-    "allow": [
-      "{{ permissionsAllow | join('",\n      "') }}"
-    ]
+    "allow": {{ permissionsAllow | dump }}
   }
 }
 {% else %}{
   "env": {
-    "AGENT_DIR": "{{ agentDir }}",
-    "AGENT_PROFILE_DIR": "{{ profileDir }}",
-    "AGENT_RUN_PROJECT_ROOT": "{{ projectRoot }}",
-    "AGENT_GLOBAL_MEMORY_DIR": "{{ paths.globalMemoryDir }}",
-    "STARTER_PROFILE": "{{ profile }}"
+    "AGENT_DIR": {{ agentDir | dump }},
+    "AGENT_PROFILE_DIR": {{ profileDir | dump }},
+    "AGENT_RUN_PROJECT_ROOT": {{ projectRoot | dump }},
+    "AGENT_GLOBAL_MEMORY_DIR": {{ paths.globalMemoryDir | dump }},
+    "STARTER_PROFILE": {{ profile | dump }}
   }
 }
 {% endif %}

@@ -33,5 +33,11 @@ echo "Creating release tag ${TAG}"
 git -C "$ROOT" tag -a "${TAG}" -m "Release ${NAME} ${VERSION}"
 
 echo "Pushing ${TAG} to origin"
-git -C "$ROOT" push origin "refs/tags/${TAG}"
+if ! git -C "$ROOT" push origin "refs/tags/${TAG}"; then
+	echo "Failed to push ${TAG}; removing the local tag so the release can be retried." >&2
+	if ! git -C "$ROOT" tag -d "${TAG}" >/dev/null; then
+		echo "Failed to remove local tag ${TAG}; remove it manually before retrying." >&2
+	fi
+	exit 1
+fi
 echo "Triggered GitHub release workflow for ${TAG}"

@@ -24,7 +24,6 @@ SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 ORIGINAL_ARGS=("$@")
 
 INSTALL_AI_TOOLS=0
-INSTALL_ALL=0
 DRY_RUN=0
 
 while [ "$#" -gt 0 ]; do
@@ -34,7 +33,6 @@ while [ "$#" -gt 0 ]; do
 			shift
 			;;
 		--all)
-			INSTALL_ALL=1
 			INSTALL_AI_TOOLS=1
 			shift
 			;;

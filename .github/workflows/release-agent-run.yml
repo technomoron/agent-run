@@ -15,27 +15,33 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
 
       - name: Install Dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Verify Release Candidate
         run: pnpm release:verify -- --ci
 
       - name: Pack npm Package
-        run: npm pack
+        id: pack
+        run: |
+          TARBALL="$(npm pack --silent)"
+          test -n "$TARBALL"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
 
       - name: Check whether version already exists on npm
         id: npm_version
@@ -50,17 +56,17 @@ jobs:
 
       - name: Publish npm Package
         if: github.event_name == 'push' && steps.npm_version.outputs.exists != 'true'
-        run: npm publish
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --access public --provenance
 
       - name: Create or Update GitHub Release
         if: github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          TARBALL=$(ls -1 *.tgz | head -n1)
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$TARBALL" --clobber
           else
-            gh release create "$TAG" "$TARBALL" --title "$TAG"
+            gh release create "$TAG" "$TARBALL" --title "$TAG" --verify-tag
           fi

@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - '@technomoron/agent-run@*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to retry
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,6 +25,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
@@ -34,6 +41,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify Release Candidate
+        env:
+          GITHUB_REF_NAME: ${{ inputs.tag || github.ref_name }}
+          GITHUB_REF_TYPE: tag
         run: pnpm release:verify -- --ci
 
       - name: Pack npm Package
@@ -54,17 +64,27 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Select npm provenance mode
+        id: provenance
+        run: |
+          if [ "${{ github.event.repository.visibility }}" = "public" ]; then
+            echo "arg=--provenance" >> "$GITHUB_OUTPUT"
+          else
+            echo "Private source repository: publishing without npm provenance"
+            echo "arg=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish npm Package
-        if: github.event_name == 'push' && steps.npm_version.outputs.exists != 'true'
-        run: npm publish "${{ steps.pack.outputs.tarball }}" --access public --provenance
+        if: steps.npm_version.outputs.exists != 'true'
+        run: npm publish "${{ steps.pack.outputs.tarball }}" --access public ${{ steps.provenance.outputs.arg }}
 
       - name: Create or Update GitHub Release
-        if: github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           TARBALL: ${{ steps.pack.outputs.tarball }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="$RELEASE_TAG"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$TARBALL" --clobber
           else

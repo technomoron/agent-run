@@ -1,6 +1,11 @@
 CHANGES
 =======
 
+Unreleased
+----------
+* Allow failed tag releases to be retried through a manual workflow dispatch,
+  and omit npm provenance when the GitHub source repository is private.
+
 Version 0.99.23 (2026-07-11)
 ----------------------------
 * Load Codex instructions, configuration, and skills natively from the private

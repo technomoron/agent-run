@@ -1,6 +1,15 @@
 CHANGES
 =======
 
+Version 0.99.26 (2026-07-31)
+----------------------------
+* Add `--danger` support for Claude so unattended runs pass
+  `--dangerously-skip-permissions`.
+* Remove Claude's generated `.claude/settings.local.json` after guarded runs,
+  while preserving project-local settings when `--local` is used.
+* Keep nested command-guard tests independent of an outer agent-run session's
+  executable search path.
+
 Version 0.99.25 (2026-07-11)
 ----------------------------
 * Add config-root `agent-run.defaults.jsonc` inheritance so project manifests

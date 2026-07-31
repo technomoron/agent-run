@@ -47,7 +47,8 @@ function runTool(parsed) {
     validateRunModes(parsed, projectRoot);
     if (wrapperArgs.none || (0, project_1.isIgnoredDir)(projectRoot)) {
         (0, utils_1.verbose)(`wrapper bypassed for ${command}${wrapperArgs.none ? ' via --none' : ' because project is ignored'}`);
-        (0, process_1.execTool)((0, process_1.findRealBinary)(command), [...(0, tools_1.getPermissionArgs)(command), ...args]);
+        const runtimeArgs = wrapperArgs.sandboxMode === 'danger' ? (0, tools_1.getDangerArgs)(command) : (0, tools_1.getPermissionArgs)(command);
+        (0, process_1.execTool)((0, process_1.findRealBinary)(command), [...runtimeArgs, ...args]);
         return;
     }
     const profileResult = (0, project_1.resolveProfileResult)(projectRoot);

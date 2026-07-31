@@ -130,7 +130,7 @@ function parseRunCommand(command, inputArgs) {
         local: false,
         show: false,
         generate: false,
-        codexSandboxMode: null,
+        sandboxMode: null,
         codexNetwork: false
     };
     const args = [];
@@ -148,12 +148,12 @@ function parseRunCommand(command, inputArgs) {
         if (applyCommonRunOption(arg, wrapperArgs)) {
             continue;
         }
-        if (applyCodexRunOption(command, arg, wrapperArgs)) {
+        if (applySandboxRunOption(command, arg, wrapperArgs)) {
             continue;
         }
         args.push(arg);
     }
-    if (wrapperArgs.codexNetwork && wrapperArgs.codexSandboxMode === 'danger') {
+    if (wrapperArgs.codexNetwork && wrapperArgs.sandboxMode === 'danger') {
         (0, utils_1.fail)('--network cannot be combined with agent-run codex --danger');
     }
     return { args, command, wrapperArgs };
@@ -173,11 +173,11 @@ function applyCommonRunOption(arg, options) {
     options[field] = true;
     return true;
 }
-function applyCodexRunOption(command, arg, options) {
+function applySandboxRunOption(command, arg, options) {
     if (!['--danger', '--sandboxed', '--network'].includes(arg)) {
         return false;
     }
-    if (command !== 'codex') {
+    if (arg !== '--danger' && command !== 'codex') {
         (0, utils_1.fail)(`${arg} is only supported for agent-run codex`);
     }
     if (arg === '--network') {
@@ -185,10 +185,10 @@ function applyCodexRunOption(command, arg, options) {
         return true;
     }
     const mode = arg === '--danger' ? 'danger' : 'sandboxed';
-    if (options.codexSandboxMode !== null && options.codexSandboxMode !== mode) {
+    if (options.sandboxMode !== null && options.sandboxMode !== mode) {
         (0, utils_1.fail)('cannot combine --danger and --sandboxed');
     }
-    options.codexSandboxMode = mode;
+    options.sandboxMode = mode;
     return true;
 }
 function parseCheckCommand(inputArgs) {
@@ -319,7 +319,7 @@ function renderHelp(topic) {
         'Commands:',
         '  codex [--none] [--create] [--local] [--show] [--generate] [--danger|--sandboxed] [--network] [args...]',
         '                                           Run codex with generated private config',
-        '  claude [--none] [--create] [--local] [--show] [--generate] [args...]',
+        '  claude [--none] [--create] [--local] [--show] [--generate] [--danger] [args...]',
         '                                           Run claude with generated private config',
         '  check [--all] [path]                  Validate generated profile output',
         '  init [path]                           Create a sparse profile marker and render output',
@@ -338,9 +338,11 @@ function renderHelp(topic) {
         '  --local            Warn about local AI files instead of failing',
         '  --show             Show read/include and generated files without running the tool',
         '  --generate         Generate files without running the tool',
+        '  --danger           Run unattended without approval prompts:',
+        '                     Codex with -a never -s danger-full-access,',
+        '                     Claude with --dangerously-skip-permissions',
         '',
         'Codex wrapper options:',
-        '  --danger           Run Codex with no sandbox: -a never -s danger-full-access',
         '  --sandboxed        Run Codex with workspace-write sandbox (default)',
         '  --network          Enable network for the workspace-write sandbox',
         ''

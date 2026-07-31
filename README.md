@@ -154,9 +154,8 @@ Codex defaults to `-a on-request -s workspace-write`. `agent-run` sets
 `CODEX_HOME` under the private agent directory, where Codex discovers the
 generated `AGENTS.md`, `config.toml`, and skills natively. It starts Codex from
 that private directory, passes the project root with `-C`, and keeps generated
-guard shims on `PATH`. Use `--danger` explicitly for
-`-a never -s danger-full-access`; use `--network` to enable network access in
-the workspace-write sandbox.
+guard shims on `PATH`. Use `--network` to enable network access in the
+workspace-write sandbox.
 When `~/.codex/auth.json` exists, profile-specific Codex homes link their
 `auth.json` to that shared login cache so changing profiles does not require a
 new ChatGPT login.
@@ -165,7 +164,16 @@ Claude Code currently has no `--cd` equivalent. `agent-run` keeps Claude's
 process cwd at the project root, appends the generated `CLAUDE.md` with
 `--append-system-prompt-file`, passes generated settings with `--settings`, and
 loads generated skills from a local plugin with `--plugin-dir`. It does not
-replace the user's normal `CLAUDE_CONFIG_DIR`.
+replace the user's normal `CLAUDE_CONFIG_DIR`. If Claude writes remembered
+permissions to `.claude/settings.local.json`, `agent-run` removes that file
+after the session unless `--local` was used.
+
+`--danger` runs either tool unattended, with no approval prompts: Codex with
+`-a never -s danger-full-access`, Claude with `--dangerously-skip-permissions`.
+Only use it when the agent may change or delete anything it can reach. Claude
+refuses `--dangerously-skip-permissions` when it runs as root, so run it as a
+normal user. `--sandboxed` and `--network` stay Codex-only because Claude has no
+matching sandbox.
 
 By default, `agent-run codex` and `agent-run claude` fail when local AI files
 such as `AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.agents`,

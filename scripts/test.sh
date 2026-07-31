@@ -369,6 +369,10 @@ printf '%s\n' "$@" >"$AGENT_RUN_ARG_CAPTURE"
 if [ -n "${AGENT_RUN_ENV_CAPTURE:-}" ]; then
 	printf 'CLAUDE_CONFIG_DIR=%s\nPWD=%s\n' "${CLAUDE_CONFIG_DIR-<unset>}" "$PWD" >"$AGENT_RUN_ENV_CAPTURE"
 fi
+if [ -n "${AGENT_RUN_CREATE_LOCAL_SETTINGS:-}" ]; then
+	mkdir -p .claude
+	printf '{"permissions":{"allow":["Bash(pnpm test)"]}}\n' >.claude/settings.local.json
+fi
 SH
 chmod +x "$FAKE_TOOL_BIN/codex" "$FAKE_TOOL_BIN/claude"
 cat >"$FAKE_TOOL_BIN/codex.cmd" <<'BAT'
@@ -457,7 +461,27 @@ assert_contains "$TMP_DIR/claude-args.out" "--plugin-dir"
 assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_LIVE_DIR${EXPECTED_PATH_SEP}.claude"
 assert_line_count "$TMP_DIR/claude-args.out" "--add-dir" 0
 assert_not_contains "$TMP_DIR/claude-args.out" "$EXPECTED_MEMORY_DIR"
+assert_not_contains "$TMP_DIR/claude-args.out" "--dangerously-skip-permissions"
 assert_contains "$TMP_DIR/claude-env.out" "CLAUDE_CONFIG_DIR=$USER_CLAUDE_CONFIG"
+
+(cd "$PROJECT" && AGENT_RUN_CREATE_LOCAL_SETTINGS=1 AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-local-settings-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check >"$TMP_DIR/claude-local-settings.out" 2>&1)
+assert_no_dir "$PROJECT/.claude"
+assert_contains "$TMP_DIR/claude-local-settings.out" "removed Claude's project-local settings"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-danger-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --danger --memory-check)
+assert_contains "$TMP_DIR/claude-danger-args.out" "--dangerously-skip-permissions"
+assert_contains "$TMP_DIR/claude-danger-args.out" "--append-system-prompt-file"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-none-danger-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --none --danger --memory-check)
+assert_contains "$TMP_DIR/claude-none-danger-args.out" "--dangerously-skip-permissions"
+assert_not_contains "$TMP_DIR/claude-none-danger-args.out" "--append-system-prompt-file"
+
+set +e
+(cd "$PROJECT" && PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --sandboxed >"$TMP_DIR/claude-sandboxed.out" 2>&1)
+claude_sandboxed_status=$?
+set -e
+[ "$claude_sandboxed_status" -ne 0 ] || fail "expected claude --sandboxed to fail"
+assert_contains "$TMP_DIR/claude-sandboxed.out" "--sandboxed is only supported for agent-run codex"
 
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-show-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --show >"$TMP_DIR/claude-show.out")
 assert_no_file "$TMP_DIR/claude-show-args.out"
@@ -514,7 +538,9 @@ printf 'real %s\n' "$(basename "$0") $*"
 SH
 		chmod +x "$FAKE_REAL_GUARD_BIN/$tool"
 	done
-	PATH="$LIVE_DIR/bin:$FAKE_REAL_GUARD_BIN:/usr/bin:/bin" run_tool_shim "$LIVE_DIR/bin/pnpm" --version >"$TMP_DIR/pnpm-pass.out"
+	AGENT_RUN_REAL_PATH="$FAKE_REAL_GUARD_BIN:/usr/bin:/bin" \
+		PATH="$LIVE_DIR/bin:$FAKE_REAL_GUARD_BIN:/usr/bin:/bin" \
+		run_tool_shim "$LIVE_DIR/bin/pnpm" --version >"$TMP_DIR/pnpm-pass.out"
 	assert_contains "$TMP_DIR/pnpm-pass.out" "real pnpm --version"
 fi
 
@@ -871,7 +897,7 @@ assert.deepEqual(parseInvocation('agent-run', ['codex', '--', '--danger']), {
 		local: false,
 		show: false,
 		generate: false,
-		codexSandboxMode: null,
+		sandboxMode: null,
 		codexNetwork: false
 	}
 });
@@ -885,6 +911,10 @@ assert.deepEqual(
 	parseInvocation('agent-run', ['--sandboxed', '--network', 'codex', 'hello'])
 );
 
+assert.equal(parseInvocation('agent-run', ['claude', '--danger']).wrapperArgs.sandboxMode, 'danger');
+assert.equal(parseInvocation('agent-run', ['codex', '--danger']).wrapperArgs.sandboxMode, 'danger');
+assert.deepEqual(parseInvocation('agent-run', ['claude', '--danger', 'hello']).args, ['hello']);
+
 assert.deepEqual(parseInvocation('agent-run', ['--create', 'claude', 'hello']), {
 	args: ['hello'],
 	command: 'claude',
@@ -894,7 +924,7 @@ assert.deepEqual(parseInvocation('agent-run', ['--create', 'claude', 'hello']), 
 		local: false,
 		show: false,
 		generate: false,
-		codexSandboxMode: null,
+		sandboxMode: null,
 		codexNetwork: false
 	}
 });

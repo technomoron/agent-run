@@ -1,6 +1,6 @@
 export type ToolName = 'codex' | 'claude';
 export type CommandName = ToolName | 'check' | 'init' | 'edit' | 'update' | 'migrate-config';
-export type CodexSandboxMode = 'danger' | 'sandboxed';
+export type SandboxMode = 'danger' | 'sandboxed';
 
 export type WrapperArgs = {
 	none: boolean;
@@ -8,7 +8,7 @@ export type WrapperArgs = {
 	local: boolean;
 	show: boolean;
 	generate: boolean;
-	codexSandboxMode: CodexSandboxMode | null;
+	sandboxMode: SandboxMode | null;
 	codexNetwork: boolean;
 };
 

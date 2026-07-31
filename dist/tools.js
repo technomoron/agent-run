@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runCodex = runCodex;
 exports.runClaude = runClaude;
+exports.getDangerArgs = getDangerArgs;
 exports.getPermissionArgs = getPermissionArgs;
 const fs = require("fs");
 const path = require("path");
@@ -25,15 +26,13 @@ function runCodex(realBinary, permissionArgs, context, args, wrapperArgs) {
         AGENT_RUN_REAL_PATH: realPath,
         PATH: `${path.join(liveDir, 'bin')}${path.delimiter}${realPath}`
     };
-    const runtimeArgs = wrapperArgs.codexSandboxMode === 'danger'
-        ? ['-a', 'never', '-s', 'danger-full-access']
-        : ['-a', 'on-request', '-s', 'workspace-write'];
+    const runtimeArgs = wrapperArgs.sandboxMode === 'danger' ? getDangerArgs('codex') : ['-a', 'on-request', '-s', 'workspace-write'];
     (0, process_1.execCommand)(realBinary, [
         ...permissionArgs,
         ...runtimeArgs,
         '-C',
         projectRoot,
-        ...(wrapperArgs.codexSandboxMode !== 'danger' && wrapperArgs.codexNetwork
+        ...(wrapperArgs.sandboxMode !== 'danger' && wrapperArgs.codexNetwork
             ? ['--config', 'sandbox_workspace_write.network_access=true']
             : []),
         ...args
@@ -55,8 +54,9 @@ function runClaude(realBinary, permissionArgs, context, args, wrapperArgs) {
         AGENT_RUN_REAL_PATH: realPath,
         PATH: `${path.join(liveDir, 'bin')}${path.delimiter}${realPath}`
     };
+    const runtimeArgs = wrapperArgs.sandboxMode === 'danger' ? getDangerArgs('claude') : permissionArgs;
     (0, process_1.execCommand)(realBinary, [
-        ...permissionArgs,
+        ...runtimeArgs,
         '--append-system-prompt-file',
         claudePath,
         '--settings',
@@ -70,6 +70,9 @@ function postflightProjectCheck(context, allowLocal, code) {
     if (!context.guardrails.forbidRepoAiFiles) {
         return code;
     }
+    if (!allowLocal) {
+        removeClaudeLocalSettings(context.projectRoot);
+    }
     const localAiFiles = (0, project_1.findLocalAiFiles)(context.projectRoot, context.profileDir);
     if (localAiFiles.length === 0) {
         return code;
@@ -77,10 +80,33 @@ function postflightProjectCheck(context, allowLocal, code) {
     (0, project_1.warnForLocalAiFiles)(null, context.projectRoot, localAiFiles);
     return allowLocal ? code : 1;
 }
+function removeClaudeLocalSettings(projectRoot) {
+    const claudeDir = path.join(projectRoot, '.claude');
+    const localSettingsPath = path.join(claudeDir, 'settings.local.json');
+    if (!fs.existsSync(localSettingsPath)) {
+        return;
+    }
+    fs.rmSync(localSettingsPath);
+    try {
+        fs.rmdirSync(claudeDir);
+    }
+    catch (error) {
+        if (!isDirectoryNotEmptyError(error)) {
+            throw error;
+        }
+    }
+    process.stderr.write(`agent-run: removed Claude's project-local settings: ${localSettingsPath}\n`);
+}
+function isDirectoryNotEmptyError(error) {
+    return error instanceof Error && 'code' in error && error.code === 'ENOTEMPTY';
+}
 function failMissingConfig(tool, agentDir) {
     process.stderr.write(`agent-run: no ${tool} config found for this project: ${agentDir}\n`);
     process.stderr.write(`agent-run: run \`agent-run ${tool} --none\` to bypass agent setup, or \`agent-run ${tool} --create\` to create profile files.\n`);
     process.exit(1);
+}
+function getDangerArgs(tool) {
+    return tool === 'codex' ? ['-a', 'never', '-s', 'danger-full-access'] : ['--dangerously-skip-permissions'];
 }
 function getPermissionArgs(tool) {
     if (process.env.AGENT_WRAPPER_FORCE_PERMISSIVE !== '1') {

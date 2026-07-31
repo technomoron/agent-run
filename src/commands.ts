@@ -51,7 +51,7 @@ import {
 	warnForLocalAiFiles
 } from './project';
 import { renderProfile, syncAgentProfile } from './renderer';
-import { getPermissionArgs, runClaude, runCodex } from './tools';
+import { getDangerArgs, getPermissionArgs, runClaude, runCodex } from './tools';
 import { fail, formatPathList, uniqueSorted, verbose } from './utils';
 
 export function main(invokedTool: string, argv: string[]): void {
@@ -90,7 +90,8 @@ function runTool(parsed: RunCommand): void {
 	validateRunModes(parsed, projectRoot);
 	if (wrapperArgs.none || isIgnoredDir(projectRoot)) {
 		verbose(`wrapper bypassed for ${command}${wrapperArgs.none ? ' via --none' : ' because project is ignored'}`);
-		execTool(findRealBinary(command), [...getPermissionArgs(command), ...args]);
+		const runtimeArgs = wrapperArgs.sandboxMode === 'danger' ? getDangerArgs(command) : getPermissionArgs(command);
+		execTool(findRealBinary(command), [...runtimeArgs, ...args]);
 		return;
 	}
 

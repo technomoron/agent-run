@@ -1,6 +1,15 @@
 CHANGES
 =======
 
+Version 0.99.27 (2026-08-11)
+----------------------------
+* Rename the unattended-run option from `--danger` to `--yolo` for Codex and
+  Claude.
+* Add `agent-run setup [config-root]` to create the packaged starter agent
+  configuration files without overwriting local edits.
+* Resolve plain directories without Git metadata or a package name as
+  `[parent]/[current]` profiles.
+
 Version 0.99.26 (2026-07-31)
 ----------------------------
 * Add `--danger` support for Claude so unattended runs pass

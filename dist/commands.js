@@ -24,8 +24,8 @@ function dispatch(command) {
         case 'init':
             runInit(command);
             return;
-        case 'init-config':
-            runInitConfig(command);
+        case 'setup':
+            runSetup(command);
             return;
         case 'edit':
             runEdit(command);
@@ -154,13 +154,13 @@ function runInit(parsed) {
     const agentDir = initializeProfileSource(projectRoot, true);
     printUpdateSummary((0, renderer_1.syncAgentProfile)(projectRoot, agentDir));
 }
-function runInitConfig(parsed) {
+function runSetup(parsed) {
     const sourcePath = (0, config_tree_1.starterConfigRootPath)();
     if (!fs.existsSync(sourcePath)) {
         (0, utils_1.fail)(`starter config skeleton not found: ${sourcePath}`);
     }
     (0, config_tree_1.copySkeletonTree)(sourcePath, path.resolve(parsed.targetPath));
-    process.stdout.write(`OK copied starter config to ${path.resolve(parsed.targetPath)}\n`);
+    process.stdout.write(`OK created starter agent config in ${path.resolve(parsed.targetPath)}\n`);
 }
 function runEdit(parsed) {
     const projectRoot = activeProject(parsed.targetPath, 'edit');

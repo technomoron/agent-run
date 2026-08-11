@@ -190,8 +190,8 @@ PATH="$FAKE_GUARD_BIN:$FAKE_REAL_BIN:$PATH" node "$BIN" codex --none --version >
 assert_contains "$TMP_DIR/codex-version.out" "codex-cli fake"
 
 SKELETON_INIT="$TMP_DIR/copied-agent-config"
-node "$BIN" --init "$SKELETON_INIT" >"$TMP_DIR/init-config.out"
-assert_contains "$TMP_DIR/init-config.out" "OK copied starter config to"
+node "$BIN" setup "$SKELETON_INIT" >"$TMP_DIR/setup.out"
+assert_contains "$TMP_DIR/setup.out" "OK created starter agent config in"
 assert_file "$SKELETON_INIT/.gitignore"
 assert_file "$SKELETON_INIT/agent-run.defaults.jsonc"
 assert_file "$SKELETON_INIT/global/agents/code.md.njk"
@@ -204,7 +204,7 @@ assert_contains "$SKELETON_INIT/skills/personal-memory.md" "Read \`./notes/memor
 assert_contains "$SKELETON_INIT/.gitignore" "**/live/"
 
 printf 'local edit\n' >"$SKELETON_INIT/starter/basic-project/local.md.njk"
-node "$BIN" --init "$SKELETON_INIT" >/dev/null
+node "$BIN" setup "$SKELETON_INIT" >/dev/null
 assert_contains "$SKELETON_INIT/starter/basic-project/local.md.njk" "local edit"
 
 DEFAULT_CODE_ROOT="$TMP_DIR/code"
@@ -232,6 +232,14 @@ rm "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
 node "$BIN" update --all "$DEFAULT_CONFIG_ROOT" >"$TMP_DIR/default-code-root-update-all.out"
 assert_contains "$TMP_DIR/default-code-root-update-all.out" "OK acme/widget"
 assert_file "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
+
+PLAIN_PROJECT="$DEFAULT_CODE_ROOT/plain-owner/plain-project"
+PLAIN_AGENT_DIR="$DEFAULT_CONFIG_ROOT/plain-owner/plain-project"
+mkdir -p "$PLAIN_PROJECT"
+node "$BIN" init "$PLAIN_PROJECT" >"$TMP_DIR/plain-project-init.out"
+assert_contains "$TMP_DIR/plain-project-init.out" "OK profile plain-owner/plain-project"
+assert_file "$PLAIN_AGENT_DIR/agent-run.jsonc"
+assert_file "$PLAIN_AGENT_DIR/live/memories/codex-home/AGENTS.md"
 
 UNCONFIGURED_PROJECT="$DEFAULT_CODE_ROOT/acme/unconfigured"
 UNCONFIGURED_AGENT_DIR="$DEFAULT_CONFIG_ROOT/acme/unconfigured"
@@ -420,10 +428,10 @@ SH
 	assert_contains "$TMP_DIR/nested-git.out" "nested real git --version"
 fi
 
-(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-danger-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --danger --memory-check)
-assert_contains "$TMP_DIR/codex-danger-args.out" "never"
-assert_contains "$TMP_DIR/codex-danger-args.out" "danger-full-access"
-assert_not_contains "$TMP_DIR/codex-danger-args.out" "on-request"
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-yolo-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --yolo --memory-check)
+assert_contains "$TMP_DIR/codex-yolo-args.out" "never"
+assert_contains "$TMP_DIR/codex-yolo-args.out" "danger-full-access"
+assert_not_contains "$TMP_DIR/codex-yolo-args.out" "on-request"
 
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-network-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --network --memory-check)
 assert_contains "$TMP_DIR/codex-network-args.out" "sandbox_workspace_write.network_access=true"
@@ -468,13 +476,13 @@ assert_contains "$TMP_DIR/claude-env.out" "CLAUDE_CONFIG_DIR=$USER_CLAUDE_CONFIG
 assert_no_dir "$PROJECT/.claude"
 assert_contains "$TMP_DIR/claude-local-settings.out" "removed Claude's project-local settings"
 
-(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-danger-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --danger --memory-check)
-assert_contains "$TMP_DIR/claude-danger-args.out" "--dangerously-skip-permissions"
-assert_contains "$TMP_DIR/claude-danger-args.out" "--append-system-prompt-file"
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-yolo-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --yolo --memory-check)
+assert_contains "$TMP_DIR/claude-yolo-args.out" "--dangerously-skip-permissions"
+assert_contains "$TMP_DIR/claude-yolo-args.out" "--append-system-prompt-file"
 
-(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-none-danger-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --none --danger --memory-check)
-assert_contains "$TMP_DIR/claude-none-danger-args.out" "--dangerously-skip-permissions"
-assert_not_contains "$TMP_DIR/claude-none-danger-args.out" "--append-system-prompt-file"
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-none-yolo-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --none --yolo --memory-check)
+assert_contains "$TMP_DIR/claude-none-yolo-args.out" "--dangerously-skip-permissions"
+assert_not_contains "$TMP_DIR/claude-none-yolo-args.out" "--append-system-prompt-file"
 
 set +e
 (cd "$PROJECT" && PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --sandboxed >"$TMP_DIR/claude-sandboxed.out" 2>&1)
@@ -905,15 +913,16 @@ assert.deepEqual(parseInvocation('agent-run', ['codex', '--', '--danger']), {
 assert.equal(findProjectRoot(process.env.TEST_WORKSPACE_CHILD), process.env.TEST_WORKSPACE_ROOT);
 assert.equal(findProjectRoot(process.env.TEST_WORKTREE_CHILD), process.env.TEST_WORKTREE_ROOT);
 assert.equal(resolveProfile(process.env.TEST_WORKTREE_ROOT), 'example/worktree-profile');
+assert.equal(resolveProfile(path.join('/work', 'plain-owner', 'plain-project')), 'plain-owner/plain-project');
 
 assert.deepEqual(
 	parseInvocation('agent-run', ['codex', '--sandboxed', '--network', 'hello']),
 	parseInvocation('agent-run', ['--sandboxed', '--network', 'codex', 'hello'])
 );
 
-assert.equal(parseInvocation('agent-run', ['claude', '--danger']).wrapperArgs.sandboxMode, 'danger');
-assert.equal(parseInvocation('agent-run', ['codex', '--danger']).wrapperArgs.sandboxMode, 'danger');
-assert.deepEqual(parseInvocation('agent-run', ['claude', '--danger', 'hello']).args, ['hello']);
+assert.equal(parseInvocation('agent-run', ['claude', '--yolo']).wrapperArgs.sandboxMode, 'danger');
+assert.equal(parseInvocation('agent-run', ['codex', '--yolo']).wrapperArgs.sandboxMode, 'danger');
+assert.deepEqual(parseInvocation('agent-run', ['claude', '--yolo', 'hello']).args, ['hello']);
 
 assert.deepEqual(parseInvocation('agent-run', ['--create', 'claude', 'hello']), {
 	args: ['hello'],
@@ -938,8 +947,8 @@ assert.deepEqual(parseInvocation('agent-run', ['update', '--all', '/tmp/agent-co
 	command: 'update',
 	targetPath: path.resolve('/tmp/agent-config')
 });
-assert.deepEqual(parseInvocation('agent-run', ['--init', '/tmp/agent-config']), {
-	command: 'init-config',
+assert.deepEqual(parseInvocation('agent-run', ['setup', '/tmp/agent-config']), {
+	command: 'setup',
 	targetPath: path.resolve('/tmp/agent-config')
 });
 assert.deepEqual(defaultConfigRootSearchCandidates(undefined, { platform: 'win32', homeDir: 'C:\\Users\\alice' }), [

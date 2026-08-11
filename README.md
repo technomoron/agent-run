@@ -97,6 +97,7 @@ The mapped path is:
 1. `AGENT_RUN_PROFILE` in `.agent-run.env`
 2. GitHub `origin` remote
 3. `package.json.name`
+4. the project path as `[parent]/[current]`
 
 Examples:
 
@@ -104,11 +105,13 @@ Examples:
 - `AGENT_RUN_PROFILE=unrelated/hello` -> `unrelated/hello`
 - `package.json.name = "@org/my-api"` -> `org/my-api`
 - `package.json.name = "my-api"` -> `my-api`
+- `/work/org/my-api` with none of the above -> `org/my-api`
 
 `AGENT_RUN_PROFILE` is relative to the config root. It is not a filesystem
 path, so values like `/tmp/foo`, `C:/tmp/foo`, or `../foo` are rejected.
 
-If neither exists, `agent-run` fails instead of guessing.
+The path fallback lets plain directories work without a Git repository or a
+`package.json`. The explicit profile sources above always take precedence.
 
 ## Overrides
 
@@ -168,7 +171,7 @@ replace the user's normal `CLAUDE_CONFIG_DIR`. If Claude writes remembered
 permissions to `.claude/settings.local.json`, `agent-run` removes that file
 after the session unless `--local` was used.
 
-`--danger` runs either tool unattended, with no approval prompts: Codex with
+`--yolo` runs either tool unattended, with no approval prompts: Codex with
 `-a never -s danger-full-access`, Claude with `--dangerously-skip-permissions`.
 Only use it when the agent may change or delete anything it can reach. Claude
 refuses `--dangerously-skip-permissions` when it runs as root, so run it as a
@@ -250,16 +253,16 @@ snippets, profile-local templates, skill templates, a personal memory skill,
 profile skill overrides, tool config overrides, guardrails, checks, and
 generated runtime paths.
 
-To copy the packaged starter config root into your default config location:
+To create the packaged starter agent files in your resolved config root:
 
 ```sh
-agent-run --init
+agent-run setup
 ```
 
 Or choose a destination:
 
 ```sh
-agent-run --init ~/.agent-config
+agent-run setup ~/.agent-config
 ```
 
 The copy skips files that already exist, so local edits are preserved.

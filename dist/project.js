@@ -173,10 +173,15 @@ function profileFromPackage(projectRoot) {
             return { profile: null, reason: `cannot parse package.json: ${packagePath}` };
         }
     }
-    return {
-        profile: null,
-        reason: `cannot resolve agent profile for ${projectRoot}; add ${constants_1.ENV_FILE_NAME} with AGENT_RUN_PROFILE=<org/project>, add a GitHub origin remote, or set package.json.name`
-    };
+    const current = path.basename(projectRoot);
+    const parentDir = path.dirname(projectRoot);
+    const parent = path.basename(parentDir);
+    if (current && parent && parentDir !== projectRoot) {
+        const inferredProfile = `${parent}/${current}`;
+        (0, utils_1.verbose)(`using project path profile=${inferredProfile}`);
+        return parseProfile(inferredProfile, 'project parent and directory name');
+    }
+    return { profile: null, reason: `cannot resolve agent profile from project path: ${projectRoot}` };
 }
 function resolveGitHubProfile(projectRoot) {
     const result = childProcess.spawnSync('git', ['-C', projectRoot, 'config', '--get', 'remote.origin.url'], {

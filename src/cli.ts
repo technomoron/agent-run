@@ -13,6 +13,7 @@ import {
 	MigrateConfigCommand,
 	ParsedInvocation,
 	RunCommand,
+	SetupCommand,
 	ToolName,
 	UpdateCommand,
 	WrapperArgs
@@ -20,12 +21,10 @@ import {
 import { defaultConfigRoot } from './project';
 import { fail } from './utils';
 
-type HelpTopic = 'general' | 'check' | 'init' | 'edit' | 'update' | 'migrate-config';
+type HelpTopic = 'general' | 'check' | 'setup' | 'init' | 'edit' | 'update' | 'migrate-config';
 type GlobalOptions = {
 	args: string[];
 	configRootOverride: string | null;
-	initConfig: boolean;
-	initConfigTargetPath: string | null;
 	verbose: boolean;
 };
 
@@ -33,15 +32,6 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 	let command = normalizeCommandName(invokedTool);
 	const options = extractGlobalOptions(argv);
 	applyGlobalOptions(options);
-	if (options.initConfig) {
-		if (options.args.length > 0) {
-			fail('--init cannot be combined with a command');
-		}
-		return {
-			command: 'init-config',
-			targetPath: path.resolve(options.initConfigTargetPath ?? defaultConfigRoot())
-		};
-	}
 	if (command === null) {
 		command = extractCommand(options.args);
 	}
@@ -85,6 +75,8 @@ function parseCommand(command: CommandName, args: string[]): ParsedInvocation {
 			return parseCheckCommand(args);
 		case 'init':
 			return parseInitCommand(args);
+		case 'setup':
+			return parseSetupCommand(args);
 		case 'edit':
 			return parseEditCommand(args);
 		case 'update':
@@ -100,8 +92,6 @@ function extractGlobalOptions(argv: string[]): GlobalOptions {
 	const options: GlobalOptions = {
 		args: [],
 		configRootOverride: null,
-		initConfig: false,
-		initConfigTargetPath: null,
 		verbose: false
 	};
 	let passthrough = false;
@@ -119,13 +109,6 @@ function extractGlobalOptions(argv: string[]): GlobalOptions {
 			options.args.push(arg);
 		} else if (arg === '-v' || arg === '--verbose') {
 			options.verbose = true;
-		} else if (arg === '--init') {
-			options.initConfig = true;
-			const nextArg = argv[index + 1];
-			if (nextArg !== undefined && !nextArg.startsWith('-')) {
-				options.initConfigTargetPath = nextArg;
-				index += 1;
-			}
 		} else if (arg === '--config-root') {
 			const nextArg = argv[index + 1];
 			if (nextArg === undefined) {
@@ -177,7 +160,7 @@ function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
 		args.push(arg);
 	}
 	if (wrapperArgs.codexNetwork && wrapperArgs.sandboxMode === 'danger') {
-		fail('--network cannot be combined with agent-run codex --danger');
+		fail('--network cannot be combined with agent-run codex --yolo');
 	}
 	return { args, command, wrapperArgs };
 }
@@ -199,19 +182,19 @@ function applyCommonRunOption(arg: string, options: WrapperArgs): boolean {
 }
 
 function applySandboxRunOption(command: ToolName, arg: string, options: WrapperArgs): boolean {
-	if (!['--danger', '--sandboxed', '--network'].includes(arg)) {
+	if (!['--yolo', '--sandboxed', '--network'].includes(arg)) {
 		return false;
 	}
-	if (arg !== '--danger' && command !== 'codex') {
+	if (arg !== '--yolo' && command !== 'codex') {
 		fail(`${arg} is only supported for agent-run codex`);
 	}
 	if (arg === '--network') {
 		options.codexNetwork = true;
 		return true;
 	}
-	const mode = arg === '--danger' ? 'danger' : 'sandboxed';
+	const mode = arg === '--yolo' ? 'danger' : 'sandboxed';
 	if (options.sandboxMode !== null && options.sandboxMode !== mode) {
-		fail('cannot combine --danger and --sandboxed');
+		fail('cannot combine --yolo and --sandboxed');
 	}
 	options.sandboxMode = mode;
 	return true;
@@ -239,12 +222,16 @@ function parseInitCommand(inputArgs: string[]): InitCommand {
 	return { command: 'init', targetPath: parseSinglePath(inputArgs, 'init') };
 }
 
+function parseSetupCommand(inputArgs: string[]): SetupCommand {
+	return { command: 'setup', targetPath: parseSinglePath(inputArgs, 'setup', defaultConfigRoot()) };
+}
+
 function parseEditCommand(inputArgs: string[]): EditCommand {
 	return { command: 'edit', targetPath: parseSinglePath(inputArgs, 'edit') };
 }
 
-function parseSinglePath(inputArgs: string[], command: 'init' | 'edit'): string {
-	let targetPath = process.cwd();
+function parseSinglePath(inputArgs: string[], command: 'setup' | 'init' | 'edit', defaultPath = process.cwd()): string {
+	let targetPath = defaultPath;
 	for (const arg of inputArgs) {
 		if (isHelpFlag(arg)) {
 			printHelp(command);
@@ -321,6 +308,7 @@ function renderHelp(topic: HelpTopic): string {
 			''
 		],
 		init: ['Usage:', '  agent-run init [path]', '', 'Create a minimal mapped profile marker and render generated files.', ''],
+		setup: ['Usage:', '  agent-run setup [config-root]', '', 'Create starter agent configuration files in the config root.', ''],
 		edit: ['Usage:', '  agent-run edit [path]', '', 'Create or open the editable local profile template.', ''],
 		update: [
 			'Usage:',
@@ -345,14 +333,14 @@ function renderHelp(topic: HelpTopic): string {
 		`agent-run ${agentRunVersion()}`,
 		'',
 		'Usage:',
-		'  agent-run <codex|claude|check|init|edit|update> [options]',
-		'  agent-run --init [config-root]',
+		'  agent-run <codex|claude|check|setup|init|edit|update> [options]',
 		'',
 		'Commands:',
-		'  codex [--none] [--create] [--local] [--show] [--generate] [--danger|--sandboxed] [--network] [args...]',
+		'  codex [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [--network] [args...]',
 		'                                           Run codex with generated private config',
-		'  claude [--none] [--create] [--local] [--show] [--generate] [--danger] [args...]',
+		'  claude [--none] [--create] [--local] [--show] [--generate] [--yolo] [args...]',
 		'                                           Run claude with generated private config',
+		'  setup [config-root]                    Create starter files in the agent-config root',
 		'  check [--all] [path]                  Validate generated profile output',
 		'  init [path]                           Create a sparse profile marker and render output',
 		'  edit [path]                           Create or open local.md.njk',
@@ -364,13 +352,12 @@ function renderHelp(topic: HelpTopic): string {
 		'  -V, --version      Show the agent-run version',
 		'  -v, --verbose      Print path resolution and wrapper actions',
 		'  --config-root DIR  Override the agent-config root',
-		'  --init [DIR]       Copy the packaged starter config root to DIR (default ~/.agent-config)',
 		'',
 		'Run wrapper options:',
 		'  --local            Warn about local AI files instead of failing',
 		'  --show             Show read/include and generated files without running the tool',
 		'  --generate         Generate files without running the tool',
-		'  --danger           Run unattended without approval prompts:',
+		'  --yolo             Run unattended without approval prompts:',
 		'                     Codex with -a never -s danger-full-access,',
 		'                     Claude with --dangerously-skip-permissions',
 		'',
@@ -398,7 +385,7 @@ function normalizeCommandName(value: string): CommandName | null {
 	if (base === 'agent-run') {
 		return null;
 	}
-	return ['codex', 'claude', 'check', 'init', 'edit', 'update', 'migrate-config'].includes(base)
+	return ['codex', 'claude', 'check', 'setup', 'init', 'edit', 'update', 'migrate-config'].includes(base)
 		? (base as CommandName)
 		: null;
 }

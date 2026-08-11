@@ -27,13 +27,13 @@ import {
 	CheckCommand,
 	EditCommand,
 	InitCommand,
-	InitConfigCommand,
 	MigrateConfigCommand,
 	ParsedInvocation,
 	RenderContext,
 	RenderedProfile,
 	RenderTrace,
 	RunCommand,
+	SetupCommand,
 	ToolName,
 	UpdateCommand
 } from './model';
@@ -66,8 +66,8 @@ function dispatch(command: ParsedInvocation): void {
 		case 'init':
 			runInit(command);
 			return;
-		case 'init-config':
-			runInitConfig(command);
+		case 'setup':
+			runSetup(command);
 			return;
 		case 'edit':
 			runEdit(command);
@@ -213,13 +213,13 @@ function runInit(parsed: InitCommand): void {
 	printUpdateSummary(syncAgentProfile(projectRoot, agentDir));
 }
 
-function runInitConfig(parsed: InitConfigCommand): void {
+function runSetup(parsed: SetupCommand): void {
 	const sourcePath = starterConfigRootPath();
 	if (!fs.existsSync(sourcePath)) {
 		fail(`starter config skeleton not found: ${sourcePath}`);
 	}
 	copySkeletonTree(sourcePath, path.resolve(parsed.targetPath));
-	process.stdout.write(`OK copied starter config to ${path.resolve(parsed.targetPath)}\n`);
+	process.stdout.write(`OK created starter agent config in ${path.resolve(parsed.targetPath)}\n`);
 }
 
 function runEdit(parsed: EditCommand): void {

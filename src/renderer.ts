@@ -152,11 +152,18 @@ export function syncAgentProfile(
 
 function writeGeneratedFile(filePath: string, content: string, executable: boolean): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
-	fs.writeFileSync(filePath, content, 'utf8');
-	if (executable && !IS_WINDOWS) {
-		fs.chmodSync(filePath, 0o755);
+	const unchanged = fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf8') === content;
+	if (!unchanged) {
+		fs.writeFileSync(filePath, content, 'utf8');
+		verbose(`write ${filePath}`);
 	}
-	verbose(`write ${filePath}`);
+	if (executable && !IS_WINDOWS) {
+		const currentMode = fs.statSync(filePath).mode & 0o777;
+		if (currentMode !== 0o755) {
+			fs.chmodSync(filePath, 0o755);
+			verbose(`chmod 755 ${filePath}`);
+		}
+	}
 }
 
 function removeStaleGeneratedEntries(rendered: RenderedProfile): void {

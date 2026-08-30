@@ -15,7 +15,7 @@ import {
 	migrateOldTemplates,
 	starterConfigRootPath
 } from './config-tree';
-import { LOCAL_TEMPLATE_FILE_NAME, MANIFEST_FILE_NAME } from './constants';
+import { ENV_FILE_NAME, LOCAL_TEMPLATE_FILE_NAME, MANIFEST_FILE_NAME } from './constants';
 import {
 	convertLegacyProfileIfNeeded,
 	createDefaultLocalFile,
@@ -26,6 +26,7 @@ import {
 import {
 	CheckCommand,
 	EditCommand,
+	GenerateCommand,
 	InitCommand,
 	MigrateConfigCommand,
 	ParsedInvocation,
@@ -46,6 +47,7 @@ import {
 	isIgnoredDir,
 	projectRootForProfile,
 	resolveAgentDir,
+	parseProfile,
 	resolveProfile,
 	resolveProfileResult,
 	warnForLocalAiFiles
@@ -64,7 +66,10 @@ function dispatch(command: ParsedInvocation): void {
 			runCheck(command);
 			return;
 		case 'init':
-			runInit(command);
+			runGenerate(command);
+			return;
+		case 'generate':
+			runGenerate(command);
 			return;
 		case 'setup':
 			runSetup(command);
@@ -109,7 +114,7 @@ function runTool(parsed: RunCommand): void {
 		return;
 	}
 	if (wrapperArgs.create) {
-		runInit({ command: 'init', targetPath: projectRoot });
+		runGenerate({ command: 'generate', targetPath: projectRoot });
 	}
 	const configRoot = defaultConfigRoot(projectRoot);
 	const agentDir = path.join(configRoot, profile);
@@ -156,7 +161,7 @@ function requireProfile(tool: ToolName | null, agentDir: string): void {
 	}
 	const label = tool ?? 'agent';
 	process.stderr.write(`agent-run: no ${label} profile found for this project: ${agentDir}\n`);
-	process.stderr.write('agent-run: run `agent-run init` or use the tool with `--create`.\n');
+	process.stderr.write('agent-run: run `agent-run generate` or use the tool with `--create`.\n');
 	process.exit(1);
 }
 
@@ -204,8 +209,11 @@ function ensureToolEnabled(context: RenderContext, command: ToolName): void {
 	}
 }
 
-function runInit(parsed: InitCommand): void {
-	const projectRoot = activeProject(parsed.targetPath, 'init');
+function runGenerate(parsed: InitCommand | GenerateCommand): void {
+	if (parsed.command === 'init') {
+		process.stderr.write('agent-run: `init` is deprecated; use `agent-run generate [path]` instead.\n');
+	}
+	const projectRoot = activeProject(parsed.targetPath, 'generate');
 	if (projectRoot === null) {
 		return;
 	}
@@ -214,12 +222,75 @@ function runInit(parsed: InitCommand): void {
 }
 
 function runSetup(parsed: SetupCommand): void {
+	const projectRoot = findProjectRoot(process.cwd());
+	const detectedProfile = resolveProfile(projectRoot);
+	const profile = parsed.profile === null ? confirmProfile(detectedProfile) : requireValidProfile(parsed.profile);
+	const configRoot = defaultConfigRoot(projectRoot);
 	const sourcePath = starterConfigRootPath();
 	if (!fs.existsSync(sourcePath)) {
 		fail(`starter config skeleton not found: ${sourcePath}`);
 	}
-	copySkeletonTree(sourcePath, path.resolve(parsed.targetPath));
-	process.stdout.write(`OK created starter agent config in ${path.resolve(parsed.targetPath)}\n`);
+	copySkeletonTree(sourcePath, configRoot, new Set(['starter']));
+	const agentDir = path.join(configRoot, profile);
+	copySkeletonTree(path.join(sourcePath, 'starter', 'basic-project'), agentDir);
+	if (profile !== detectedProfile) {
+		writeProjectProfileMapping(projectRoot, profile);
+	}
+	printUpdateSummary(syncAgentProfile(projectRoot, agentDir, { configRoot, profile }));
+	process.stdout.write(`OK installed default config tree at ${configRoot}\n`);
+}
+
+function requireValidProfile(value: string): string {
+	const parsed = parseProfile(value, 'setup profile');
+	if (parsed.profile === null) {
+		fail(parsed.reason);
+	}
+	return parsed.profile;
+}
+
+function confirmProfile(detectedProfile: string): string {
+	process.stdout.write(`Detected profile: ${detectedProfile}\n`);
+	const confirmation = promptLine('Is this correct? [Y/n] ').trim().toLowerCase();
+	if (confirmation === '' || confirmation === 'y' || confirmation === 'yes') {
+		return detectedProfile;
+	}
+	return requireValidProfile(promptLine('Profile (org/repo): '));
+}
+
+function promptLine(prompt: string): string {
+	if (!process.stdin.isTTY) {
+		fail('setup requires a profile argument when input is not interactive');
+	}
+	process.stdout.write(prompt);
+	const bytes: number[] = [];
+	const buffer = Buffer.alloc(1);
+	while (fs.readSync(process.stdin.fd, buffer, 0, 1, null) === 1) {
+		if (buffer[0] === 10) {
+			break;
+		}
+		if (buffer[0] !== 13) {
+			bytes.push(buffer[0] ?? 0);
+		}
+	}
+	return Buffer.from(bytes).toString('utf8');
+}
+
+function writeProjectProfileMapping(projectRoot: string, profile: string): void {
+	const envPath = path.join(projectRoot, ENV_FILE_NAME);
+	const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8').replace(/\r\n/g, '\n') : '';
+	const lines = existing.length > 0 ? existing.replace(/\n+$/, '').split('\n') : [];
+	const profileLine = `AGENT_RUN_PROFILE=${profile}`;
+	const index = lines.findIndex((line) => /^\s*AGENT_RUN_PROFILE\s*=/.test(line));
+	if (index >= 0) {
+		lines[index] = profileLine;
+	} else {
+		lines.push(profileLine);
+	}
+	const content = `${lines.join('\n')}\n`;
+	if (content !== existing) {
+		fs.writeFileSync(envPath, content, 'utf8');
+		verbose(`write ${envPath}`);
+	}
 }
 
 function runEdit(parsed: EditCommand): void {
@@ -333,7 +404,7 @@ function prepareConfigRoot(configRoot: string): void {
 	ensureDefaultGlobalTemplates(configRoot);
 }
 
-function activeProject(targetPath: string, action: 'init' | 'edit'): string | null {
+function activeProject(targetPath: string, action: 'generate' | 'edit'): string | null {
 	const projectRoot = findProjectRoot(targetPath);
 	verbose(`${action} target=${targetPath} projectRoot=${projectRoot}`);
 	if (!isIgnoredDir(projectRoot)) {

@@ -153,14 +153,17 @@ function migrateLooseFiles(agentDir, pattern, targetDirName) {
 function starterConfigRootPath() {
     return path.resolve(__dirname, '..', 'examples', 'basic-config', 'agent-config');
 }
-function copySkeletonTree(sourceDir, targetDir) {
+function copySkeletonTree(sourceDir, targetDir, excludedNames = new Set()) {
     fs.mkdirSync(targetDir, { recursive: true });
     const entries = fs.readdirSync(sourceDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
+        if (excludedNames.has(entry.name)) {
+            continue;
+        }
         const sourcePath = path.join(sourceDir, entry.name);
         const targetPath = path.join(targetDir, entry.name === 'gitignore' ? '.gitignore' : entry.name);
         if (entry.isDirectory()) {
-            copySkeletonTree(sourcePath, targetPath);
+            copySkeletonTree(sourcePath, targetPath, excludedNames);
         }
         else if (entry.isFile() && !fs.existsSync(targetPath)) {
             fs.mkdirSync(path.dirname(targetPath), { recursive: true });

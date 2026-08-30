@@ -187,7 +187,12 @@ function profileFromPackage(projectRoot: string): { profile: string | null; reas
 	const packagePath = path.join(projectRoot, 'package.json');
 	if (fs.existsSync(packagePath)) {
 		try {
-			const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { name?: unknown };
+			const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { name?: unknown; repository?: unknown };
+			const repositoryProfile = parsePackageRepositoryProfile(pkg.repository);
+			if (repositoryProfile !== null) {
+				verbose(`using package.json repository profile=${repositoryProfile}`);
+				return parseProfile(repositoryProfile, `${packagePath} repository`);
+			}
 			if (typeof pkg.name === 'string' && pkg.name.length > 0) {
 				verbose(`using package.json name=${pkg.name}`);
 				return parseProfile(pkg.name.startsWith('@') ? pkg.name.slice(1) : pkg.name, `${packagePath} name`);
@@ -205,6 +210,28 @@ function profileFromPackage(projectRoot: string): { profile: string | null; reas
 		return parseProfile(inferredProfile, 'project parent and directory name');
 	}
 	return { profile: null, reason: `cannot resolve agent profile from project path: ${projectRoot}` };
+}
+
+function parsePackageRepositoryProfile(repository: unknown): string | null {
+	let repositoryPath: string | null = null;
+	if (typeof repository === 'string') {
+		repositoryPath = repository;
+	} else if (repository !== null && typeof repository === 'object' && 'url' in repository) {
+		const url = (repository as { url?: unknown }).url;
+		if (typeof url === 'string') {
+			repositoryPath = url;
+		}
+	}
+	if (repositoryPath === null) {
+		return null;
+	}
+	const value = repositoryPath.trim();
+	const githubProfile = parseGitHubRemoteProfile(value.replace(/^git\+/, ''));
+	if (githubProfile !== null) {
+		return githubProfile;
+	}
+	const shorthand = /^(?:github:)?([^/:\s]+)\/([^/\s]+?)(?:\.git)?$/.exec(value);
+	return shorthand?.[1] && shorthand[2] ? `${shorthand[1]}/${shorthand[2]}` : null;
 }
 
 function resolveGitHubProfile(projectRoot: string): string | null {
@@ -303,18 +330,12 @@ export function defaultConfigRoot(projectRoot?: string, options: { preferProject
 	if (explicit !== null) {
 		return explicit;
 	}
-	if (projectRoot) {
-		const projectConfigRoot = defaultCodeConfigRoot(projectRoot);
-		if (options.preferProjectRoot || fs.existsSync(projectConfigRoot)) {
-			return projectConfigRoot;
-		}
-		return findExistingConfigRoot(defaultConfigRootSearchCandidates()) ?? projectConfigRoot;
-	}
-	return findExistingConfigRoot(defaultConfigRootSearchCandidates()) ?? path.join(os.homedir(), '.agent-config');
+	void options;
+	return path.join(os.homedir(), '.agent-run');
 }
 
 function explicitConfigRoot(projectRoot?: string): string | null {
-	for (const value of [process.env[CONFIG_ROOT_OVERRIDE_ENV], process.env[CONFIG_DIR_ENV], process.env.AGENT_CONFIG_ROOT]) {
+	for (const value of [process.env[CONFIG_ROOT_OVERRIDE_ENV], process.env[CONFIG_DIR_ENV]]) {
 		if (value) {
 			return path.resolve(value);
 		}
@@ -323,22 +344,8 @@ function explicitConfigRoot(projectRoot?: string): string | null {
 		return null;
 	}
 	const env = readAgentRunEnv(projectRoot);
-	const localValue = env[CONFIG_DIR_ENV]?.trim() || env.AGENT_CONFIG_ROOT?.trim();
+	const localValue = env[CONFIG_DIR_ENV]?.trim();
 	return localValue ? path.resolve(projectRoot, localValue) : null;
-}
-
-function defaultCodeConfigRoot(projectRoot: string): string {
-	const resolvedProjectRoot = path.resolve(projectRoot);
-	const ownerDir = path.dirname(resolvedProjectRoot);
-	const codeRoot = path.dirname(ownerDir);
-	if (ownerDir === resolvedProjectRoot || codeRoot === ownerDir) {
-		return path.join(os.homedir(), '.agent-config');
-	}
-	return path.join(codeRoot, 'agent-config');
-}
-
-function findExistingConfigRoot(candidates: string[]): string | null {
-	return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
 }
 
 export function defaultConfigRootSearchCandidates(

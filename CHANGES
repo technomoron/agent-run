@@ -1,6 +1,15 @@
 CHANGES
 =======
 
+Version 0.99.28 (2026-08-30)
+----------------------------
+* Add interactive `agent-run setup [org/repo]`, make `agent-run generate` the
+  profile-initialization command, and retain `init` as a deprecated alias.
+* Use `~/.agent-run` as the single default config directory, overridable with
+  `--configdir`, `AGENT_CONFIG_DIR`, or a project-local `.agent-run.env`.
+* Resolve profiles from `package.json.repository` and avoid rewriting unchanged
+  generated files.
+
 Version 0.99.27 (2026-08-11)
 ----------------------------
 * Rename the unattended-run option from `--danger` to `--yolo` for Codex and

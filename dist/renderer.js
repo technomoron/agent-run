@@ -101,11 +101,18 @@ function syncAgentProfile(projectRoot, agentDir, options) {
 }
 function writeGeneratedFile(filePath, content, executable) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, content, 'utf8');
-    if (executable && !constants_1.IS_WINDOWS) {
-        fs.chmodSync(filePath, 0o755);
+    const unchanged = fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf8') === content;
+    if (!unchanged) {
+        fs.writeFileSync(filePath, content, 'utf8');
+        (0, utils_1.verbose)(`write ${filePath}`);
     }
-    (0, utils_1.verbose)(`write ${filePath}`);
+    if (executable && !constants_1.IS_WINDOWS) {
+        const currentMode = fs.statSync(filePath).mode & 0o777;
+        if (currentMode !== 0o755) {
+            fs.chmodSync(filePath, 0o755);
+            (0, utils_1.verbose)(`chmod 755 ${filePath}`);
+        }
+    }
 }
 function removeStaleGeneratedEntries(rendered) {
     const expectedFiles = new Set(rendered.files.map((file) => path.resolve(file.path)));

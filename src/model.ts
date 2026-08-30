@@ -1,5 +1,5 @@
 export type ToolName = 'codex' | 'claude';
-export type CommandName = ToolName | 'check' | 'setup' | 'init' | 'edit' | 'update' | 'migrate-config';
+export type CommandName = ToolName | 'check' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
 export type SandboxMode = 'danger' | 'sandboxed';
 
 export type WrapperArgs = {
@@ -29,9 +29,14 @@ export type InitCommand = {
 	targetPath: string;
 };
 
+export type GenerateCommand = {
+	command: 'generate';
+	targetPath: string;
+};
+
 export type SetupCommand = {
 	command: 'setup';
-	targetPath: string;
+	profile: string | null;
 };
 
 export type EditCommand = {
@@ -54,6 +59,7 @@ export type ParsedInvocation =
 	| RunCommand
 	| CheckCommand
 	| InitCommand
+	| GenerateCommand
 	| SetupCommand
 	| EditCommand
 	| UpdateCommand

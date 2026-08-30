@@ -3,8 +3,7 @@
 Small wrapper for AI coding CLIs like Codex and Claude.
 
 It keeps agent files out of normal repos and stores them in a separate
-agent config tree. By default, that tree lives beside owner/repo checkouts
-under the same code root.
+agent config tree. By default, that tree lives at `~/.agent-run`.
 
 ## Model
 
@@ -17,31 +16,29 @@ There are three things:
 Example:
 
 ```text
-~/source/
-  agent-config/
-    agent-run.defaults.jsonc
-    org/
-      my-api/
-        agent-run.jsonc
-        local.md.njk       # optional
-        overrides/         # optional
-        live/
-          CLAUDE.md
-          .claude/
-          bin/
-          memories/
-            codex-home/
-              AGENTS.md
-              config.toml
-              skills/
+~/.agent-run/
+  agent-run.defaults.jsonc
   org/
     my-api/
+      agent-run.jsonc
+      local.md.njk       # optional
+      overrides/         # optional
+      live/
+        CLAUDE.md
+        .claude/
+        bin/
+        memories/
+          codex-home/
+            AGENTS.md
+            config.toml
+            skills/
+~/source/org/my-api/
 ```
 
 If your source repo is `~/source/org/my-api`, `agent-run` maps it to:
 
 ```text
-~/source/agent-config/org/my-api
+~/.agent-run/org/my-api
 ```
 
 The source repo stays clean. The agent files live in the matching path under
@@ -96,13 +93,15 @@ The mapped path is:
 
 1. `AGENT_RUN_PROFILE` in `.agent-run.env`
 2. GitHub `origin` remote
-3. `package.json.name`
-4. the project path as `[parent]/[current]`
+3. `package.json.repository` (string or object `url`)
+4. `package.json.name`
+5. the project path as `[parent]/[current]`
 
 Examples:
 
 - `AGENT_RUN_PROFILE=org/my-api` -> `org/my-api`
 - `AGENT_RUN_PROFILE=unrelated/hello` -> `unrelated/hello`
+- `package.json.repository = "github:org/my-api"` -> `org/my-api`
 - `package.json.name = "@org/my-api"` -> `org/my-api`
 - `package.json.name = "my-api"` -> `my-api`
 - `/work/org/my-api` with none of the above -> `org/my-api`
@@ -124,20 +123,10 @@ AGENT_RUN_PROFILE=org/my-api
 
 Config root:
 
-- default for a project at `[code]/owner/repo`: `[code]/agent-config`
-- override with `--config-root /path/to/agent-configs`
+- default: `~/.agent-run`
+- override with `--configdir=/path/to/agent-configs`
 - override with `AGENT_CONFIG_DIR=/path/to/agent-configs`
-- override with `AGENT_CONFIG_ROOT=/path/to/agent-configs`
-- or set `AGENT_CONFIG_DIR=/path/to/agent-configs` or `AGENT_CONFIG_ROOT=/path/to/agent-configs` in `.agent-run.env`
-
-For commands without a project root, `agent-run` looks for an existing config
-root in these locations:
-
-- Windows: `~/Documents/code/agent-config`, `~/Documents/code/agent-configs`,
-  `~/Desktop/code/agent-config`, `~/Desktop/code/agent-configs`,
-  `C:\code\agent-config`, `C:\code\agent-configs`
-- Unix: `~/code/agent-config`, `~/code/agent-configs`, `~/agent-config`,
-  `~/agent-configs`, `~/.agent-config`, `~/.agent-configs`
+- or set `AGENT_CONFIG_DIR=/path/to/agent-configs` in `.agent-run.env`
 
 ## Commands
 
@@ -186,12 +175,12 @@ to warn and continue for a specific invocation.
 Initialize mapped files for the current repo:
 
 ```sh
-agent-run init
+agent-run generate
 ```
 
 This creates `<config-root>/agent-run.defaults.jsonc` when needed and a minimal
 `agent-run.jsonc` marker for the mapped profile. It does not create empty local
-instruction or override files.
+instruction or override files. `agent-run init` remains as a deprecated alias.
 
 Edit the source file for the current repo:
 
@@ -209,19 +198,18 @@ agent-run update
 ```
 
 `update` requires an existing profile marker or local/legacy instruction file;
-it does not silently scaffold an unconfigured project. Use `agent-run init` or
+it does not silently scaffold an unconfigured project. Use `agent-run generate` or
 the tool command's `--create` option first.
 
 Regenerate every profile under the config root without requiring matching code
 checkouts:
 
 ```sh
-agent-run update --all ~/.agent-config
+agent-run update --all ~/.agent-run
 ```
 
 If the config root argument is omitted, `update --all` uses the normal configured
-root. Without a project path, that falls back to `$HOME/.agent-config`; for
-project commands, the default is `[code]/agent-config`.
+root. Without an override, the root is `$HOME/.agent-run`.
 
 You can also generate from a tool command and stop before launch:
 
@@ -245,27 +233,28 @@ Per-profile override templates can be placed in:
 - `overrides/codex-config.toml.njk`
 - `overrides/claude-settings.json.njk`
 
-## Starter Config
+## Default Config Tree
 
-A complete starter lives in `examples/basic-config`. It includes a minimal
+A complete default tree lives in `examples/basic-config`. It includes a minimal
 project, `.agent-run.env`, root manifest defaults, global templates and
 snippets, profile-local templates, skill templates, a personal memory skill,
 profile skill overrides, tool config overrides, guardrails, checks, and
 generated runtime paths.
 
-To create the packaged starter agent files in your resolved config root:
+To install the default tree and detected profile in your resolved config root:
 
 ```sh
 agent-run setup
 ```
 
-Or choose a destination:
+Or select a profile non-interactively:
 
 ```sh
-agent-run setup ~/.agent-config
+agent-run setup myorg/myrepo
 ```
 
-The copy skips files that already exist, so local edits are preserved.
+Use `--configdir=DIR` to choose a different destination. The copy skips files
+that already exist, so local edits are preserved.
 
 Try it from a checkout:
 
@@ -298,7 +287,7 @@ agent-run check --all ~/source
 Migrate an existing config tree to the manifest/template layout:
 
 ```sh
-agent-run migrate-config ~/.agent-config
+agent-run migrate-config ~/.agent-run
 ```
 
 This preserves `AGENTS-MODS.md`, creates `local.md.njk` and a sparse

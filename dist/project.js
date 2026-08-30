@@ -164,6 +164,11 @@ function profileFromPackage(projectRoot) {
     if (fs.existsSync(packagePath)) {
         try {
             const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+            const repositoryProfile = parsePackageRepositoryProfile(pkg.repository);
+            if (repositoryProfile !== null) {
+                (0, utils_1.verbose)(`using package.json repository profile=${repositoryProfile}`);
+                return parseProfile(repositoryProfile, `${packagePath} repository`);
+            }
             if (typeof pkg.name === 'string' && pkg.name.length > 0) {
                 (0, utils_1.verbose)(`using package.json name=${pkg.name}`);
                 return parseProfile(pkg.name.startsWith('@') ? pkg.name.slice(1) : pkg.name, `${packagePath} name`);
@@ -182,6 +187,28 @@ function profileFromPackage(projectRoot) {
         return parseProfile(inferredProfile, 'project parent and directory name');
     }
     return { profile: null, reason: `cannot resolve agent profile from project path: ${projectRoot}` };
+}
+function parsePackageRepositoryProfile(repository) {
+    let repositoryPath = null;
+    if (typeof repository === 'string') {
+        repositoryPath = repository;
+    }
+    else if (repository !== null && typeof repository === 'object' && 'url' in repository) {
+        const url = repository.url;
+        if (typeof url === 'string') {
+            repositoryPath = url;
+        }
+    }
+    if (repositoryPath === null) {
+        return null;
+    }
+    const value = repositoryPath.trim();
+    const githubProfile = parseGitHubRemoteProfile(value.replace(/^git\+/, ''));
+    if (githubProfile !== null) {
+        return githubProfile;
+    }
+    const shorthand = /^(?:github:)?([^/:\s]+)\/([^/\s]+?)(?:\.git)?$/.exec(value);
+    return shorthand?.[1] && shorthand[2] ? `${shorthand[1]}/${shorthand[2]}` : null;
 }
 function resolveGitHubProfile(projectRoot) {
     const result = childProcess.spawnSync('git', ['-C', projectRoot, 'config', '--get', 'remote.origin.url'], {
@@ -271,17 +298,11 @@ function defaultConfigRoot(projectRoot, options = {}) {
     if (explicit !== null) {
         return explicit;
     }
-    if (projectRoot) {
-        const projectConfigRoot = defaultCodeConfigRoot(projectRoot);
-        if (options.preferProjectRoot || fs.existsSync(projectConfigRoot)) {
-            return projectConfigRoot;
-        }
-        return findExistingConfigRoot(defaultConfigRootSearchCandidates()) ?? projectConfigRoot;
-    }
-    return findExistingConfigRoot(defaultConfigRootSearchCandidates()) ?? path.join(os.homedir(), '.agent-config');
+    void options;
+    return path.join(os.homedir(), '.agent-run');
 }
 function explicitConfigRoot(projectRoot) {
-    for (const value of [process.env[constants_1.CONFIG_ROOT_OVERRIDE_ENV], process.env[constants_1.CONFIG_DIR_ENV], process.env.AGENT_CONFIG_ROOT]) {
+    for (const value of [process.env[constants_1.CONFIG_ROOT_OVERRIDE_ENV], process.env[constants_1.CONFIG_DIR_ENV]]) {
         if (value) {
             return path.resolve(value);
         }
@@ -290,20 +311,8 @@ function explicitConfigRoot(projectRoot) {
         return null;
     }
     const env = readAgentRunEnv(projectRoot);
-    const localValue = env[constants_1.CONFIG_DIR_ENV]?.trim() || env.AGENT_CONFIG_ROOT?.trim();
+    const localValue = env[constants_1.CONFIG_DIR_ENV]?.trim();
     return localValue ? path.resolve(projectRoot, localValue) : null;
-}
-function defaultCodeConfigRoot(projectRoot) {
-    const resolvedProjectRoot = path.resolve(projectRoot);
-    const ownerDir = path.dirname(resolvedProjectRoot);
-    const codeRoot = path.dirname(ownerDir);
-    if (ownerDir === resolvedProjectRoot || codeRoot === ownerDir) {
-        return path.join(os.homedir(), '.agent-config');
-    }
-    return path.join(codeRoot, 'agent-config');
-}
-function findExistingConfigRoot(candidates) {
-    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
 }
 function defaultConfigRootSearchCandidates(_projectRoot, options = {}) {
     const platform = options.platform ?? process.platform;

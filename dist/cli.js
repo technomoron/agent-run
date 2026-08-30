@@ -25,7 +25,7 @@ function applyGlobalOptions(options) {
 }
 function extractCommand(args) {
     if (args.length === 0) {
-        (0, utils_1.fail)('usage: agent-run <codex|claude|check|init|edit|update> [options] (run with --help for details)');
+        (0, utils_1.fail)('usage: agent-run <codex|claude|check|setup|generate|edit|update> [options] (run with --help for details)');
     }
     if (isHelpFlag(args[0])) {
         printHelp('general');
@@ -50,6 +50,8 @@ function parseCommand(command, args) {
             return parseCheckCommand(args);
         case 'init':
             return parseInitCommand(args);
+        case 'generate':
+            return parseGenerateCommand(args);
         case 'setup':
             return parseSetupCommand(args);
         case 'edit':
@@ -85,18 +87,18 @@ function extractGlobalOptions(argv) {
         else if (arg === '-v' || arg === '--verbose') {
             options.verbose = true;
         }
-        else if (arg === '--config-root') {
+        else if (arg === '--configdir') {
             const nextArg = argv[index + 1];
             if (nextArg === undefined) {
-                (0, utils_1.fail)('missing value for --config-root');
+                (0, utils_1.fail)('missing value for --configdir');
             }
             options.configRootOverride = path.resolve(nextArg);
             index += 1;
         }
-        else if (arg.startsWith('--config-root=')) {
-            const rootValue = arg.slice('--config-root='.length);
+        else if (arg.startsWith('--configdir=')) {
+            const rootValue = arg.slice('--configdir='.length);
             if (!rootValue) {
-                (0, utils_1.fail)('missing value for --config-root');
+                (0, utils_1.fail)('missing value for --configdir');
             }
             options.configRootOverride = path.resolve(rootValue);
         }
@@ -196,8 +198,24 @@ function parseCheckCommand(inputArgs) {
 function parseInitCommand(inputArgs) {
     return { command: 'init', targetPath: parseSinglePath(inputArgs, 'init') };
 }
+function parseGenerateCommand(inputArgs) {
+    return { command: 'generate', targetPath: parseSinglePath(inputArgs, 'generate') };
+}
 function parseSetupCommand(inputArgs) {
-    return { command: 'setup', targetPath: parseSinglePath(inputArgs, 'setup', (0, project_1.defaultConfigRoot)()) };
+    let profile = null;
+    for (const arg of inputArgs) {
+        if (isHelpFlag(arg)) {
+            printHelp('setup');
+        }
+        if (arg.startsWith('--')) {
+            (0, utils_1.fail)(`unknown setup option: ${arg}`);
+        }
+        if (profile !== null) {
+            (0, utils_1.fail)('setup accepts at most one profile argument');
+        }
+        profile = arg;
+    }
+    return { command: 'setup', profile };
 }
 function parseEditCommand(inputArgs) {
     return { command: 'edit', targetPath: parseSinglePath(inputArgs, 'edit') };
@@ -274,8 +292,9 @@ function renderHelp(topic) {
             '  --all       Check every repo under path',
             ''
         ],
-        init: ['Usage:', '  agent-run init [path]', '', 'Create a minimal mapped profile marker and render generated files.', ''],
-        setup: ['Usage:', '  agent-run setup [config-root]', '', 'Create starter agent configuration files in the config root.', ''],
+        init: ['Usage:', '  agent-run init [path]', '', 'Deprecated alias for `agent-run generate [path]`.', ''],
+        generate: ['Usage:', '  agent-run generate [path]', '', 'Create a minimal mapped profile marker and render generated files.', ''],
+        setup: ['Usage:', '  agent-run setup [org/repo]', '', 'Install the default config tree and selected profile.', ''],
         edit: ['Usage:', '  agent-run edit [path]', '', 'Create or open the editable local profile template.', ''],
         update: [
             'Usage:',
@@ -300,16 +319,16 @@ function renderHelp(topic) {
         `agent-run ${agentRunVersion()}`,
         '',
         'Usage:',
-        '  agent-run <codex|claude|check|setup|init|edit|update> [options]',
+        '  agent-run <codex|claude|check|setup|generate|edit|update> [options]',
         '',
         'Commands:',
         '  codex [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [--network] [args...]',
         '                                           Run codex with generated private config',
         '  claude [--none] [--create] [--local] [--show] [--generate] [--yolo] [args...]',
         '                                           Run claude with generated private config',
-        '  setup [config-root]                    Create starter files in the agent-config root',
+        '  setup [org/repo]                      Install the default tree and selected profile',
         '  check [--all] [path]                  Validate generated profile output',
-        '  init [path]                           Create a sparse profile marker and render output',
+        '  generate [path]                       Create a sparse profile marker and render output',
         '  edit [path]                           Create or open local.md.njk',
         '  update [--all] [path]                 Regenerate existing profile output',
         '  migrate-config [config-root]           Convert existing config tree layout',
@@ -318,7 +337,7 @@ function renderHelp(topic) {
         '  -h, --help         Show this help text',
         '  -V, --version      Show the agent-run version',
         '  -v, --verbose      Print path resolution and wrapper actions',
-        '  --config-root DIR  Override the agent-config root',
+        '  --configdir=DIR    Override the config directory',
         '',
         'Run wrapper options:',
         '  --local            Warn about local AI files instead of failing',
@@ -351,7 +370,7 @@ function normalizeCommandName(value) {
     if (base === 'agent-run') {
         return null;
     }
-    return ['codex', 'claude', 'check', 'setup', 'init', 'edit', 'update', 'migrate-config'].includes(base)
+    return ['codex', 'claude', 'check', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config'].includes(base)
         ? base
         : null;
 }

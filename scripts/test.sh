@@ -190,8 +190,8 @@ PATH="$FAKE_GUARD_BIN:$FAKE_REAL_BIN:$PATH" node "$BIN" codex --none --version >
 assert_contains "$TMP_DIR/codex-version.out" "codex-cli fake"
 
 SKELETON_INIT="$TMP_DIR/copied-agent-config"
-node "$BIN" setup "$SKELETON_INIT" >"$TMP_DIR/setup.out"
-assert_contains "$TMP_DIR/setup.out" "OK created starter agent config in"
+(cd "$PROJECT" && node "$BIN" --configdir="$SKELETON_INIT" setup starter/basic-project >"$TMP_DIR/setup.out")
+assert_contains "$TMP_DIR/setup.out" "OK installed default config tree at $SKELETON_INIT"
 assert_file "$SKELETON_INIT/.gitignore"
 assert_file "$SKELETON_INIT/agent-run.defaults.jsonc"
 assert_file "$SKELETON_INIT/global/agents/code.md.njk"
@@ -204,12 +204,13 @@ assert_contains "$SKELETON_INIT/skills/personal-memory.md" "Read \`./notes/memor
 assert_contains "$SKELETON_INIT/.gitignore" "**/live/"
 
 printf 'local edit\n' >"$SKELETON_INIT/starter/basic-project/local.md.njk"
-node "$BIN" setup "$SKELETON_INIT" >/dev/null
+(cd "$PROJECT" && node "$BIN" --configdir="$SKELETON_INIT" setup starter/basic-project >/dev/null)
 assert_contains "$SKELETON_INIT/starter/basic-project/local.md.njk" "local edit"
 
 DEFAULT_CODE_ROOT="$TMP_DIR/code"
 DEFAULT_PROJECT="$DEFAULT_CODE_ROOT/acme/widget"
-DEFAULT_CONFIG_ROOT="$DEFAULT_CODE_ROOT/agent-config"
+DEFAULT_HOME="$TMP_DIR/default-home"
+DEFAULT_CONFIG_ROOT="$DEFAULT_HOME/.agent-run"
 DEFAULT_AGENT_DIR="$DEFAULT_CONFIG_ROOT/acme/widget"
 mkdir -p "$DEFAULT_PROJECT"
 cat >"$DEFAULT_PROJECT/package.json" <<'JSON'
@@ -218,7 +219,7 @@ cat >"$DEFAULT_PROJECT/package.json" <<'JSON'
   "private": true
 }
 JSON
-node "$BIN" init "$DEFAULT_PROJECT" >"$TMP_DIR/default-code-root-init.out"
+HOME="$DEFAULT_HOME" USERPROFILE="$DEFAULT_HOME" node "$BIN" generate "$DEFAULT_PROJECT" >"$TMP_DIR/default-code-root-init.out"
 assert_contains "$TMP_DIR/default-code-root-init.out" "OK profile acme/widget"
 assert_file "$DEFAULT_CONFIG_ROOT/.gitignore"
 assert_file "$DEFAULT_CONFIG_ROOT/agent-run.defaults.jsonc"
@@ -227,7 +228,7 @@ assert_contains "$DEFAULT_AGENT_DIR/agent-run.jsonc" "{}"
 assert_no_file "$DEFAULT_AGENT_DIR/local.md.njk"
 assert_no_dir "$DEFAULT_AGENT_DIR/overrides"
 assert_file "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
-assert_no_dir "$TMP_DIR/.agent-config"
+assert_no_dir "$DEFAULT_CODE_ROOT/agent-config"
 rm "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
 node "$BIN" update --all "$DEFAULT_CONFIG_ROOT" >"$TMP_DIR/default-code-root-update-all.out"
 assert_contains "$TMP_DIR/default-code-root-update-all.out" "OK acme/widget"
@@ -236,7 +237,7 @@ assert_file "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
 PLAIN_PROJECT="$DEFAULT_CODE_ROOT/plain-owner/plain-project"
 PLAIN_AGENT_DIR="$DEFAULT_CONFIG_ROOT/plain-owner/plain-project"
 mkdir -p "$PLAIN_PROJECT"
-node "$BIN" init "$PLAIN_PROJECT" >"$TMP_DIR/plain-project-init.out"
+HOME="$DEFAULT_HOME" USERPROFILE="$DEFAULT_HOME" node "$BIN" generate "$PLAIN_PROJECT" >"$TMP_DIR/plain-project-init.out"
 assert_contains "$TMP_DIR/plain-project-init.out" "OK profile plain-owner/plain-project"
 assert_file "$PLAIN_AGENT_DIR/agent-run.jsonc"
 assert_file "$PLAIN_AGENT_DIR/live/memories/codex-home/AGENTS.md"
@@ -250,24 +251,28 @@ node "$BIN" update "$UNCONFIGURED_PROJECT" >"$TMP_DIR/unconfigured-update.out" 2
 unconfigured_update_status=$?
 set -e
 [ "$unconfigured_update_status" -ne 0 ] || fail "expected update to reject an unconfigured profile"
-assert_contains "$TMP_DIR/unconfigured-update.out" "run \`agent-run init\`"
+assert_contains "$TMP_DIR/unconfigured-update.out" "run \`agent-run generate\`"
 assert_no_dir "$UNCONFIGURED_AGENT_DIR"
 
 CREATE_HOME="$TMP_DIR/create-home"
 CREATE_CODE_ROOT="$TMP_DIR/create-code"
 CREATE_PROJECT="$CREATE_CODE_ROOT/acme/created"
-CREATE_AGENT_DIR="$CREATE_CODE_ROOT/agent-config/acme/created"
-mkdir -p "$CREATE_HOME/.agent-config" "$CREATE_PROJECT"
+CREATE_AGENT_DIR="$CREATE_HOME/.agent-run/acme/created"
+mkdir -p "$CREATE_PROJECT"
 printf '{"name":"@acme/created","private":true}\n' >"$CREATE_PROJECT/package.json"
 (cd "$CREATE_PROJECT" && HOME="$CREATE_HOME" USERPROFILE="$CREATE_HOME" node "$BIN" codex --create --generate >"$TMP_DIR/create-generate.out")
 assert_contains "$TMP_DIR/create-generate.out" "OK profile acme/created"
 assert_file "$CREATE_AGENT_DIR/agent-run.jsonc"
 assert_no_file "$CREATE_AGENT_DIR/local.md.njk"
 assert_no_dir "$CREATE_AGENT_DIR/overrides"
-assert_no_dir "$CREATE_HOME/.agent-config/acme/created"
 
 node "$BIN" update "$PROJECT" >"$TMP_DIR/update.out"
 assert_contains "$TMP_DIR/update.out" "OK profile starter/basic-project"
+
+CONFIG_MTIME_BEFORE="$(node -p "require('node:fs').statSync(process.argv[1]).mtimeMs" "$CODEX_CONFIG_FILE")"
+node "$BIN" update "$PROJECT" >/dev/null
+CONFIG_MTIME_AFTER="$(node -p "require('node:fs').statSync(process.argv[1]).mtimeMs" "$CODEX_CONFIG_FILE")"
+[ "$CONFIG_MTIME_BEFORE" = "$CONFIG_MTIME_AFTER" ] || fail "unchanged generated config timestamp changed"
 
 assert_file "$CODEX_AGENTS_FILE"
 assert_file "$LIVE_DIR/CLAUDE.md"
@@ -879,9 +884,11 @@ TEST_WORKTREE_CHILD="$WORKTREE_CHECKOUT/nested/path" \
 TEST_WORKTREE_ROOT="$WORKTREE_CHECKOUT" \
 node --input-type=module <<'EOF'
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
-	defaultConfigRootSearchCandidates,
+	defaultConfigRoot,
 	findProjectRoot,
 	parseEditorCommand,
 	parseInvocation,
@@ -915,6 +922,14 @@ assert.equal(findProjectRoot(process.env.TEST_WORKTREE_CHILD), process.env.TEST_
 assert.equal(resolveProfile(process.env.TEST_WORKTREE_ROOT), 'example/worktree-profile');
 assert.equal(resolveProfile(path.join('/work', 'plain-owner', 'plain-project')), 'plain-owner/plain-project');
 
+const packageProfileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-run-package-profile-'));
+fs.writeFileSync(
+	path.join(packageProfileRoot, 'package.json'),
+	JSON.stringify({ name: '@package-owner/package-project', repository: 'github:repo-owner/repo-project' })
+);
+assert.equal(resolveProfile(packageProfileRoot), 'repo-owner/repo-project');
+fs.rmSync(packageProfileRoot, { recursive: true, force: true });
+
 assert.deepEqual(
 	parseInvocation('agent-run', ['codex', '--sandboxed', '--network', 'hello']),
 	parseInvocation('agent-run', ['--sandboxed', '--network', 'codex', 'hello'])
@@ -947,26 +962,15 @@ assert.deepEqual(parseInvocation('agent-run', ['update', '--all', '/tmp/agent-co
 	command: 'update',
 	targetPath: path.resolve('/tmp/agent-config')
 });
-assert.deepEqual(parseInvocation('agent-run', ['setup', '/tmp/agent-config']), {
+assert.deepEqual(parseInvocation('agent-run', ['setup', 'myorg/myrepo']), {
 	command: 'setup',
-	targetPath: path.resolve('/tmp/agent-config')
+	profile: 'myorg/myrepo'
 });
-assert.deepEqual(defaultConfigRootSearchCandidates(undefined, { platform: 'win32', homeDir: 'C:\\Users\\alice' }), [
-	'C:\\Users\\alice\\Documents\\code\\agent-config',
-	'C:\\Users\\alice\\Documents\\code\\agent-configs',
-	'C:\\Users\\alice\\Desktop\\code\\agent-config',
-	'C:\\Users\\alice\\Desktop\\code\\agent-configs',
-	'C:\\code\\agent-config',
-	'C:\\code\\agent-configs'
-]);
-assert.deepEqual(defaultConfigRootSearchCandidates(undefined, { platform: 'linux', homeDir: '/home/alice' }), [
-	'/home/alice/code/agent-config',
-	'/home/alice/code/agent-configs',
-	'/home/alice/agent-config',
-	'/home/alice/agent-configs',
-	'/home/alice/.agent-config',
-	'/home/alice/.agent-configs'
-]);
+assert.deepEqual(parseInvocation('agent-run', ['generate', '/tmp/project']), {
+	command: 'generate',
+	targetPath: path.resolve('/tmp/project')
+});
+assert.equal(defaultConfigRoot(), path.join(process.env.HOME, '.agent-run'));
 EOF
 
 echo "All tests passed"

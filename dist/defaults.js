@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.defaultManifest = defaultManifest;
 exports.stringifyRootDefaults = stringifyRootDefaults;
 exports.defaultLocalTemplate = defaultLocalTemplate;
+exports.defaultProjectMemoryIndex = defaultProjectMemoryIndex;
 exports.defaultGlobalTemplates = defaultGlobalTemplates;
 exports.defaultToolInstructionsTemplate = defaultToolInstructionsTemplate;
 exports.defaultCodexConfigContent = defaultCodexConfigContent;
@@ -34,7 +35,8 @@ function defaultManifest(profile) {
             changesFile: '{{ projectRoot }}/CHANGES',
             reviewDir: '{{ profileDir }}/reviews',
             reviewFile: '{{ profileDir }}/reviews/REVIEW-{{ date }}.md',
-            memoriesDir: '{{ agentDir }}/memories'
+            memoriesDir: '{{ agentDir }}/memories',
+            projectMemoryDir: '{{ profileDir }}/notes/memory'
         }
     };
 }
@@ -68,6 +70,19 @@ function defaultLocalTemplate() {
         '```',
         '',
         'Add project-specific rules here.',
+        ''
+    ].join('\n');
+}
+function defaultProjectMemoryIndex() {
+    return [
+        '# Project memory',
+        '',
+        'This directory contains durable notes for this project across agent sessions and machines.',
+        'Keep the notes short, factual, and free of secrets. Link additional topic files from this index.',
+        '',
+        '## Files',
+        '',
+        '- Add project memory files here as they are needed.',
         ''
     ].join('\n');
 }
@@ -293,6 +308,18 @@ function defaultToolInstructionsTemplate(isClaude) {
         '{{ paths.memoriesDir }}',
         '```',
         '',
+        'Project memory directory:',
+        '',
+        '```text',
+        '{{ paths.projectMemoryDir }}',
+        '```',
+        '',
+        'Native Codex memory directory:',
+        '',
+        '```text',
+        '{{ paths.nativeMemoryDir }}',
+        '```',
+        '',
         'Global memory directory:',
         '',
         '```text',
@@ -337,7 +364,8 @@ function defaultCodexConfigTemplate() {
         'writable_roots = [',
         '  {{ projectRoot | dump }},',
         '  {{ paths.reviewDir | dump }},',
-        '  {{ paths.memoriesDir | dump }}',
+        '  {{ paths.memoriesDir | dump }},',
+        '  {{ paths.projectMemoryDir | dump }}',
         ']',
         'network_access = false',
         ''
@@ -349,6 +377,7 @@ function defaultClaudeSettingsTemplate() {
         '    "AGENT_DIR": {{ agentDir | dump }},',
         '    "AGENT_PROFILE_DIR": {{ profileDir | dump }},',
         '    "AGENT_RUN_PROJECT_ROOT": {{ projectRoot | dump }},',
+        '    "AGENT_PROJECT_MEMORY_DIR": {{ paths.projectMemoryDir | dump }},',
         '    "AGENT_GLOBAL_MEMORY_DIR": {{ paths.globalMemoryDir | dump }}',
         '  }'
     ].join('\n');
@@ -377,7 +406,8 @@ function defaultCodexConfigContent(context) {
         'writable_roots = [',
         `  ${JSON.stringify(context.projectRoot)},`,
         `  ${JSON.stringify(context.paths.reviewDir)},`,
-        `  ${JSON.stringify(context.paths.memoriesDir)}`,
+        `  ${JSON.stringify(context.paths.memoriesDir)},`,
+        `  ${JSON.stringify(context.paths.projectMemoryDir)}`,
         ']',
         'network_access = false',
         ''
@@ -389,6 +419,7 @@ function defaultClaudeSettingsContent(context) {
             AGENT_DIR: context.agentDir,
             AGENT_PROFILE_DIR: context.profileDir,
             AGENT_RUN_PROJECT_ROOT: context.projectRoot,
+            AGENT_PROJECT_MEMORY_DIR: context.paths.projectMemoryDir,
             AGENT_GLOBAL_MEMORY_DIR: context.paths.globalMemoryDir
         }
     };

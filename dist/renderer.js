@@ -51,11 +51,23 @@ function renderAgentSections(env, configRoot, manifest, context, trace) {
         }
         sections.push((0, templates_1.renderTemplateFile)(env, configRoot, include, context, trace));
     }
-    return sections.map((section, index) => {
+    const renderedSections = sections.map((section, index) => {
         const label = index === 0 ? manifest.agent.base : manifest.agent.includes[index - 1] ?? `section ${index}`;
         (0, templates_1.assertNoUnexpandedTemplateVars)(label, section);
         return section.trimEnd();
     });
+    renderedSections.push(projectMemoryInstructions(context));
+    return renderedSections;
+}
+function projectMemoryInstructions(context) {
+    return [
+        '## Project Memory',
+        '',
+        `Project memory is stored in ${context.paths.projectMemoryDir}.`,
+        'Read README.md there before starting work when prior project context may matter, then read only the linked files relevant to the task.',
+        'Do not store secrets, raw chat transcripts, or temporary task state there.',
+        'Update project memory only when the user explicitly asks you to remember or update something for this project.'
+    ].join('\n');
 }
 function renderProfileFiles(env, configRoot, context, targetTool, trace) {
     const files = [];
@@ -210,6 +222,7 @@ function checkRenderedFiles(rendered, findings) {
 function checkRuntimeDirectories(context, findings) {
     for (const dir of [
         context.paths.reviewDir,
+        context.paths.projectMemoryDir,
         context.paths.memoriesDir,
         context.paths.codexHomeDir,
         context.paths.liveDir,
@@ -303,6 +316,7 @@ function resolveProfileOverrideTemplate(configRoot, context, overrideFileName, g
 function syncRuntimeDirs(context) {
     for (const dir of [
         context.paths.reviewDir,
+        context.paths.projectMemoryDir,
         context.paths.memoriesDir,
         context.paths.codexHomeDir,
         context.paths.codexSkillsDir,
@@ -311,6 +325,11 @@ function syncRuntimeDirs(context) {
         path.join(context.paths.liveDir, '.claude')
     ]) {
         fs.mkdirSync(dir, { recursive: true });
+    }
+    const projectMemoryIndex = path.join(context.paths.projectMemoryDir, 'README.md');
+    if (!fs.existsSync(projectMemoryIndex)) {
+        fs.writeFileSync(projectMemoryIndex, (0, defaults_1.defaultProjectMemoryIndex)(), 'utf8');
+        (0, utils_1.verbose)(`created ${projectMemoryIndex}`);
     }
     migrateLiveReviewFiles(context);
     removeLegacyCodexSkillDirs(context);

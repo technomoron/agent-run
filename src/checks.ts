@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { REQUIRED_GLOBAL_TEMPLATES } from './constants';
+import { describeLegacyProfileLayout } from './config-tree';
 import { isProfileConfigured, loadManifest, normalizeManifest } from './manifest';
 import { Finding } from './model';
 import {
@@ -49,6 +50,9 @@ function checkAgentDirectory(projectRoot: string, agentDir: string): Finding[] {
 	const configRoot = defaultConfigRoot(projectRoot);
 	if (!isProfileConfigured(agentDir)) {
 		return [{ message: `missing manifest or legacy/local source file in ${agentDir}`, severity: 'ERROR' }];
+	}
+	for (const legacyPath of describeLegacyProfileLayout(agentDir)) {
+		findings.push({ message: `old profile layout needs migration: ${legacyPath}`, severity: 'ERROR' });
 	}
 	for (const relativeTemplate of REQUIRED_GLOBAL_TEMPLATES) {
 		if (!fs.existsSync(path.join(configRoot, relativeTemplate))) {

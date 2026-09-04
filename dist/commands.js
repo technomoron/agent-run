@@ -59,9 +59,9 @@ function runTool(parsed) {
         (0, utils_1.fail)(profileResult.reason);
     }
     const profile = profileResult.profile;
+    const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
+    const agentDir = path.join(configRoot, profile);
     if (wrapperArgs.show) {
-        const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
-        const agentDir = path.join(configRoot, profile);
         (0, utils_1.verbose)(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
         requireProfile(command, agentDir);
         showToolProfile(command, projectRoot, agentDir);
@@ -70,11 +70,10 @@ function runTool(parsed) {
     if (wrapperArgs.create) {
         runGenerate({ command: 'generate', targetPath: projectRoot });
     }
-    const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
-    const agentDir = path.join(configRoot, profile);
     (0, utils_1.verbose)(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
     prepareConfigRoot(configRoot);
     requireProfile(command, agentDir);
+    migrateProfileOnStart(configRoot, agentDir, false);
     const preview = (0, renderer_1.renderProfile)(projectRoot, agentDir, true, command);
     ensureToolEnabled(preview.context, command);
     if (wrapperArgs.generate) {
@@ -158,6 +157,7 @@ function runGenerate(parsed) {
         return;
     }
     const agentDir = initializeProfileSource(projectRoot, true);
+    migrateProfileOnStart((0, project_1.defaultConfigRoot)(projectRoot), agentDir, false);
     printUpdateSummary((0, renderer_1.syncAgentProfile)(projectRoot, agentDir));
 }
 function runSetup(parsed) {
@@ -170,7 +170,9 @@ function runSetup(parsed) {
         (0, utils_1.fail)(`starter config skeleton not found: ${sourcePath}`);
     }
     (0, config_tree_1.copySkeletonTree)(sourcePath, configRoot, new Set(['starter']));
+    (0, config_tree_1.ensurePortableSystemdFiles)(configRoot);
     const agentDir = path.join(configRoot, profile);
+    migrateProfileOnStart(configRoot, agentDir, false);
     (0, config_tree_1.copySkeletonTree)(path.join(sourcePath, 'starter', 'basic-project'), agentDir);
     if (profile !== detectedProfile) {
         writeProjectProfileMapping(projectRoot, profile);
@@ -193,9 +195,9 @@ function confirmProfile(detectedProfile) {
     }
     return requireValidProfile(promptLine('Profile (org/repo): '));
 }
-function promptLine(prompt) {
+function promptLine(prompt, nonInteractiveMessage = 'setup requires a profile argument when input is not interactive') {
     if (!process.stdin.isTTY) {
-        (0, utils_1.fail)('setup requires a profile argument when input is not interactive');
+        (0, utils_1.fail)(nonInteractiveMessage);
     }
     process.stdout.write(prompt);
     const bytes = [];
@@ -234,6 +236,7 @@ function runEdit(parsed) {
         return;
     }
     const agentDir = initializeProfileSource(projectRoot, false);
+    migrateProfileOnStart((0, project_1.defaultConfigRoot)(projectRoot), agentDir, false);
     const editPath = (0, manifest_1.createDefaultLocalFile)(agentDir);
     (0, renderer_1.syncAgentProfile)(projectRoot, agentDir);
     process.stdout.write(`Edit: ${editPath}\n`);
@@ -254,6 +257,7 @@ function runUpdate(parsed) {
     const agentDir = (0, project_1.resolveAgentDir)(projectRoot);
     prepareConfigRoot(configRoot);
     requireProfile(null, agentDir);
+    migrateProfileOnStart(configRoot, agentDir, false);
     printUpdateSummary((0, renderer_1.syncAgentProfile)(projectRoot, agentDir));
 }
 function runUpdateAll(targetPath) {
@@ -264,6 +268,7 @@ function runUpdateAll(targetPath) {
     prepareConfigRoot(configRoot);
     const profileDirs = (0, config_tree_1.findProfileDirs)(configRoot);
     for (const agentDir of profileDirs) {
+        migrateProfileOnStart(configRoot, agentDir, false);
         const profile = path.relative(configRoot, agentDir).replace(/\\/g, '/');
         const projectRoot = (0, project_1.projectRootForProfile)(profile, configRoot);
         (0, renderer_1.syncAgentProfile)(projectRoot, agentDir, { configRoot, profile });
@@ -281,15 +286,16 @@ function runMigrateConfig(parsed) {
     (0, config_tree_1.migrateOldTemplates)(configRoot);
     (0, config_tree_1.ensureDefaultGlobalTemplates)(configRoot);
     (0, manifest_1.ensureRootDefaultsFile)(configRoot);
-    const profileDirs = (0, config_tree_1.findLegacyProfileDirs)(configRoot);
+    const profileDirs = (0, utils_1.uniqueSorted)([...(0, config_tree_1.findLegacyProfileDirs)(configRoot), ...(0, config_tree_1.findProfileDirs)(configRoot)]);
     let createdManifestCount = 0;
     let createdLocalCount = 0;
     let movedRuntimeCount = 0;
     let movedReviewCount = 0;
     let movedMemoryCount = 0;
     for (const agentDir of profileDirs) {
+        const layout = migrateProfileOnStart(configRoot, agentDir, parsed.yes);
         const localPath = path.join(agentDir, constants_1.LOCAL_TEMPLATE_FILE_NAME);
-        if (!fs.existsSync(localPath)) {
+        if (!fs.existsSync(localPath) && fs.existsSync(path.join(agentDir, 'AGENTS-MODS.md'))) {
             fs.writeFileSync(localPath, (0, config_tree_1.convertLegacyTemplateVars)(fs.readFileSync(path.join(agentDir, 'AGENTS-MODS.md'), 'utf8')), 'utf8');
             createdLocalCount += 1;
         }
@@ -299,7 +305,7 @@ function runMigrateConfig(parsed) {
         }
         movedRuntimeCount += (0, config_tree_1.migrateCodexRuntimeFiles)(agentDir);
         movedReviewCount += (0, config_tree_1.migrateLooseFiles)(agentDir, /^REVIEW(?:-.+)?\.md$/, 'reviews');
-        movedMemoryCount += (0, config_tree_1.migrateLooseFiles)(agentDir, /^memory.*\.md$/i, 'memories');
+        movedMemoryCount += layout.projectMemoryMoves;
     }
     process.stdout.write(`OK migrated ${configRoot}\n`);
     process.stdout.write(`Profiles converted: ${profileDirs.length}\n`);
@@ -308,6 +314,29 @@ function runMigrateConfig(parsed) {
     process.stdout.write(`Moved Codex runtime entries: ${movedRuntimeCount}\n`);
     process.stdout.write(`Moved review files: ${movedReviewCount}\n`);
     process.stdout.write(`Moved memory files: ${movedMemoryCount}\n`);
+}
+function migrateProfileOnStart(configRoot, profileDir, assumeYes) {
+    const result = (0, config_tree_1.migrateProfileLayout)(configRoot, profileDir, ({ gitRoot, moves }) => {
+        process.stdout.write('agent-run: this profile uses an older project-memory layout.\n');
+        process.stdout.write(`Git working tree: ${gitRoot}\n`);
+        for (const move of moves) {
+            process.stdout.write(`  ${path.relative(gitRoot, move.source)} -> ${path.relative(gitRoot, move.target)}\n`);
+        }
+        if (assumeYes) {
+            return true;
+        }
+        const migrateCommand = (0, utils_1.formatCommand)('agent-run', ['migrate-config', '--yes', configRoot]);
+        const message = `tracked project-memory files need migration; rerun interactively or run \`${migrateCommand}\``;
+        const answer = promptLine('Stage these moves with git mv? [Y/n] ', message).trim().toLowerCase();
+        return answer === '' || answer === 'y' || answer === 'yes';
+    });
+    if (result.gitMoves > 0) {
+        process.stdout.write(`Staged Git moves: ${result.gitMoves}\n`);
+    }
+    if (result.runtimeMoves > 0) {
+        process.stdout.write(`Moved local Codex runtime entries: ${result.runtimeMoves}\n`);
+    }
+    return result;
 }
 function runCheck(parsed) {
     if (parsed.all) {
@@ -328,6 +357,7 @@ function prepareConfigRoot(configRoot) {
     (0, config_tree_1.ensureConfigRootLayout)(configRoot);
     (0, config_tree_1.ensureConfigRootGitignore)(configRoot);
     (0, config_tree_1.ensureDefaultGlobalTemplates)(configRoot);
+    (0, config_tree_1.ensurePortableSystemdFiles)(configRoot);
 }
 function activeProject(targetPath, action) {
     const projectRoot = (0, project_1.findProjectRoot)(targetPath);

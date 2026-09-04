@@ -37,6 +37,7 @@ export function buildRenderContext(
 	};
 	const reviewDir = resolveRuntimePath(configRoot, manifest.paths.reviewDir, env, baseContext);
 	const memoriesDir = resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext);
+	const projectMemoryDir = resolveRuntimePath(configRoot, manifest.paths.projectMemoryDir, env, baseContext);
 	const codexHomeDir = path.join(memoriesDir, 'codex-home');
 	const paths = {
 		profileDir,
@@ -49,6 +50,8 @@ export function buildRenderContext(
 			: path.join(reviewDir, 'REVIEW.md'),
 		memoriesDir,
 		globalMemoryDir: path.join(configRoot, 'notes', 'memory'),
+		projectMemoryDir,
+		nativeMemoryDir: path.join(codexHomeDir, 'memories'),
 		codexHomeDir,
 		overridesDir: path.join(profileDir, 'overrides'),
 		codexSkillsDir: path.join(codexHomeDir, 'skills'),

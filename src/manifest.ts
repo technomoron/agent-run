@@ -197,7 +197,9 @@ export function normalizeManifest(manifest: AgentRunManifest, profile: string): 
 				paths.reviewFile ?? fallbackPaths.reviewFile ?? '{{ profileDir }}/reviews/REVIEW-{{ date }}.md'
 			),
 			reviewConsolidatedFile: paths.reviewConsolidatedFile ?? fallbackPaths.reviewConsolidatedFile,
-			memoriesDir: paths.memoriesDir ?? fallbackPaths.memoriesDir ?? '{{ agentDir }}/memories'
+			memoriesDir: paths.memoriesDir ?? fallbackPaths.memoriesDir ?? '{{ agentDir }}/memories',
+			projectMemoryDir:
+				paths.projectMemoryDir ?? fallbackPaths.projectMemoryDir ?? '{{ profileDir }}/notes/memory'
 		}
 	};
 }

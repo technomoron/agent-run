@@ -26,6 +26,7 @@ export function runCodex(
 		AGENT_DIR: liveDir,
 		AGENT_PROFILE_DIR: context.profileDir,
 		AGENT_RUN_PROJECT_ROOT: projectRoot,
+		AGENT_PROJECT_MEMORY_DIR: context.paths.projectMemoryDir,
 		AGENT_RUN_REAL_PATH: realPath,
 		PATH: `${path.join(liveDir, 'bin')}${path.delimiter}${realPath}`
 	};
@@ -36,6 +37,8 @@ export function runCodex(
 		[
 			...permissionArgs,
 			...runtimeArgs,
+			'--add-dir',
+			context.paths.projectMemoryDir,
 			'-C',
 			projectRoot,
 			...(wrapperArgs.sandboxMode !== 'danger' && wrapperArgs.codexNetwork
@@ -68,6 +71,7 @@ export function runClaude(
 		AGENT_DIR: liveDir,
 		AGENT_PROFILE_DIR: context.profileDir,
 		AGENT_RUN_PROJECT_ROOT: context.projectRoot,
+		AGENT_PROJECT_MEMORY_DIR: context.paths.projectMemoryDir,
 		AGENT_RUN_REAL_PATH: realPath,
 		PATH: `${path.join(liveDir, 'bin')}${path.delimiter}${realPath}`
 	};
@@ -76,6 +80,8 @@ export function runClaude(
 		realBinary,
 		[
 			...runtimeArgs,
+			'--add-dir',
+			context.paths.projectMemoryDir,
 			'--append-system-prompt-file',
 			claudePath,
 			'--settings',

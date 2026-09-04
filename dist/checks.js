@@ -8,6 +8,7 @@ exports.hasErrors = hasErrors;
 const fs = require("fs");
 const path = require("path");
 const constants_1 = require("./constants");
+const config_tree_1 = require("./config-tree");
 const manifest_1 = require("./manifest");
 const project_1 = require("./project");
 const renderer_1 = require("./renderer");
@@ -46,6 +47,9 @@ function checkAgentDirectory(projectRoot, agentDir) {
     const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
     if (!(0, manifest_1.isProfileConfigured)(agentDir)) {
         return [{ message: `missing manifest or legacy/local source file in ${agentDir}`, severity: 'ERROR' }];
+    }
+    for (const legacyPath of (0, config_tree_1.describeLegacyProfileLayout)(agentDir)) {
+        findings.push({ message: `old profile layout needs migration: ${legacyPath}`, severity: 'ERROR' });
     }
     for (const relativeTemplate of constants_1.REQUIRED_GLOBAL_TEMPLATES) {
         if (!fs.existsSync(path.join(configRoot, relativeTemplate))) {

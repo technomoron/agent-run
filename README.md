@@ -1,9 +1,46 @@
 # agent-run
 
-Small wrapper for AI coding CLIs like Codex and Claude.
+**Config once. Run with any native coding agent.**
 
-It keeps agent files out of normal repos and stores them in a separate
-agent config tree. By default, that tree lives at `~/.agent-run`.
+`agent-run` lets you manage Codex, Claude Code, Gemini CLI, and Grok Build from
+one shared configuration system while continuing to use each vendor's native
+agent.
+
+Keep agent configuration in a separate Git repository instead of adding
+agent-specific files to every codebase. Define project instructions, skills,
+MCP servers, policies, and reusable configuration fragments once, then generate
+the native configuration each agent expects.
+
+Configuration is template-based using Nunjucks/Jinja-style templates, making it
+easy to build hierarchical setups from global defaults, organization rules,
+project-specific settings, reusable fragments, and local overrides.
+
+`agent-run` generates isolated agent runtimes outside the source repository, so
+application repositories remain clean and developers do not have to maintain
+separate `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, skills, and tool configuration
+for every agent.
+
+The core idea is simple:
+
+**One configuration repository. One set of skills. Multiple native agents.**
+
+```text
+shared config repository
+        ↓
+global + project + local templates
+        ↓
+canonical instructions / skills / MCP
+        ↓
+agent-specific generated runtime
+        ↓
+Codex | Claude Code | Gemini CLI | Grok Build
+```
+
+The native agents remain native. `agent-run` does not replace their execution
+engines, authentication, models, or tooling. It provides the portable
+configuration layer around them.
+
+**Config once, run anywhere.**
 
 ## Model
 
@@ -23,6 +60,9 @@ Example:
       agent-run.jsonc
       local.md.njk       # optional
       overrides/         # optional
+      notes/
+        memory/
+          README.md      # durable project memory, normally tracked
       live/
         CLAUDE.md
         .claude/
@@ -31,6 +71,7 @@ Example:
           codex-home/
             AGENTS.md
             config.toml
+            memories/    # native Codex memory, local generated state
             skills/
 ~/source/org/my-api/
 ```
@@ -50,6 +91,7 @@ the agent config tree.
 - `agent-run.jsonc`: sparse profile manifest and profile-discovery marker
 - `local.md.njk`: optional project-specific instructions
 - `overrides/`: optional per-profile template overrides
+- `notes/memory/`: durable project memory shared through the config repository
 - `live/memories/codex-home/AGENTS.md`: generated Codex instructions
 - `live/memories/codex-home/config.toml`: generated Codex config
 - `live/memories/codex-home/skills/`: generated Codex skills
@@ -151,6 +193,26 @@ workspace-write sandbox.
 When `~/.codex/auth.json` exists, profile-specific Codex homes link their
 `auth.json` to that shared login cache so changing profiles does not require a
 new ChatGPT login.
+
+### Project Memory
+
+Each profile has a durable `notes/memory/` directory outside the source repo.
+`README.md` is a short index; agents read only the linked files relevant to the
+current task. Agents may update project memory only when the user explicitly
+asks them to remember or update something for that project.
+
+Codex's native `$CODEX_HOME/memories/` remains under ignored `live/` state. It
+is generated, machine-local recall data and is not copied into the tracked
+project memory directory. Project memory is plain Markdown so it can be
+reviewed and shared through the Git repository that normally holds the
+`.agent-run` config tree.
+
+When a profile still uses `memory/`, loose `memory*.md` files, or Markdown files
+directly under the old `memories/` directory, agent-run detects the old layout
+before updating or launching an agent. If those files are tracked, agent-run
+shows the moves and asks before staging them with `git mv`. In a non-Git config
+tree, or for untracked files, it uses ordinary filesystem moves. Non-interactive
+runs stop with a command that can confirm the migration explicitly.
 
 Claude Code currently has no `--cd` equivalent. `agent-run` keeps Claude's
 process cwd at the project root, appends the generated `CLAUDE.md` with
@@ -287,14 +349,17 @@ agent-run check --all ~/source
 Migrate an existing config tree to the manifest/template layout:
 
 ```sh
-agent-run migrate-config ~/.agent-run
+agent-run migrate-config --yes ~/.agent-run
 ```
 
 This preserves `AGENTS-MODS.md`, creates `local.md.njk` and a sparse
 `agent-run.jsonc` marker for legacy profiles, creates the root defaults and
 `global/` templates, moves loose review files into `reviews/`, moves loose
-`memory*.md` files into `memories/`, and moves old Codex runtime files into
-`live/memories/codex-home` without overwriting existing files.
+project memory files into each profile's `notes/memory/`, and moves old Codex
+runtime files into `live/memories/codex-home` without overwriting existing
+files. Use `--yes` to confirm tracked `git mv` operations in a non-interactive
+run. Omit `--yes` to review and confirm tracked moves interactively. The
+command stages moves but never commits them.
 
 ## Systemd Jobs
 

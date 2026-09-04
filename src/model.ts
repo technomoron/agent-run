@@ -53,6 +53,7 @@ export type UpdateCommand = {
 export type MigrateConfigCommand = {
 	command: 'migrate-config';
 	configRoot: string;
+	yes: boolean;
 };
 
 export type ParsedInvocation =
@@ -102,6 +103,7 @@ export type AgentRunManifest = {
 		reviewFile?: string;
 		reviewConsolidatedFile?: string;
 		memoriesDir?: string;
+		projectMemoryDir?: string;
 	};
 };
 
@@ -133,6 +135,7 @@ export type NormalizedManifest = {
 		reviewFile: string;
 		reviewConsolidatedFile?: string;
 		memoriesDir: string;
+		projectMemoryDir: string;
 	};
 };
 
@@ -157,6 +160,8 @@ export type RenderContext = {
 		reviewConsolidatedFile: string;
 		memoriesDir: string;
 		globalMemoryDir: string;
+		projectMemoryDir: string;
+		nativeMemoryDir: string;
 		codexHomeDir: string;
 		overridesDir: string;
 		codexSkillsDir: string;

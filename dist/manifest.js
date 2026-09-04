@@ -165,7 +165,8 @@ function normalizeManifest(manifest, profile) {
             reviewDir: normalizeLegacyReviewPath(paths.reviewDir ?? fallbackPaths.reviewDir ?? '{{ profileDir }}/reviews'),
             reviewFile: normalizeLegacyReviewPath(paths.reviewFile ?? fallbackPaths.reviewFile ?? '{{ profileDir }}/reviews/REVIEW-{{ date }}.md'),
             reviewConsolidatedFile: paths.reviewConsolidatedFile ?? fallbackPaths.reviewConsolidatedFile,
-            memoriesDir: paths.memoriesDir ?? fallbackPaths.memoriesDir ?? '{{ agentDir }}/memories'
+            memoriesDir: paths.memoriesDir ?? fallbackPaths.memoriesDir ?? '{{ agentDir }}/memories',
+            projectMemoryDir: paths.projectMemoryDir ?? fallbackPaths.projectMemoryDir ?? '{{ profileDir }}/notes/memory'
         }
     };
 }

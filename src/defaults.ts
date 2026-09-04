@@ -26,7 +26,8 @@ export function defaultManifest(profile: string): AgentRunManifest {
 			changesFile: '{{ projectRoot }}/CHANGES',
 			reviewDir: '{{ profileDir }}/reviews',
 			reviewFile: '{{ profileDir }}/reviews/REVIEW-{{ date }}.md',
-			memoriesDir: '{{ agentDir }}/memories'
+			memoriesDir: '{{ agentDir }}/memories',
+			projectMemoryDir: '{{ profileDir }}/notes/memory'
 		}
 	};
 }
@@ -63,6 +64,20 @@ export function defaultLocalTemplate(): string {
 		'```',
 		'',
 		'Add project-specific rules here.',
+		''
+	].join('\n');
+}
+
+export function defaultProjectMemoryIndex(): string {
+	return [
+		'# Project memory',
+		'',
+		'This directory contains durable notes for this project across agent sessions and machines.',
+		'Keep the notes short, factual, and free of secrets. Link additional topic files from this index.',
+		'',
+		'## Files',
+		'',
+		'- Add project memory files here as they are needed.',
 		''
 	].join('\n');
 }
@@ -299,6 +314,18 @@ export function defaultToolInstructionsTemplate(isClaude: boolean): string {
 		'{{ paths.memoriesDir }}',
 		'```',
 		'',
+		'Project memory directory:',
+		'',
+		'```text',
+		'{{ paths.projectMemoryDir }}',
+		'```',
+		'',
+		'Native Codex memory directory:',
+		'',
+		'```text',
+		'{{ paths.nativeMemoryDir }}',
+		'```',
+		'',
 		'Global memory directory:',
 		'',
 		'```text',
@@ -344,7 +371,8 @@ function defaultCodexConfigTemplate(): string {
 		'writable_roots = [',
 		'  {{ projectRoot | dump }},',
 		'  {{ paths.reviewDir | dump }},',
-		'  {{ paths.memoriesDir | dump }}',
+		'  {{ paths.memoriesDir | dump }},',
+		'  {{ paths.projectMemoryDir | dump }}',
 		']',
 		'network_access = false',
 		''
@@ -357,6 +385,7 @@ function defaultClaudeSettingsTemplate(): string {
 		'    "AGENT_DIR": {{ agentDir | dump }},',
 		'    "AGENT_PROFILE_DIR": {{ profileDir | dump }},',
 		'    "AGENT_RUN_PROJECT_ROOT": {{ projectRoot | dump }},',
+		'    "AGENT_PROJECT_MEMORY_DIR": {{ paths.projectMemoryDir | dump }},',
 		'    "AGENT_GLOBAL_MEMORY_DIR": {{ paths.globalMemoryDir | dump }}',
 		'  }'
 	].join('\n');
@@ -386,7 +415,8 @@ export function defaultCodexConfigContent(context: RenderContext): string {
 		'writable_roots = [',
 		`  ${JSON.stringify(context.projectRoot)},`,
 		`  ${JSON.stringify(context.paths.reviewDir)},`,
-		`  ${JSON.stringify(context.paths.memoriesDir)}`,
+		`  ${JSON.stringify(context.paths.memoriesDir)},`,
+		`  ${JSON.stringify(context.paths.projectMemoryDir)}`,
 		']',
 		'network_access = false',
 		''
@@ -399,6 +429,7 @@ export function defaultClaudeSettingsContent(context: RenderContext): string {
 			AGENT_DIR: context.agentDir,
 			AGENT_PROFILE_DIR: context.profileDir,
 			AGENT_RUN_PROJECT_ROOT: context.projectRoot,
+			AGENT_PROJECT_MEMORY_DIR: context.paths.projectMemoryDir,
 			AGENT_GLOBAL_MEMORY_DIR: context.paths.globalMemoryDir
 		}
 	};

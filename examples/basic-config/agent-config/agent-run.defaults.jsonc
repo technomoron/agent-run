@@ -33,6 +33,7 @@
     "changesFile": "{{ projectRoot }}/CHANGES",
     "reviewDir": "{{ profileDir }}/reviews",
     "reviewFile": "{{ profileDir }}/reviews/REVIEW-{{ date }}.md",
-    "memoriesDir": "{{ agentDir }}/memories"
+    "memoriesDir": "{{ agentDir }}/memories",
+    "projectMemoryDir": "{{ profileDir }}/notes/memory"
   }
 }

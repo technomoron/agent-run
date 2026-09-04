@@ -9,7 +9,8 @@ It contains two pieces:
   config root.
 - `agent-config/`: a complete config root with shared manifest defaults, global
   templates, snippets, skill templates, a personal memory skill, a sparse
-  profile manifest, profile-local instructions, and profile overrides.
+  profile manifest, durable project memory, profile-local instructions, and
+  profile overrides.
 
 Try it from this repository after building:
 

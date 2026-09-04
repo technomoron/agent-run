@@ -95,6 +95,7 @@ if command -v cygpath >/dev/null 2>&1; then
 	EXPECTED_AGENT_DIR="$(cygpath -w "$EXPECTED_AGENT_DIR")"
 	EXPECTED_PROJECT="$(cygpath -w "$EXPECTED_PROJECT")"
 	EXPECTED_MEMORY_DIR="$EXPECTED_EXAMPLE\\agent-config\\notes\\memory"
+	EXPECTED_PROJECT_MEMORY_DIR="$EXPECTED_AGENT_DIR\\notes\\memory"
 	EXPECTED_REVIEW_FILE="$EXPECTED_AGENT_DIR\\reviews\\REVIEW.md"
 	EXPECTED_LIVE_DIR="$EXPECTED_AGENT_DIR\\live"
 	EXPECTED_CODEX_HOME_DIR="$EXPECTED_LIVE_DIR\\memories\\codex-home"
@@ -108,6 +109,7 @@ if command -v cygpath >/dev/null 2>&1; then
 else
 	EXPECTED_PATH_SEP="/"
 	EXPECTED_MEMORY_DIR="$EXPECTED_EXAMPLE/agent-config/notes/memory"
+	EXPECTED_PROJECT_MEMORY_DIR="$EXPECTED_AGENT_DIR/notes/memory"
 	EXPECTED_REVIEW_FILE="$EXPECTED_AGENT_DIR/reviews/REVIEW.md"
 	EXPECTED_LIVE_DIR="$EXPECTED_AGENT_DIR/live"
 	EXPECTED_CODEX_HOME_DIR="$EXPECTED_LIVE_DIR/memories/codex-home"
@@ -130,18 +132,23 @@ assert_contains "$TMP_DIR/version.out" "agent-run $PACKAGE_VERSION"
 node "$BIN" --help >"$TMP_DIR/help.out"
 assert_contains "$TMP_DIR/help.out" "agent-run $PACKAGE_VERSION"
 assert_contains "$TMP_DIR/help.out" "-V, --version"
+node "$BIN" migrate-config --help >"$TMP_DIR/migrate-help.out"
+assert_contains "$TMP_DIR/migrate-help.out" "migrate-config [--yes] [config-root]"
 
 bash -n "$ROOT/scripts/update-ai-tools.sh"
 bash -n "$ROOT/scripts/agent-config-login-warning.sh"
 bash -n "$ROOT/scripts/install-systemd-jobs.sh"
 assert_file "$ROOT/ops/systemd/ai-tools-update.service"
 assert_file "$ROOT/ops/systemd/ai-tools-update.timer"
-assert_contains "$ROOT/ops/systemd/ai-tools-update.service" "ExecStart=/usr/local/lib/agent-run/update-ai-tools.sh"
+assert_contains "$ROOT/ops/systemd/ai-tools-update.service" "ExecStart=/usr/local/libexec/agent-run/update-ai-tools"
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "/etc/environment"
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "/etc/npmrc"
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "rm -"
 assert_contains "$ROOT/scripts/update-ai-tools.sh" "AI_TOOLS_PNPM_PACKAGE"
 assert_contains "$ROOT/scripts/update-ai-tools.sh" "install -g --force \"\${pnpm_packages[@]}\""
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'AI_TOOLS_NPM_BIN:-/usr/bin/npm'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'AI_TOOLS_NODE_BIN:-/usr/bin/node'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'AI_TOOLS_CLEAN_BINS:-agent-run claude codex'
 "$ROOT/scripts/install-systemd-jobs.sh" --dry-run --ai-tools >"$TMP_DIR/install-ai-tools.out"
 assert_contains "$TMP_DIR/install-ai-tools.out" "ai-tools-update.timer"
 
@@ -197,15 +204,83 @@ assert_file "$SKELETON_INIT/agent-run.defaults.jsonc"
 assert_file "$SKELETON_INIT/global/agents/code.md.njk"
 assert_file "$SKELETON_INIT/global/tool-templates/AGENTS.md.njk"
 assert_file "$SKELETON_INIT/global/skills/triage/SKILL.md.njk"
+assert_executable "$SKELETON_INIT/install-systemd-jobs.sh"
+assert_executable "$SKELETON_INIT/update-ai-tools.sh"
+assert_file "$SKELETON_INIT/ai-tools-update.service"
+assert_file "$SKELETON_INIT/ai-tools-update.timer"
 assert_file "$SKELETON_INIT/skills/personal-memory.md"
 assert_file "$SKELETON_INIT/starter/basic-project/agent-run.jsonc"
 assert_file "$SKELETON_INIT/starter/basic-project/overrides/codex-config.toml.njk"
+assert_file "$SKELETON_INIT/starter/basic-project/notes/memory/README.md"
 assert_contains "$SKELETON_INIT/skills/personal-memory.md" "Read \`./notes/memory/README.md\` first."
 assert_contains "$SKELETON_INIT/.gitignore" "**/live/"
 
 printf 'local edit\n' >"$SKELETON_INIT/starter/basic-project/local.md.njk"
 (cd "$PROJECT" && node "$BIN" --configdir="$SKELETON_INIT" setup starter/basic-project >/dev/null)
 assert_contains "$SKELETON_INIT/starter/basic-project/local.md.njk" "local edit"
+
+PLAIN_MIGRATION_ROOT="$TMP_DIR/plain-memory-config"
+PLAIN_MIGRATION_PROFILE="$PLAIN_MIGRATION_ROOT/acme/plain-memory"
+mkdir -p "$PLAIN_MIGRATION_PROFILE/memory" "$PLAIN_MIGRATION_PROFILE/memories/codex-home"
+printf '{}\n' >"$PLAIN_MIGRATION_PROFILE/agent-run.jsonc"
+printf 'plain decision\n' >"$PLAIN_MIGRATION_PROFILE/memory/decisions.md"
+printf 'old runtime\n' >"$PLAIN_MIGRATION_PROFILE/memories/codex-home/history.jsonl"
+node "$BIN" migrate-config --yes "$PLAIN_MIGRATION_ROOT" >"$TMP_DIR/plain-migration.out"
+assert_file "$PLAIN_MIGRATION_PROFILE/notes/memory/decisions.md"
+assert_no_file "$PLAIN_MIGRATION_PROFILE/memory/decisions.md"
+assert_file "$PLAIN_MIGRATION_PROFILE/live/memories/codex-home/history.jsonl"
+assert_no_file "$PLAIN_MIGRATION_PROFILE/memories/codex-home/history.jsonl"
+assert_contains "$TMP_DIR/plain-migration.out" "Moved memory files: 1"
+
+GIT_MIGRATION_ROOT="$TMP_DIR/git-memory-config"
+GIT_MIGRATION_PROFILE="$GIT_MIGRATION_ROOT/acme/git-memory"
+GIT_MIGRATION_PROJECT="$TMP_DIR/git-memory-project"
+mkdir -p "$GIT_MIGRATION_PROFILE/memory" "$GIT_MIGRATION_PROJECT"
+printf '{}\n' >"$GIT_MIGRATION_PROFILE/agent-run.jsonc"
+printf 'tracked decision\n' >"$GIT_MIGRATION_PROFILE/memory/decisions.md"
+printf '{"name":"git-memory-project","private":true}\n' >"$GIT_MIGRATION_PROJECT/package.json"
+printf 'AGENT_CONFIG_DIR=%s\nAGENT_RUN_PROFILE=acme/git-memory\n' "$GIT_MIGRATION_ROOT" >"$GIT_MIGRATION_PROJECT/.agent-run.env"
+git -C "$TMP_DIR" init -b main "$GIT_MIGRATION_ROOT" >/dev/null
+git -C "$GIT_MIGRATION_ROOT" config user.email test@example.com
+git -C "$GIT_MIGRATION_ROOT" config user.name "Agent Run Memory Test"
+git -C "$GIT_MIGRATION_ROOT" add acme/git-memory/agent-run.jsonc acme/git-memory/memory/decisions.md
+git -C "$GIT_MIGRATION_ROOT" commit -m "Add old memory layout" >/dev/null
+set +e
+node "$BIN" check "$GIT_MIGRATION_PROJECT" >"$TMP_DIR/git-migration-check.out" 2>&1
+git_migration_check_status=$?
+set -e
+[ "$git_migration_check_status" -ne 0 ] || fail "expected check to report the old memory layout"
+assert_contains "$TMP_DIR/git-migration-check.out" "old profile layout needs migration"
+set +e
+node "$BIN" update "$GIT_MIGRATION_PROJECT" >"$TMP_DIR/git-migration-required.out" 2>&1
+git_migration_required_status=$?
+set -e
+[ "$git_migration_required_status" -ne 0 ] || fail "expected a non-interactive tracked memory migration to stop"
+assert_contains "$TMP_DIR/git-migration-required.out" "migrate-config --yes"
+assert_file "$GIT_MIGRATION_PROFILE/memory/decisions.md"
+node "$BIN" migrate-config --yes "$GIT_MIGRATION_ROOT" >"$TMP_DIR/git-migration.out"
+git -C "$GIT_MIGRATION_ROOT" status --short >"$TMP_DIR/git-migration-status.out"
+assert_contains "$TMP_DIR/git-migration.out" "Staged Git moves: 1"
+assert_contains "$TMP_DIR/git-migration-status.out" "R  acme/git-memory/memory/decisions.md -> acme/git-memory/notes/memory/decisions.md"
+assert_file "$GIT_MIGRATION_PROFILE/notes/memory/decisions.md"
+assert_no_file "$GIT_MIGRATION_PROFILE/memory/decisions.md"
+node "$BIN" update "$GIT_MIGRATION_PROJECT" >/dev/null
+assert_file "$GIT_MIGRATION_PROFILE/notes/memory/README.md"
+
+NO_GIT_MIGRATION_ROOT="$TMP_DIR/no-git-memory-config"
+NO_GIT_MIGRATION_PROFILE="$NO_GIT_MIGRATION_ROOT/acme/no-git-memory"
+mkdir -p "$NO_GIT_MIGRATION_PROFILE/memory" "$TMP_DIR/empty-bin"
+printf '{}\n' >"$NO_GIT_MIGRATION_PROFILE/agent-run.jsonc"
+printf 'tracked but git unavailable\n' >"$NO_GIT_MIGRATION_PROFILE/memory/decisions.md"
+git -C "$TMP_DIR" init -b main "$NO_GIT_MIGRATION_ROOT" >/dev/null
+git -C "$NO_GIT_MIGRATION_ROOT" config user.email test@example.com
+git -C "$NO_GIT_MIGRATION_ROOT" config user.name "Agent Run No Git Test"
+git -C "$NO_GIT_MIGRATION_ROOT" add acme/no-git-memory/agent-run.jsonc acme/no-git-memory/memory/decisions.md
+git -C "$NO_GIT_MIGRATION_ROOT" commit -m "Add old memory layout" >/dev/null
+AGENT_RUN_REAL_PATH="$TMP_DIR/empty-bin" node "$BIN" migrate-config "$NO_GIT_MIGRATION_ROOT" >"$TMP_DIR/no-git-migration.out"
+assert_file "$NO_GIT_MIGRATION_PROFILE/notes/memory/decisions.md"
+assert_no_file "$NO_GIT_MIGRATION_PROFILE/memory/decisions.md"
+assert_not_contains "$TMP_DIR/no-git-migration.out" "Staged Git moves"
 
 DEFAULT_CODE_ROOT="$TMP_DIR/code"
 DEFAULT_PROJECT="$DEFAULT_CODE_ROOT/acme/widget"
@@ -223,11 +298,16 @@ HOME="$DEFAULT_HOME" USERPROFILE="$DEFAULT_HOME" node "$BIN" generate "$DEFAULT_
 assert_contains "$TMP_DIR/default-code-root-init.out" "OK profile acme/widget"
 assert_file "$DEFAULT_CONFIG_ROOT/.gitignore"
 assert_file "$DEFAULT_CONFIG_ROOT/agent-run.defaults.jsonc"
+assert_executable "$DEFAULT_CONFIG_ROOT/install-systemd-jobs.sh"
+assert_executable "$DEFAULT_CONFIG_ROOT/update-ai-tools.sh"
+assert_file "$DEFAULT_CONFIG_ROOT/ai-tools-update.service"
+assert_file "$DEFAULT_CONFIG_ROOT/ai-tools-update.timer"
 assert_file "$DEFAULT_AGENT_DIR/agent-run.jsonc"
 assert_contains "$DEFAULT_AGENT_DIR/agent-run.jsonc" "{}"
 assert_no_file "$DEFAULT_AGENT_DIR/local.md.njk"
 assert_no_dir "$DEFAULT_AGENT_DIR/overrides"
 assert_file "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
+assert_file "$DEFAULT_AGENT_DIR/notes/memory/README.md"
 assert_no_dir "$DEFAULT_CODE_ROOT/agent-config"
 rm "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
 node "$BIN" update --all "$DEFAULT_CONFIG_ROOT" >"$TMP_DIR/default-code-root-update-all.out"
@@ -289,6 +369,7 @@ assert_contains "$LIVE_DIR/.claude/.claude-plugin/plugin.json" '"author": {'
 assert_file "$CODEX_SKILLS_DIR/triage/SKILL.md"
 assert_file "$LIVE_DIR/.claude/skills/triage/SKILL.md"
 assert_dir "$AGENT_DIR/reviews"
+assert_file "$AGENT_DIR/notes/memory/README.md"
 assert_dir "$LIVE_DIR/memories"
 assert_dir "$LIVE_DIR/memories/codex-home"
 assert_dir "$AGENT_DIR/overrides"
@@ -328,17 +409,23 @@ assert_contains "$CODEX_AGENTS_FILE" "Starter Code Agent"
 assert_contains "$CODEX_AGENTS_FILE" 'Use the project root at `'
 assert_contains "$CODEX_AGENTS_FILE" 'Store durable notes in `'
 assert_contains "$CODEX_AGENTS_FILE" "globalMemoryDir: \`$EXPECTED_MEMORY_DIR\`"
+assert_contains "$CODEX_AGENTS_FILE" "projectMemoryDir: \`$EXPECTED_PROJECT_MEMORY_DIR\`"
+assert_contains "$CODEX_AGENTS_FILE" "Project memory is stored in $EXPECTED_PROJECT_MEMORY_DIR"
 assert_contains "$CODEX_AGENTS_FILE" "\`triage\`: Use this profile-specific triage workflow"
 assert_contains "$CODEX_AGENTS_FILE" "profileDir: \`$EXPECTED_AGENT_DIR\`"
 assert_contains "$CODEX_AGENTS_FILE" "reviewConsolidatedFile: \`$EXPECTED_REVIEW_FILE\`"
 assert_contains "$LIVE_DIR/CLAUDE.md" "Starter CLAUDE for starter/basic-project"
 assert_contains "$LIVE_DIR/CLAUDE.md" "globalMemoryDir: \`$EXPECTED_MEMORY_DIR\`"
+assert_contains "$LIVE_DIR/CLAUDE.md" "projectMemoryDir: \`$EXPECTED_PROJECT_MEMORY_DIR\`"
 assert_contains "$CODEX_CONFIG_FILE" "Starter profile Codex override"
 assert_not_contains "$CODEX_CONFIG_FILE" "$EXPECTED_MEMORY_DIR"
+assert_contains "$CODEX_CONFIG_FILE" "$EXPECTED_PROJECT_MEMORY_DIR"
 assert_not_contains "$CODEX_CONFIG_FILE" "\"$EXPECTED_AGENT_DIR\","
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"STARTER_OVERRIDE": "true"'
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"AGENT_GLOBAL_MEMORY_DIR":'
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "$EXPECTED_MEMORY_DIR"
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"AGENT_PROJECT_MEMORY_DIR":'
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "$EXPECTED_PROJECT_MEMORY_DIR"
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "\"AGENT_PROFILE_DIR\": \"$EXPECTED_AGENT_DIR\""
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm test)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm run cleanbuild)"
@@ -371,6 +458,7 @@ printf '%s\n' "$@" >"$AGENT_RUN_ARG_CAPTURE"
 if [ -n "${AGENT_RUN_ENV_CAPTURE:-}" ]; then
 	printf 'CODEX_HOME=%s\nPWD=%s\nAGENT_RUN_REAL_PATH=%s\nPATH=%s\n' \
 		"${CODEX_HOME-<unset>}" "$PWD" "${AGENT_RUN_REAL_PATH-<unset>}" "$PATH" >"$AGENT_RUN_ENV_CAPTURE"
+	printf 'AGENT_PROJECT_MEMORY_DIR=%s\n' "${AGENT_PROJECT_MEMORY_DIR-<unset>}" >>"$AGENT_RUN_ENV_CAPTURE"
 fi
 if [ -n "${AGENT_RUN_NESTED_GUARD_CAPTURE:-}" ]; then
 	git --version >"$AGENT_RUN_NESTED_GUARD_CAPTURE"
@@ -380,7 +468,8 @@ cat >"$FAKE_TOOL_BIN/claude" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"$AGENT_RUN_ARG_CAPTURE"
 if [ -n "${AGENT_RUN_ENV_CAPTURE:-}" ]; then
-	printf 'CLAUDE_CONFIG_DIR=%s\nPWD=%s\n' "${CLAUDE_CONFIG_DIR-<unset>}" "$PWD" >"$AGENT_RUN_ENV_CAPTURE"
+	printf 'CLAUDE_CONFIG_DIR=%s\nPWD=%s\nAGENT_PROJECT_MEMORY_DIR=%s\n' \
+		"${CLAUDE_CONFIG_DIR-<unset>}" "$PWD" "${AGENT_PROJECT_MEMORY_DIR-<unset>}" >"$AGENT_RUN_ENV_CAPTURE"
 fi
 if [ -n "${AGENT_RUN_CREATE_LOCAL_SETTINGS:-}" ]; then
 	mkdir -p .claude
@@ -404,9 +493,11 @@ assert_contains "$TMP_DIR/codex-args.out" "-s"
 assert_contains "$TMP_DIR/codex-args.out" "workspace-write"
 assert_contains "$TMP_DIR/codex-args.out" "-C"
 assert_not_contains "$TMP_DIR/codex-args.out" "system_prompt_file"
-assert_not_contains "$TMP_DIR/codex-args.out" "--add-dir"
+assert_line_count "$TMP_DIR/codex-args.out" "--add-dir" 1
+assert_contains "$TMP_DIR/codex-args.out" "$EXPECTED_PROJECT_MEMORY_DIR"
 assert_not_contains "$TMP_DIR/codex-args.out" "$EXPECTED_MEMORY_DIR"
 assert_contains "$TMP_DIR/codex-env.out" "CODEX_HOME=$EXPECTED_CODEX_HOME_DIR"
+assert_contains "$TMP_DIR/codex-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
 
 if [ -x "$LIVE_DIR/bin/git" ]; then
 	OUTER_GUARD_BIN="$TMP_DIR/outer-guard-bin"
@@ -472,10 +563,12 @@ assert_contains "$TMP_DIR/claude-args.out" "--append-system-prompt-file"
 assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_LIVE_DIR${EXPECTED_PATH_SEP}CLAUDE.md"
 assert_contains "$TMP_DIR/claude-args.out" "--plugin-dir"
 assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_LIVE_DIR${EXPECTED_PATH_SEP}.claude"
-assert_line_count "$TMP_DIR/claude-args.out" "--add-dir" 0
+assert_line_count "$TMP_DIR/claude-args.out" "--add-dir" 1
+assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_PROJECT_MEMORY_DIR"
 assert_not_contains "$TMP_DIR/claude-args.out" "$EXPECTED_MEMORY_DIR"
 assert_not_contains "$TMP_DIR/claude-args.out" "--dangerously-skip-permissions"
 assert_contains "$TMP_DIR/claude-env.out" "CLAUDE_CONFIG_DIR=$USER_CLAUDE_CONFIG"
+assert_contains "$TMP_DIR/claude-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
 
 (cd "$PROJECT" && AGENT_RUN_CREATE_LOCAL_SETTINGS=1 AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-local-settings-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check >"$TMP_DIR/claude-local-settings.out" 2>&1)
 assert_no_dir "$PROJECT/.claude"

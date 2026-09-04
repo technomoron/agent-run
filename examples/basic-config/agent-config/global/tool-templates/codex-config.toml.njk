@@ -7,6 +7,7 @@ sandbox_mode = "workspace-write"
 writable_roots = [
   {{ projectRoot | dump }},
   {{ paths.reviewDir | dump }},
-  {{ paths.memoriesDir | dump }}
+  {{ paths.memoriesDir | dump }},
+  {{ paths.projectMemoryDir | dump }}
 ]
 network_access = false

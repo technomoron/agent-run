@@ -1,6 +1,19 @@
 CHANGES
 =======
 
+Version 0.99.29 (2026-09-04)
+----------------------------
+* Add tracked per-profile project memory under `notes/memory`, while keeping
+  native Codex memories in ignored machine-local runtime state.
+* Detect older memory layouts before profile updates and agent launches, ask
+  before staging tracked moves with `git mv`, and support
+  `migrate-config --yes` for non-interactive migrations.
+* Make copied systemd updater files portable, install the helper under
+  `/usr/local/libexec`, and remove stale AI tool launchers before global
+  package updates.
+* Explain the shared configuration model for native coding agents in the
+  README.
+
 Version 0.99.28 (2026-08-30)
 ----------------------------
 * Add interactive `agent-run setup [org/repo]`, make `agent-run generate` the

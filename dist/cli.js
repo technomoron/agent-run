@@ -254,16 +254,22 @@ function parseUpdateCommand(inputArgs) {
 }
 function parseMigrateConfigCommand(inputArgs) {
     let configRoot = (0, project_1.defaultConfigRoot)();
+    let yes = false;
     for (const arg of inputArgs) {
         if (isHelpFlag(arg)) {
             printHelp('migrate-config');
         }
-        if (arg.startsWith('--')) {
+        if (arg === '--yes') {
+            yes = true;
+        }
+        else if (arg.startsWith('--')) {
             (0, utils_1.fail)(`unknown migrate-config option: ${arg}`);
         }
-        configRoot = arg;
+        else {
+            configRoot = arg;
+        }
     }
-    return { command: 'migrate-config', configRoot: path.resolve(configRoot) };
+    return { command: 'migrate-config', configRoot: path.resolve(configRoot), yes };
 }
 function isHelpFlag(value) {
     return value === '-h' || value === '--help';
@@ -306,9 +312,12 @@ function renderHelp(topic) {
         ],
         'migrate-config': [
             'Usage:',
-            '  agent-run migrate-config [config-root]',
+            '  agent-run migrate-config [--yes] [config-root]',
             '',
             'Convert an existing agent config tree to the current manifest and global-template layout.',
+            '',
+            'Options:',
+            '  --yes  Confirm tracked Git moves without prompting',
             ''
         ]
     };
@@ -331,7 +340,7 @@ function renderHelp(topic) {
         '  generate [path]                       Create a sparse profile marker and render output',
         '  edit [path]                           Create or open local.md.njk',
         '  update [--all] [path]                 Regenerate existing profile output',
-        '  migrate-config [config-root]           Convert existing config tree layout',
+        '  migrate-config [--yes] [config-root]   Convert existing config tree layout',
         '',
         'Global options:',
         '  -h, --help         Show this help text',

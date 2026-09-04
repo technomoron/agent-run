@@ -11,7 +11,7 @@ exports.LIVE_DIR_NAME = 'live';
 exports.CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
 exports.CONFIG_DIR_ENV = 'AGENT_CONFIG_DIR';
 exports.VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
-exports.PACKAGE_VERSION = '0.99.28';
+exports.PACKAGE_VERSION = '0.99.29';
 exports.UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 exports.LOCAL_AI_FILE_NAMES = new Set([
     'AGENTS.md',

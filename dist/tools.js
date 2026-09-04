@@ -23,6 +23,7 @@ function runCodex(realBinary, permissionArgs, context, args, wrapperArgs) {
         AGENT_DIR: liveDir,
         AGENT_PROFILE_DIR: context.profileDir,
         AGENT_RUN_PROJECT_ROOT: projectRoot,
+        AGENT_PROJECT_MEMORY_DIR: context.paths.projectMemoryDir,
         AGENT_RUN_REAL_PATH: realPath,
         PATH: `${path.join(liveDir, 'bin')}${path.delimiter}${realPath}`
     };
@@ -30,6 +31,8 @@ function runCodex(realBinary, permissionArgs, context, args, wrapperArgs) {
     (0, process_1.execCommand)(realBinary, [
         ...permissionArgs,
         ...runtimeArgs,
+        '--add-dir',
+        context.paths.projectMemoryDir,
         '-C',
         projectRoot,
         ...(wrapperArgs.sandboxMode !== 'danger' && wrapperArgs.codexNetwork
@@ -51,12 +54,15 @@ function runClaude(realBinary, permissionArgs, context, args, wrapperArgs) {
         AGENT_DIR: liveDir,
         AGENT_PROFILE_DIR: context.profileDir,
         AGENT_RUN_PROJECT_ROOT: context.projectRoot,
+        AGENT_PROJECT_MEMORY_DIR: context.paths.projectMemoryDir,
         AGENT_RUN_REAL_PATH: realPath,
         PATH: `${path.join(liveDir, 'bin')}${path.delimiter}${realPath}`
     };
     const runtimeArgs = wrapperArgs.sandboxMode === 'danger' ? getDangerArgs('claude') : permissionArgs;
     (0, process_1.execCommand)(realBinary, [
         ...runtimeArgs,
+        '--add-dir',
+        context.paths.projectMemoryDir,
         '--append-system-prompt-file',
         claudePath,
         '--settings',

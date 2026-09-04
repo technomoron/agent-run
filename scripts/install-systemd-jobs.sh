@@ -19,9 +19,19 @@ USAGE
 }
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-INSTALL_LIB_DIR="${INSTALL_LIB_DIR:-/usr/local/lib/agent-run}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_LIBEXEC_DIR="${INSTALL_LIBEXEC_DIR:-${INSTALL_LIB_DIR:-/usr/local/libexec/agent-run}}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 ORIGINAL_ARGS=("$@")
+
+UPDATE_SCRIPT="$ROOT/scripts/update-ai-tools.sh"
+SERVICE_FILE="$ROOT/ops/systemd/ai-tools-update.service"
+TIMER_FILE="$ROOT/ops/systemd/ai-tools-update.timer"
+if [ ! -f "$UPDATE_SCRIPT" ]; then
+	UPDATE_SCRIPT="$SCRIPT_DIR/update-ai-tools.sh"
+	SERVICE_FILE="$SCRIPT_DIR/ai-tools-update.service"
+	TIMER_FILE="$SCRIPT_DIR/ai-tools-update.timer"
+fi
 
 INSTALL_AI_TOOLS=0
 DRY_RUN=0
@@ -71,10 +81,10 @@ run() {
 	"$@"
 }
 
-run install -d -m 0755 "$INSTALL_LIB_DIR" "$SYSTEMD_DIR"
-run install -m 0755 "$ROOT/scripts/update-ai-tools.sh" "$INSTALL_LIB_DIR/update-ai-tools.sh"
-run install -m 0644 "$ROOT/ops/systemd/ai-tools-update.service" "$SYSTEMD_DIR/ai-tools-update.service"
-run install -m 0644 "$ROOT/ops/systemd/ai-tools-update.timer" "$SYSTEMD_DIR/ai-tools-update.timer"
+run install -d -m 0755 "$INSTALL_LIBEXEC_DIR" "$SYSTEMD_DIR"
+run install -m 0755 "$UPDATE_SCRIPT" "$INSTALL_LIBEXEC_DIR/update-ai-tools"
+run install -m 0644 "$SERVICE_FILE" "$SYSTEMD_DIR/ai-tools-update.service"
+run install -m 0644 "$TIMER_FILE" "$SYSTEMD_DIR/ai-tools-update.timer"
 
 if [ "$INSTALL_AI_TOOLS" -eq 1 ]; then
 	run systemctl daemon-reload

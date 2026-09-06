@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORKFLOW="$ROOT/.github/workflows/release-agent-run.yml"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+: >"$TMP_DIR/.agent-run-test-repo"
 
 fail() {
 	echo "FAIL $*" >&2
@@ -24,7 +25,6 @@ assert_not_contains() {
 }
 
 bash -n "$ROOT/scripts/release.sh"
-bash -n "$ROOT/scripts/release-check.sh"
 bash -n "$ROOT/scripts/release-verify.sh"
 
 git -C "$ROOT" ls-files --error-unmatch pnpm-lock.yaml >/dev/null || fail "pnpm-lock.yaml must be tracked"
@@ -35,8 +35,8 @@ assert_contains "$WORKFLOW" "npm publish \"\${{ steps.pack.outputs.tarball }}\""
 assert_contains "$WORKFLOW" "workflow_dispatch:"
 assert_contains "$WORKFLOW" "ref: \${{ inputs.tag || github.ref }}"
 assert_contains "$WORKFLOW" "github.event.repository.visibility"
+assert_contains "$WORKFLOW" "run: pnpm release:verify"
 assert_contains "$WORKFLOW" "Private source repository: publishing without npm provenance"
-assert_contains "$WORKFLOW" "GITHUB_REF_TYPE: tag"
 publish_steps="$(grep -Ec '^[[:space:]]*run: (npm|pnpm) publish' "$WORKFLOW")"
 [ "$publish_steps" -eq 1 ] || fail "release workflow must have exactly one registry publish step"
 
@@ -61,7 +61,7 @@ git init -b main "$REPO" >/dev/null
 git -C "$REPO" config user.email test@example.com
 git -C "$REPO" config user.name "Agent Run Release Test"
 mkdir -p "$REPO/scripts"
-cp "$ROOT/scripts/release.sh" "$ROOT/scripts/release-check.sh" "$REPO/scripts/"
+cp "$ROOT/scripts/release.sh" "$REPO/scripts/"
 
 cat >"$REPO/package.json" <<'JSON'
 {
@@ -95,8 +95,6 @@ Version 0.99.21 (2026-07-01)
 
 * Initial fixture release.
 EOF_CHANGES
-bash "$REPO/scripts/release-check.sh" --local >"$TMP_DIR/release-local-check.out" 2>&1
-assert_contains "$TMP_DIR/release-local-check.out" "Ready @technomoron/release-fixture@0.99.22"
 git -C "$REPO" add package.json CHANGES
 git -C "$REPO" commit -m "Prepare release" >/dev/null
 git -C "$REPO" push origin main >/dev/null 2>&1
@@ -108,7 +106,7 @@ assert_contains "$TMP_DIR/release-success.out" "Triggered GitHub release workflo
 git -C "$REPO" ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null || fail "release tag was not pushed"
 
 bash "$REPO/scripts/release.sh" >"$TMP_DIR/release-existing.out" 2>&1
-assert_contains "$TMP_DIR/release-existing.out" "tag $TAG already exists"
+assert_contains "$TMP_DIR/release-existing.out" "Tag $TAG already exists"
 
 git -C "$REPO" push origin ":refs/tags/$TAG" >/dev/null 2>&1
 git -C "$REPO" tag -d "$TAG" >/dev/null

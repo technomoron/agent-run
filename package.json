@@ -36,8 +36,7 @@
     "test:integration": "bash ./scripts/test.sh",
     "test:release": "bash ./scripts/test-release.sh",
     "release": "bash ./scripts/release.sh",
-    "release:check": "bash ./scripts/release-check.sh",
-    "release:preflight": "pnpm cleanbuild && pnpm test && pnpm release:check -- --local",
+    "release:preflight": "pnpm cleanbuild && pnpm test",
     "release:verify": "bash ./scripts/release-verify.sh"
   },
   "author": "Bjorn Erik Jacobsen",

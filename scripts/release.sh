@@ -8,17 +8,6 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 
 cd "$ROOT"
-set +e
-bash "$ROOT/scripts/release-check.sh" --strict-ready
-status=$?
-set -e
-
-if [ "$status" -eq 3 ]; then
-	exit 0
-fi
-if [ "$status" -ne 0 ]; then
-	exit "$status"
-fi
 
 NAME="$(node -p "require(process.argv[1]).name" "$PACKAGE_JSON")"
 VERSION="$(node -p "require(process.argv[1]).version" "$PACKAGE_JSON")"

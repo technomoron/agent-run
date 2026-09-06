@@ -20,6 +20,7 @@ const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio
 
 function environment(t) {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'brain-'));
+	fs.writeFileSync(path.join(directory, '.agent-run-test-repo'), '');
 	const cleanups = [];
 	t.after(async () => { for (const cleanup of cleanups.reverse()) await cleanup(); fs.rmSync(directory, { recursive: true, force: true }); });
 	const root = path.join(directory, 'config');
@@ -126,9 +127,33 @@ test('project registration and default scope feed every native MCP renderer', (t
 	assert.equal(resolveProfileResult(env.cwd, env.root).profile, 'default');
 	for (const agent of ['codex', 'claude', 'gemini', 'grok']) {
 		const rendered = renderProfile(project.cwd, project.directory, true, agent, undefined, { configRoot: env.root, profile: 'projects/rendered' });
-		assert.equal(rendered.context.mcpServers['agent-brain'].command, process.execPath);
+		assert.equal(rendered.context.mcpServers['agent-brain'].command, 'agent-brain');
+		assert.deepEqual(rendered.context.mcpServers['agent-brain'].args, ['mcp', '--configdir', env.root, '--cwd', project.cwd]);
 		assert.ok(rendered.runtimes[agent].files.some((file) => file.content.includes('agent-brain')));
 		assert.ok(rendered.context.renderedAgentSections.some((section) => section.includes('get_context')));
+	}
+});
+
+test('generated MCP files stay identical across install locations and runtime environments', (t) => {
+	const env = environment(t);
+	const project = env.project('portable');
+	const options = { configRoot: env.root, profile: 'projects/portable' };
+	const expected = renderProfile(project.cwd, project.directory, true, null, undefined, options).files;
+	const copiedDist = path.join(env.directory, 'other-install', 'dist');
+	fs.cpSync(path.resolve(__dirname, '../dist'), copiedDist, { recursive: true });
+	const script = `
+		const { renderProfile } = require(process.argv[1]);
+		process.stdout.write(JSON.stringify(renderProfile(process.argv[2], process.argv[3], true, null, undefined, JSON.parse(process.argv[4])).files));
+	`;
+	for (const runtimeDir of [undefined, path.join(env.directory, 'other-runtime')]) {
+		const childEnv = { ...process.env, NODE_PATH: path.resolve(__dirname, '../node_modules') };
+		if (runtimeDir === undefined) delete childEnv.XDG_RUNTIME_DIR;
+		else childEnv.XDG_RUNTIME_DIR = runtimeDir;
+		const result = spawnSync(process.execPath, ['-e', script, path.join(copiedDist, 'renderer.js'), project.cwd, project.directory, JSON.stringify(options)], {
+			env: childEnv, encoding: 'utf8'
+		});
+		assert.equal(result.status, 0, result.stderr);
+		assert.deepEqual(JSON.parse(result.stdout), expected);
 	}
 });
 
@@ -574,24 +599,28 @@ test('legacy migration preserves brain memory and moves loose memory into the ca
 	assert.deepEqual(describeLegacyProfileLayout(profile.directory, env.root), []);
 });
 
-test('generated MCP command retains its socket when the client filters environment variables', { skip: process.platform === 'win32' }, async (t) => {
+test('generated MCP command finds the executable on PATH and selects the socket at launch', { skip: process.platform === 'win32' }, async (t) => {
 	const env = environment(t);
-	const runtime = path.join(env.root, 'runtime');
+	const runtime = path.join(env.directory, 'launch-runtime');
 	const service = await serveApiCore(env.root, path.join(runtime, 'agent-brain.sock'));
 	env.cleanup(() => service.close());
 	const original = process.env.XDG_RUNTIME_DIR;
 	let rendered;
 	try {
-		process.env.XDG_RUNTIME_DIR = runtime;
+		process.env.XDG_RUNTIME_DIR = path.join(env.directory, 'render-runtime');
 		rendered = renderProfile(env.cwd, path.join(env.root, 'default'), true, 'codex', undefined, { configRoot: env.root, profile: 'default' });
 	} finally {
 		if (original === undefined) delete process.env.XDG_RUNTIME_DIR;
 		else process.env.XDG_RUNTIME_DIR = original;
 	}
 	const mcp = rendered.context.mcpServers['agent-brain'];
+	const bin = path.join(env.directory, 'bin');
+	fs.mkdirSync(bin);
+	fs.symlinkSync(path.resolve(__dirname, '../dist/agent-brain.js'), path.join(bin, 'agent-brain'));
 	const connection = new Client({ name: 'rendered-command-test', version: '1.0.0' });
 	env.cleanup(() => connection.close());
-	await connection.connect(new StdioClientTransport({ command: mcp.command, args: mcp.args, stderr: 'pipe' }));
+	await connection.connect(new StdioClientTransport({ command: mcp.command, args: mcp.args,
+		env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, XDG_RUNTIME_DIR: runtime }, stderr: 'pipe' }));
 	const status = await connection.callTool({ name: 'brain_status', arguments: {} });
 	assert.deepEqual(JSON.parse(status.content[0].text), { profile: null, scopes: ['global', 'default'] });
 });

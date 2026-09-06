@@ -2,6 +2,8 @@ import * as path from 'path';
 import { IS_WINDOWS } from './constants';
 import { RenderContext, RenderedFile } from './model';
 
+const GIT_TEST_REPO_MARKER = '.agent-run-test-repo';
+
 export function renderGuardShims(context: RenderContext): RenderedFile[] {
 	const names: string[] = [];
 	if (context.guardrails.blockGitWrite) {
@@ -35,16 +37,40 @@ function posixGitShim(): string {
 	return [
 		'#!/usr/bin/env bash',
 		'set -euo pipefail',
+		'agent_run_test_repo() {',
+		'  local dir="$PWD"',
+		'  while [ "$#" -gt 0 ]; do',
+		'    case "$1" in',
+		'      -C)',
+		'        [ "$#" -ge 2 ] || return 1',
+		'        dir="$(cd -- "$dir" 2>/dev/null && cd -- "$2" 2>/dev/null && pwd -P)" || return 1',
+		'        shift 2 ;;',
+		'      -c)',
+		'        [ "$#" -ge 2 ] || return 1',
+		'        shift 2 ;;',
+		'      --git-dir*|--work-tree*) return 1 ;;',
+		'      -*) shift ;;',
+		'      *) break ;;',
+		'    esac',
+		'  done',
+		'  dir="$(cd -- "$dir" 2>/dev/null && pwd -P)" || return 1',
+		'  while :; do',
+		`    if [ -e "$dir/${GIT_TEST_REPO_MARKER}" ]; then return 0; fi`,
+		'    [ "$dir" != "/" ] || return 1',
+		'    dir="${dir%/*}"',
+		'    [ -n "$dir" ] || dir="/"',
+		'  done',
+		'}',
+		'blocked=""',
 		'for arg in "$@"; do',
 		'  case "$arg" in',
-		'    commit|tag|push)',
-		'      if [ "${AGENT_RUN_ALLOW_GIT_WRITE:-}" != "1" ]; then',
-		'        echo "agent-run: blocked git $arg. Review and run it manually, or set AGENT_RUN_ALLOW_GIT_WRITE=1 for this invocation." >&2',
-		'        exit 42',
-		'      fi',
-		'      ;;',
+		'    commit|tag|push) blocked="$arg"; break ;;',
 		'  esac',
 		'done',
+		'if [ -n "$blocked" ] && [ "${AGENT_RUN_ALLOW_GIT_WRITE:-}" != "1" ] && ! agent_run_test_repo "$@"; then',
+		'  echo "agent-run: blocked git $blocked. Review and run it manually, or set AGENT_RUN_ALLOW_GIT_WRITE=1 for this invocation." >&2',
+		'  exit 42',
+		'fi',
 		...posixRunRealCommand('git'),
 		''
 	].join('\n');
@@ -110,6 +136,7 @@ function posixRunRealCommand(tool: string): string[] {
 function windowsShim(name: string): string {
 	const executable = name === 'npm' || name === 'pnpm' ? `${name}.cmd` : `${name}.exe`;
 	const guard = name === 'git' ? windowsGitGuard() : name === 'gh' ? windowsGhGuard() : windowsPublishGuard(name);
+	const helpers = name === 'git' ? windowsGitTestRepo() : [];
 	return [
 		'@echo off',
 		...guard,
@@ -120,6 +147,7 @@ function windowsShim(name: string): string {
 		'  for /f "tokens=1,* delims=;" %%A in ("%PATH%") do set "PATH=%%B"',
 		')',
 		`${executable} %*`,
+		...(helpers.length ? ['exit /b %ERRORLEVEL%', '', ...helpers] : []),
 		''
 	].join('\n');
 }
@@ -135,8 +163,47 @@ function windowsGitGuard(): string[] {
 		'goto scan',
 		':block_git',
 		'if "%AGENT_RUN_ALLOW_GIT_WRITE%"=="1" goto run',
+		'call :agent_run_test_repo %*',
+		'if not errorlevel 1 goto run',
 		'echo agent-run: blocked git write. Review and run it manually, or set AGENT_RUN_ALLOW_GIT_WRITE=1 for this invocation. 1>&2',
 		'exit /b 42'
+	];
+}
+
+function windowsGitTestRepo(): string[] {
+	return [
+		':agent_run_test_repo',
+		'setlocal enabledelayedexpansion',
+		'set "TARGET=%CD%"',
+		':agent_run_scan',
+		'if "%~1"=="" goto agent_run_walk',
+		'if /I "%~1"=="-C" goto agent_run_chdir',
+		'if /I "%~1"=="-c" (shift & shift & goto agent_run_scan)',
+		'set "ARG=%~1"',
+		'if /I "!ARG:~0,9!"=="--git-dir" goto agent_run_deny',
+		'if /I "!ARG:~0,11!"=="--work-tree" goto agent_run_deny',
+		'if "!ARG:~0,1!"=="-" (shift & goto agent_run_scan)',
+		'goto agent_run_walk',
+		':agent_run_chdir',
+		'if "%~2"=="" goto agent_run_deny',
+		'pushd "!TARGET!" 2>nul',
+		'if errorlevel 1 goto agent_run_deny',
+		'pushd "%~2" 2>nul',
+		'if errorlevel 1 (popd & goto agent_run_deny)',
+		'set "TARGET=!CD!"',
+		'popd',
+		'popd',
+		'shift',
+		'shift',
+		'goto agent_run_scan',
+		':agent_run_walk',
+		`if exist "!TARGET!\\${GIT_TEST_REPO_MARKER}" (endlocal & exit /b 0)`,
+		'for %%D in ("!TARGET!\\..") do set "PARENT=%%~fD"',
+		'if /I "!PARENT!"=="!TARGET!" goto agent_run_deny',
+		'set "TARGET=!PARENT!"',
+		'goto agent_run_walk',
+		':agent_run_deny',
+		'endlocal & exit /b 1'
 	];
 }
 

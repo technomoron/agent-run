@@ -30,8 +30,8 @@ function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = nu
     const brainEnabled = (0, config_1.readBrainConfig)(configRoot)?.enabled === true;
     if (brainEnabled && !context.mcpServers['agent-brain']) {
         context.mcpServers['agent-brain'] = {
-            transport: 'stdio', enabled: true, command: process.execPath,
-            args: [path.join(__dirname, 'agent-brain.js'), 'mcp', '--configdir', configRoot, '--cwd', projectRoot, '--socket', (0, config_1.defaultSocketPath)(configRoot)],
+            transport: 'stdio', enabled: true, command: 'agent-brain',
+            args: ['mcp', '--configdir', configRoot, '--cwd', projectRoot],
             env: {}, headers: {}
         };
     }

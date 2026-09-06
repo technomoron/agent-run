@@ -209,6 +209,7 @@ assert_contains "$TMP_DIR/install-ai-tools.out" "agent-brain.service"
 CONFIG_SOURCE="$TMP_DIR/agent-config-source"
 CONFIG_TARGET="$TMP_DIR/synced-agent-config"
 mkdir -p "$CONFIG_SOURCE"
+: >"$CONFIG_SOURCE/.agent-run-test-repo"
 git -C "$CONFIG_SOURCE" init -b main >/dev/null
 git -C "$CONFIG_SOURCE" config user.email test@example.com
 git -C "$CONFIG_SOURCE" config user.name "Agent Run Test"
@@ -297,6 +298,7 @@ printf 'tracked decision\n' >"$GIT_MIGRATION_PROFILE/memory/decisions.md"
 printf '{"name":"git-memory-project","private":true}\n' >"$GIT_MIGRATION_PROJECT/package.json"
 printf 'AGENT_CONFIG_DIR=%s\nAGENT_RUN_PROFILE=acme/git-memory\n' "$GIT_MIGRATION_ROOT" >"$GIT_MIGRATION_PROJECT/.agent-run.env"
 git -C "$TMP_DIR" init -b main "$GIT_MIGRATION_ROOT" >/dev/null
+: >"$GIT_MIGRATION_ROOT/.agent-run-test-repo"
 git -C "$GIT_MIGRATION_ROOT" config user.email test@example.com
 git -C "$GIT_MIGRATION_ROOT" config user.name "Agent Run Memory Test"
 git -C "$GIT_MIGRATION_ROOT" add acme/git-memory/agent-run.jsonc acme/git-memory/memory/decisions.md
@@ -329,6 +331,7 @@ mkdir -p "$NO_GIT_MIGRATION_PROFILE/memory" "$TMP_DIR/empty-bin"
 printf '{}\n' >"$NO_GIT_MIGRATION_PROFILE/agent-run.jsonc"
 printf 'tracked but git unavailable\n' >"$NO_GIT_MIGRATION_PROFILE/memory/decisions.md"
 git -C "$TMP_DIR" init -b main "$NO_GIT_MIGRATION_ROOT" >/dev/null
+: >"$NO_GIT_MIGRATION_ROOT/.agent-run-test-repo"
 git -C "$NO_GIT_MIGRATION_ROOT" config user.email test@example.com
 git -C "$NO_GIT_MIGRATION_ROOT" config user.name "Agent Run No Git Test"
 git -C "$NO_GIT_MIGRATION_ROOT" add acme/no-git-memory/agent-run.jsonc acme/no-git-memory/memory/decisions.md
@@ -788,6 +791,27 @@ assert_contains "$TMP_DIR/git.out" "blocked git push"
 assert_contains "$TMP_DIR/pnpm.out" "blocked pnpm publish"
 assert_contains "$TMP_DIR/gh.out" "blocked gh release create"
 
+GUARD_TEST_REPO="$TMP_DIR/guard-test-repo"
+mkdir -p "$GUARD_TEST_REPO"
+: >"$GUARD_TEST_REPO/.agent-run-test-repo"
+run_tool_shim "$LIVE_DIR/bin/git" -C "$GUARD_TEST_REPO" init -b main >/dev/null
+run_tool_shim "$LIVE_DIR/bin/git" -C "$GUARD_TEST_REPO" config user.email test@example.com
+run_tool_shim "$LIVE_DIR/bin/git" -C "$GUARD_TEST_REPO" config user.name "Agent Run Test"
+run_tool_shim "$LIVE_DIR/bin/git" -C "$GUARD_TEST_REPO" config commit.gpgsign false
+run_tool_shim "$LIVE_DIR/bin/git" -C "$GUARD_TEST_REPO" config core.hooksPath "$TMP_DIR/no-hooks"
+set +e
+run_tool_shim "$LIVE_DIR/bin/git" -C "$GUARD_TEST_REPO" commit --allow-empty -m "Test repository commit" >"$TMP_DIR/git-test-repo.out" 2>&1
+test_repo_commit_status=$?
+run_tool_shim "$LIVE_DIR/bin/git" -C "$GUARD_TEST_REPO" tag v0.0.0 >"$TMP_DIR/git-test-repo-tag.out" 2>&1
+test_repo_tag_status=$?
+run_tool_shim "$LIVE_DIR/bin/git" -C "$TMP_DIR" commit --allow-empty -m "Outside a test repository" >"$TMP_DIR/git-unmarked.out" 2>&1
+unmarked_commit_status=$?
+set -e
+[ "$test_repo_commit_status" -eq 0 ] || fail "expected a commit in a marked test repository to run, got $test_repo_commit_status"
+[ "$test_repo_tag_status" -eq 0 ] || fail "expected a tag in a marked test repository to run, got $test_repo_tag_status"
+[ "$unmarked_commit_status" -eq 42 ] || fail "expected a commit outside a marked test repository to stay blocked, got $unmarked_commit_status"
+assert_contains "$TMP_DIR/git-unmarked.out" "blocked git commit"
+
 if [ -x "$LIVE_DIR/bin/pnpm" ]; then
 	FAKE_REAL_GUARD_BIN="$TMP_DIR/fake-real-guard-bin"
 	mkdir -p "$FAKE_REAL_GUARD_BIN"
@@ -1061,6 +1085,7 @@ printf '{"name":"widget","private":true}\n' >"$WORKSPACE_CHILD/package.json"
 WORKTREE_SOURCE="$TMP_DIR/worktree-source"
 WORKTREE_CHECKOUT="$TMP_DIR/worktree-checkout"
 git -C "$TMP_DIR" init -b main "$WORKTREE_SOURCE" >/dev/null
+: >"$WORKTREE_SOURCE/.agent-run-test-repo"
 git -C "$WORKTREE_SOURCE" config user.email test@example.com
 git -C "$WORKTREE_SOURCE" config user.name "Agent Run Worktree Test"
 git -C "$WORKTREE_SOURCE" remote add origin https://github.com/example/worktree-profile.git

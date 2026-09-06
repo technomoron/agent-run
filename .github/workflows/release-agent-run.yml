@@ -41,10 +41,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify Release Candidate
-        env:
-          GITHUB_REF_NAME: ${{ inputs.tag || github.ref_name }}
-          GITHUB_REF_TYPE: tag
-        run: pnpm release:verify -- --ci
+        run: pnpm release:verify
 
       - name: Pack npm Package
         id: pack

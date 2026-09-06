@@ -206,6 +206,23 @@ Codex and Grok and are omitted from Claude and Gemini.
 `local.md.njk` and `overrides/` are not created unless they contain actual
 profile-specific configuration.
 
+## Guard Shims
+
+`blockGitWrite`, `blockPublish`, and `blockGithubRelease` put small `git`, `npm`,
+`pnpm`, and `gh` shims on the launched agent's `PATH`. They refuse
+`git commit`, `git tag`, `git push`, `npm publish`, `pnpm publish`, and
+`gh release create` with exit code 42 and pass everything else through to the
+real command. Set `AGENT_RUN_ALLOW_GIT_WRITE=1`, `AGENT_RUN_ALLOW_PUBLISH=1`, or
+`AGENT_RUN_ALLOW_GITHUB_RELEASE=1` for a single invocation you have reviewed.
+
+Throwaway repositories that a test suite creates and deletes are exempt from the
+`git` shim. Create an empty `.agent-run-test-repo` file in the repository, or in
+any directory above it, and `git commit`, `git tag`, and `git push` run normally
+for anything below that marker. The shim reads the marker from the directory
+`git` would work in, following any leading `-C` options. This is what lets
+`pnpm test` run inside an agent session; nothing outside a marked directory is
+affected.
+
 ## Profile Resolution
 
 The mapped path is:
@@ -816,7 +833,13 @@ It listens on `$XDG_RUNTIME_DIR/agent-brain.sock`, or
 directory must belong to the current user and have mode `0700`; the socket has
 mode `0600`. No TCP listener or application user database is created.
 
-`agent-run mcp` bridges native-agent stdio to this socket. Use `--socket PATH`
+Generated native-agent configurations run `agent-brain mcp` through `PATH`, so
+`agent-brain` must be installed and available there. The bridge selects the socket
+when it starts; generated files do not depend on the installation or runtime
+directory used to render them. Re-render existing profiles with `agent-run update`
+to replace older commands that contain absolute installation paths.
+
+`agent-run mcp` also bridges native-agent stdio to this socket. Use `--socket PATH`
 for a particular service. The bridge verifies the socket's ownership and private
 permissions. A missing or unreachable socket is an error; start the service
 before connecting. There is no standalone stdio server or TCP fallback. Apicore
@@ -933,6 +956,11 @@ After updating `package.json` and `CHANGES`, run:
 pnpm release
 ```
 
-This validates the repo, creates the annotated tag matching the package version,
-and pushes that tag to `origin`. The tag push triggers the release workflow,
-which verifies, packs, publishes to npm, and creates the GitHub release.
+This creates the annotated tag matching the package version and pushes that tag
+to `origin`. It stops if the tag already exists, and removes the local tag again
+if the push fails. The tag push triggers the release workflow, which runs the
+tests and build, packs, publishes to npm, and creates the GitHub release.
+
+`pnpm run release:preflight` is the local gate to run first: a clean build and
+the full test suite. Update `package.json` and `CHANGES` yourself; nothing
+checks them for you.

@@ -30,7 +30,7 @@ import type {
 import { defaultConfigRoot, parseProfile, resolveProfile } from './project';
 import { buildRenderContext, createNunjucksEnv } from './templates';
 import { formatError, isSamePathOrDescendant, verbose } from './utils';
-import { defaultSocketPath, readBrainConfig } from './brain/config';
+import { readBrainConfig } from './brain/config';
 
 export function renderProfile(
 	projectRoot: string,
@@ -53,8 +53,8 @@ export function renderProfile(
 	const brainEnabled = readBrainConfig(configRoot)?.enabled === true;
 	if (brainEnabled && !context.mcpServers['agent-brain']) {
 		context.mcpServers['agent-brain'] = {
-			transport: 'stdio', enabled: true, command: process.execPath,
-			args: [path.join(__dirname, 'agent-brain.js'), 'mcp', '--configdir', configRoot, '--cwd', projectRoot, '--socket', defaultSocketPath(configRoot)],
+			transport: 'stdio', enabled: true, command: 'agent-brain',
+			args: ['mcp', '--configdir', configRoot, '--cwd', projectRoot],
 			env: {}, headers: {}
 		};
 	}

@@ -2,6 +2,12 @@
 
 **Config once. Run with any native coding agent.**
 
+For persistent knowledge, shared skills, and tasks, use the bundled
+[`agent-brain` MCP server](#persistent-context-with-agent-brain). It runs as a per-user service
+hosted by `@technomoron/apicore-server` on a private Unix socket. Native agents
+connect through a stdio-to-socket bridge.
+Node 24 or newer is required.
+
 `agent-run` lets you manage Codex, Claude Code, Gemini CLI, and Grok Build from
 one shared configuration system while continuing to use each vendor's native
 agent.
@@ -211,10 +217,11 @@ The mapped path is:
 `profile` is resolved in this order:
 
 1. `AGENT_RUN_PROFILE` in `.agent-run.env`
-2. GitHub `origin` remote
-3. `package.json.repository` (string or object `url`)
-4. `package.json.name`
-5. the project path as `[parent]/[current]`
+2. Registered agent-brain source root (the most specific match)
+3. GitHub `origin` remote
+4. `package.json.repository` (string or object `url`)
+5. `package.json.name`
+6. The project path as `[parent]/[current]`
 
 Examples:
 
@@ -230,6 +237,9 @@ path, so values like `/tmp/foo`, `C:/tmp/foo`, or `../foo` are rejected.
 
 The path fallback lets plain directories work without a Git repository or a
 `package.json`. The explicit profile sources above always take precedence.
+With agent-brain enabled, an unconfigured directory uses the default profile.
+An explicit `AGENT_RUN_PROFILE` still takes precedence, and namespaced brain
+project names resolve to their registered profiles.
 
 ## Overrides
 
@@ -284,8 +294,11 @@ project memory directory. Project memory is plain Markdown so it can be
 reviewed and shared through the Git repository that normally holds the
 `.agent-run` config tree.
 
-When a profile still uses `memory/`, loose `memory*.md` files, or Markdown files
-directly under the old `memories/` directory, agent-run detects the old layout
+With agent-brain enabled, `memory/` is the canonical project knowledge directory
+and remains in place; existing `notes/memory/` is also read. Without agent-brain,
+legacy `memory/` moves to `notes/memory/`. Loose `memory*.md` files and Markdown
+files directly under the old `memories/` directory move to the applicable memory
+directory. Agent-run detects the old layout
 before updating or launching an agent. If those files are tracked, agent-run
 shows the moves and asks before staging them with `git mv`. In a non-Git config
 tree, or for untracked files, it uses ordinary filesystem moves. Non-interactive
@@ -430,6 +443,15 @@ node dist/agent-run.js update examples/basic-config/project
 node dist/agent-run.js check examples/basic-config/project
 ```
 
+To add persistent knowledge and tasks to the starter, first copy its
+`agent-config/` directory outside your source repository, then run
+`agent-brain init --configdir /path/to/agent-config`. Existing profiles are
+preserved, and the brain MCP connection is added on the next generation or
+launch. [brain.example.jsonc](examples/basic-config/brain.example.jsonc) shows
+the optional root configuration; the starter commands do not enable it.
+Generated starter runtime files live below
+`examples/basic-config/agent-config/starter/basic-project/live/`.
+
 Check the current repo:
 
 ```sh
@@ -466,6 +488,327 @@ files. Use `--yes` to confirm tracked `git mv` operations in a non-interactive
 run. Omit `--yes` to review and confirm tracked moves interactively. The
 command stages moves but never commits them.
 
+## Persistent context with agent-brain
+
+`agent-brain` gives the native agents the same project knowledge, skills, and
+tasks through MCP. It uses the official Node MCP SDK. The persistent
+service runs under `@technomoron/apicore-server` on a private Unix socket.
+Node 24 or newer is required; SQLite and FTS come from Node, with no database
+package to compile.
+
+### Start using it
+
+```sh
+agent-brain init
+agent-brain serve
+```
+
+Keep the service running, or enable the systemd user service described below.
+In another terminal:
+
+```sh
+cd ~/code/my-project
+agent-run create my-project --quick
+agent-run codex
+```
+
+Omit `--quick` for the short interactive setup, or use `--guided` to add an
+architecture summary, constraints, conventions, and a preferred agent.
+Creation detects the source root, Git remote, languages, package manager,
+documentation, and package scripts. It writes configuration outside the source
+repository. Existing directories and duplicate project registrations are rejected.
+
+`agent-run project list` lists registrations. `project info` shows the current
+project, and `project bootstrap` returns detected information for the agent to
+inspect and turn into proposals. Bootstrap does not invent or save architectural
+facts; the agent can use the knowledge tools after the user confirms its proposals.
+
+All commands accept `--configdir PATH`. Brain commands also accept `--cwd PATH`.
+`agent-brain --help` lists the commands.
+
+### Scopes and existing profiles
+
+```text
+~/.agent-run/
+  brain.jsonc
+  global/skills/<name>/SKILL.md
+  global/constraints/*.md
+  projects/my-project/
+    agent-run.jsonc
+    config.yaml
+    project.md
+    memory/*.md
+    todo/*.md
+    live/
+  default/
+    agent-run.jsonc
+    skills/
+    preferences/
+    constraints/
+    conventions/
+    reviews/
+    memory/*.md
+    todo/
+    templates/
+    live/
+  index/knowledge.sqlite
+  runtime/
+```
+
+Inside a registered or existing configured project, retrieval includes global
+and project knowledge. Elsewhere it includes global and default knowledge.
+Default knowledge never appears in a configured project. Among registered
+source roots, the most specific matching root wins; equal matches are rejected.
+An explicit `AGENT_RUN_PROFILE` in `.agent-run.env` keeps precedence over registration.
+
+Project names can include a namespace: `technomoron/agent-run` lives under
+`projects/technomoron/agent-run`. The original name also works in
+`AGENT_RUN_PROFILE`; no alias is needed.
+
+Existing JSONC manifests, Nunjucks templates, and `org/repo` profiles remain
+supported. Brain reads existing `notes/memory` directories in place, including
+the config root's global notes. It does not move or delete them. New knowledge
+uses the directories above. Existing files without metadata are treated as
+inferred, relevant-only knowledge; adding metadata gives you explicit control.
+Legacy review metadata is preserved, and reviews marked addressed or resolved
+are excluded from active recall. Canonical `global/skills/<name>/SKILL.md` files
+also support existing Nunjucks variables when served or rendered for native agents.
+
+`agent-brain init` installs the shared brain skills and a default profile, and
+creates `brain.jsonc` only if it does not exist. It preserves existing files.
+It creates the topic directories shown above in global, default, and registered
+project scopes, plus `rules/`, `decisions/`, `specs/`, and `observations/` for
+the other knowledge types. Project creation uses the same layout. Empty topic
+directories stay empty until there is relevant content to store.
+Normal profile rendering then adds the brain MCP server and shared instructions
+to Codex, Claude, Gemini, and Grok. An explicitly configured `agent-brain` MCP
+entry takes precedence. Set `enabled` to `false` to stop automatic integration
+and restore the previous unconfigured-project behavior.
+
+```jsonc
+{
+  "enabled": true,
+  "contextBudget": 16000,
+  "connectors": {}
+}
+```
+
+`contextBudget` counts serialized characters, not model tokens. A context result
+reports omitted items. Use `get_knowledge` to read complete items when necessary.
+Always-recalled knowledge is considered first, then matching file patterns,
+then lexical results. Search uses FTS ranking with extra weight for titles and tags.
+Symbols contribute search terms. Manual Markdown changes are read on every query;
+the index can be deleted while the service is stopped and rebuilt on the next query.
+
+### Knowledge and skills
+
+Knowledge is one Markdown file per item, with YAML metadata:
+
+```markdown
+---
+id: auth-refresh-single-use
+type: constraint
+scope: project
+authority: user
+status: active
+recall: always
+tags: [auth]
+applies_to: ["src/auth/**"]
+created: 2026-09-06
+---
+
+# Refresh tokens are single-use
+
+A successfully consumed refresh token must never be accepted again.
+```
+
+The storage directories are `rules`, `preferences`, `conventions`, `constraints`,
+`decisions`, `specs`, `reviews`, `memory`, and `observations`. Scope metadata must
+match the file's directory. IDs must be unique across the active scopes.
+Invalid metadata produces an error identifying the file. Symlinked storage
+paths are rejected. Individual Markdown files are limited to 1 MiB.
+
+Choose the scope and singular knowledge type when calling `remember`; MCP writes
+the file into the corresponding directory. User preferences belong in
+`preferences/`, requirements in `constraints/`, established practices in
+`conventions/`, confirmed specifications in `specs/`, and confirmed choices in
+`decisions/`. Code-derived facts remain inferred `observations/`; source
+references and history belong in `memory/`, with planned features labeled as
+plans. An import request does not make inferred content authoritative.
+Use the todo tools for tasks. Reusable workflows are `skills/<name>/SKILL.md`
+files, and reusable templates belong in `templates/`; `remember` does not
+install either. Global skills remain available without copying them into each
+project. The brain-memory skill explains these choices to native agents.
+
+Available MCP tools include `get_context`, `search_knowledge`, `get_knowledge`,
+`remember`, `promote`, `deprecate_knowledge`, and `review_context`.
+Writes use atomic file replacement and a shared lock; concurrent writes either
+complete or report that the caller should retry. After a crashed writer, stop
+the service, verify the PID in `runtime/brain-write.lock` is no longer running,
+and remove that lock before restarting.
+
+```sh
+agent-brain remember --json '{"scope":"project","type":"observation","title":"Refresh handling","content":"Investigate concurrent refresh requests."}'
+agent-brain search "refresh"
+agent-brain get ITEM_ID
+agent-brain deprecate ITEM_ID --revision REVISION "No longer applies"
+agent-brain promote ITEM_ID --scope global --revision REVISION --confirmed
+```
+
+Remembered deductions default to inferred authority and must remain observations,
+memories, or review records. Global writes require explicit user authority.
+Promotion copies an item, records its origin, preserves the original, and requires
+confirmation. Deprecation and promotion require the last-read revision so stale
+requests cannot overwrite newer work. An agent's authority claim is an instruction
+contract, not a separate authentication system; the Unix account owns the data.
+
+Skills use YAML `name` and `description` metadata in `skills/<name>/SKILL.md`.
+`list_skills` returns descriptions, and `get_skill` loads the body on demand.
+A project/default skill overrides a global skill with the same name. Add
+`extends: global:NAME` to include the global skill's instructions before the local
+instructions. The existing native skill-template system continues to work.
+
+The installed `brain-memory`, `brain-review`, and `todo-manager` skills describe
+retrieval, persistence, review learning, and task workflows. Review records use
+the knowledge tools and remain inferred unless confirmed by the user.
+
+### Tasks and connectors
+
+Tasks are separate from knowledge and stored in `todo/<id>.md`. Supported states
+are `todo`, `doing`, `blocked`, `done`, and `cancelled`. Tasks have titles,
+descriptions, priorities, owners, due dates, labels, notes, and optional external
+source identities.
+
+```sh
+agent-brain todo add --json '{"scope":"project","title":"Check refresh handling","priority":"high"}'
+agent-brain todo list
+agent-brain todo get ITEM_ID
+agent-brain todo complete ITEM_ID --revision REVISION
+```
+
+MCP exposes `todo_list`, `todo_get`, `todo_add`, `todo_update`, `todo_complete`,
+`todo_import`, and `todo_sync`. Update requests require the current revision.
+
+Configure optional connectors in `brain.jsonc`:
+
+```jsonc
+{
+  "enabled": true,
+  "connectors": {
+    "issues": {
+      "type": "github",
+      "repository": "my-org/my-project",
+      "tokenEnv": "GITHUB_TOKEN"
+    },
+    "board": {
+      "type": "trello",
+      "board": "BOARD_ID",
+      "keyEnv": "TRELLO_API_KEY",
+      "tokenEnv": "TRELLO_TOKEN"
+    }
+  }
+}
+```
+
+```sh
+agent-brain todo import issues --scope project
+agent-brain todo sync issues --scope project
+```
+
+Credentials are read from the process environment and never written to task files.
+Set credentials in the service's environment.
+GitHub imports paginate and exclude pull requests. Trello maps due-complete cards
+to done, archived cards to cancelled, and other cards to todo; it does not guess
+workflow states from list names.
+
+Imports deduplicate by source identity and scope. Synchronization compares local
+and remote fields against the last imported version, preserves local-only edits,
+and reports conflicting task IDs without replacing those tasks. Deleted remote
+items are retained locally. These connectors only read remote systems; completing
+a local task does not close a GitHub issue or modify a Trello card.
+
+### Git portability
+
+```sh
+agent-brain sync
+agent-brain sync init --confirmed
+agent-brain sync save --confirmed --message "Your approved commit message"
+agent-brain sync pull --confirmed
+agent-brain sync push --confirmed
+```
+
+The command without an action previews Git status and eligible files. Saving
+includes Markdown knowledge, skills, tasks, project metadata, and `.gitignore`.
+It excludes indexes, runtime state, secrets, `brain.jsonc`, and native agent
+configuration. Existing staged changes block a save. Configure the remote and
+upstream with normal Git commands using your existing credentials.
+After cloning onto another machine, run `agent-brain init` to restore generated
+profile markers and shared templates, then update source roots in `config.yaml`
+to match that machine.
+
+The configuration directory must itself be the repository root. Pull uses rebase
+and reports conflicted files; resolve conflicts before syncing again. Each action
+requires explicit authorization. There are no automatic commits, pulls, or pushes.
+
+### Persistent service under apicore-server
+
+All native agents connect to the same long-lived service for the Unix user.
+Start it on Linux or macOS:
+
+```sh
+agent-brain serve
+```
+
+The service hosts SDK Streamable HTTP at `/mcp` using apicore's Fastify instance.
+It listens on `$XDG_RUNTIME_DIR/agent-brain.sock`, or
+`~/.agent-run/runtime/agent-brain.sock` when that variable is absent. The socket
+directory must belong to the current user and have mode `0700`; the socket has
+mode `0600`. No TCP listener or application user database is created.
+
+`agent-run mcp` bridges native-agent stdio to this socket. Use `--socket PATH`
+for a particular service. The bridge verifies the socket's ownership and private
+permissions. A missing or unreachable socket is an error; start the service
+before connecting. There is no standalone stdio server or TCP fallback. Apicore
+supports Unix sockets directly, so localhost binding is unnecessary. The brain
+service currently requires Linux or macOS.
+
+After a crash, remove a stale socket only after checking that its service is
+stopped. Starting a second service on an existing socket fails without replacing
+the first service's socket.
+
+For a user service, copy `ops/systemd/agent-brain.service` to
+`~/.config/systemd/user/`, adjust `ExecStart` if your executable is elsewhere, and
+run `systemctl --user daemon-reload` followed by
+`systemctl --user enable --now agent-brain`. Installation is explicit.
+
+The supplied service uses `serve --pull`. On startup this pulls the configuration
+repository with `--ff-only --no-rebase` when it is clean and has an upstream.
+Dirty checkouts and missing upstreams are skipped. Divergence or network failures
+are reported in the service journal and the service continues with local files.
+Startup never commits, pushes, stashes, or rebases local work. Omit `--pull` to
+disable this behavior for a manually launched service.
+
+The AI tools updater can install and restart the service for explicitly selected
+accounts; see [Systemd Jobs](#systemd-jobs). Existing user unit
+overrides still take precedence over the installed system-wide user unit.
+
+Each HTTP request resolves the proxy's source directory through agent-run's
+resolver. Tools cannot select another project's scope through arguments. The
+service shares canonical files and the SQLite index; it does not keep a watcher
+or a separate authoritative cache.
+
+### Remaining roadmap
+
+The initial implementation uses lexical retrieval and path matching. Embeddings,
+vector ranking, background watchers, debounced automatic Git synchronization,
+remote task writes, and additional connectors remain future work. No model
+provider or external account is required for the local features.
+
+Transport and connector implementations follow the
+[Node MCP SDK server documentation](https://ts.sdk.modelcontextprotocol.io/server),
+[GitHub Issues REST API](https://docs.github.com/en/rest/issues/issues), and
+[Trello board API](https://developer.atlassian.com/cloud/trello/rest/api-group-boards/).
+
 ## Systemd Jobs
 
 The repo includes optional systemd units for keeping global AI tooling current.
@@ -490,6 +833,22 @@ npm, pnpm, corepack, fallow, ripgrep, pm2, tsx, typescript,
 
 The optional apt package list still defaults to `gh` and can be changed with
 `AI_TOOLS_APT_PACKAGES`.
+
+To keep agent-brain running for a particular account, put
+`AI_TOOLS_BRAIN_USERS="bjorn"` in `/etc/default/ai-tools-update`. The installer
+also installs the user service and its management helper. After installing the
+package, the updater enables that account's service, enables lingering so it
+starts at boot without an interactive login, and restarts it to load the update.
+No accounts are selected by default. The service remains owned by the selected
+user and listens on that user's private Unix socket.
+
+Node 24 or newer must be installed at `/usr/local/bin/node` before running the
+updater. `AI_TOOLS_AGENT_RUN_PACKAGE` can select a package version or a
+root-owned local package archive while testing an unpublished build; it defaults
+to `@technomoron/agent-run@latest`. The updater's `--agent-brain` option installs
+only this package and manages the selected services. The settings file is read
+by the systemd job; when invoking the script directly, pass these environment
+variables explicitly.
 
 ## Login Warning
 

@@ -16,7 +16,8 @@ export function buildCanonicalSkills(
 	trace?: RenderTrace
 ): RenderContext['skills'] {
 	return manifest.skills.install.map((name) => {
-		const sourceTemplate = manifest.skills.overrides[name] ?? `global/skills/${name}/SKILL.md.njk`;
+		const canonical = `global/skills/${name}/SKILL.md`;
+		const sourceTemplate = manifest.skills.overrides[name] ?? (fs.existsSync(path.join(configRoot, canonical)) ? canonical : `${canonical}.njk`);
 		const sourcePath = resolveConfigPath(configRoot, sourceTemplate, context as unknown as Record<string, unknown>);
 		if (!fs.existsSync(sourcePath)) {
 			throw new Error(`missing skill template for ${name}: ${sourcePath}`);

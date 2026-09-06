@@ -13,6 +13,7 @@ import {
 import { ToolName } from './model';
 import { fail, isSamePathOrDescendant, parseBooleanEnv, verbose } from './utils';
 import { walkTree } from './walk-tree';
+import { readBrainConfig, registeredBrainProfile, registeredBrainProject, namedBrainProfile, listBrainProjects } from './brain/config';
 
 const envCache = new Map<string, Record<string, string>>();
 const PRUNED_SOURCE_DIRS = new Set(['node_modules', '.pnpm-store', 'dist', 'build']);
@@ -113,6 +114,8 @@ export function failForLocalAiFiles(tool: ToolName, projectRoot: string, localAi
 }
 
 export function findProjectRoot(cwd: string): string {
+	const registered = registeredBrainProject(defaultConfigRoot(cwd), cwd);
+	if (registered) return registered.root;
 	let dir = path.resolve(cwd);
 	let nearestPackageRoot = '';
 	let workspaceRoot = '';
@@ -167,7 +170,26 @@ export function resolveProfile(projectRoot: string): string {
 	return result.profile;
 }
 
-export function resolveProfileResult(projectRoot: string): { profile: string | null; reason: string } {
+export function resolveProfileResult(projectRoot: string, configRoot = defaultConfigRoot(projectRoot), useDefault = true): { profile: string | null; reason: string } {
+	const explicitProfile = readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim();
+	if (explicitProfile) {
+		const parsed = parseProfile(explicitProfile, `${ENV_FILE_NAME} AGENT_RUN_PROFILE`);
+		return parsed.profile ? { ...parsed, profile: namedBrainProfile(configRoot, parsed.profile) ?? parsed.profile } : parsed;
+	}
+	const registered = registeredBrainProfile(configRoot, projectRoot);
+	if (registered !== null) return { profile: registered, reason: '' };
+	const resolved = resolveLegacyProfileResult(projectRoot);
+	const named = resolved.profile ? namedBrainProfile(configRoot, resolved.profile) : null;
+	if (named) return { profile: named, reason: '' };
+	if (useDefault && readBrainConfig(configRoot)?.enabled && !readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim()) {
+		const configured = resolved.profile !== null && ['agent-run.jsonc', 'local.md.njk', 'AGENTS-MODS.md']
+			.some((name) => fs.existsSync(path.join(configRoot, resolved.profile!, name)));
+		if (!configured) return { profile: 'default', reason: '' };
+	}
+	return resolved;
+}
+
+function resolveLegacyProfileResult(projectRoot: string): { profile: string | null; reason: string } {
 	const envProfile = readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim();
 	if (envProfile) {
 		verbose(`using ${ENV_FILE_NAME} AGENT_RUN_PROFILE=${envProfile}`);
@@ -281,6 +303,8 @@ export function parseProfile(profile: string, source: string): { profile: string
 }
 
 export function projectRootForProfile(profile: string, configRoot?: string): string {
+	const registered = configRoot ? listBrainProjects(configRoot).find((project) => project.profile === profile || project.name === profile) : undefined;
+	if (registered?.roots[0]) return registered.roots[0];
 	if (configRoot && path.basename(configRoot) === 'agent-config') {
 		return path.join(path.dirname(configRoot), ...profile.split('/'));
 	}

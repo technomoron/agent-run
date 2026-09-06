@@ -13,4 +13,5 @@ Environment=XDG_CONFIG_HOME=/root/.config
 Environment=NPM_CONFIG_PREFIX=/usr/local
 Environment=PNPM_HOME=/usr/local
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/etc/default/ai-tools-update
 ExecStart=/usr/local/libexec/agent-run/update-ai-tools

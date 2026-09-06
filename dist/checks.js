@@ -48,10 +48,12 @@ function checkAgentDirectory(projectRoot, agentDir) {
     if (!(0, manifest_1.isProfileConfigured)(agentDir)) {
         return [{ message: `missing manifest or legacy/local source file in ${agentDir}`, severity: 'ERROR' }];
     }
-    for (const legacyPath of (0, config_tree_1.describeLegacyProfileLayout)(agentDir)) {
+    for (const legacyPath of (0, config_tree_1.describeLegacyProfileLayout)(agentDir, configRoot)) {
         findings.push({ message: `old profile layout needs migration: ${legacyPath}`, severity: 'ERROR' });
     }
     for (const relativeTemplate of constants_1.REQUIRED_GLOBAL_TEMPLATES) {
+        if (relativeTemplate.endsWith('/SKILL.md.njk') && fs.existsSync(path.join(configRoot, relativeTemplate.slice(0, -4))))
+            continue;
         if (!fs.existsSync(path.join(configRoot, relativeTemplate))) {
             findings.push({
                 message: `missing required global template: ${path.join(configRoot, relativeTemplate)}`,

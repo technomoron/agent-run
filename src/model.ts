@@ -1,7 +1,7 @@
 import type { AgentId, AgentRuntime } from './agents/types';
 
 export type ToolName = AgentId;
-export type CommandName = ToolName | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
+export type CommandName = ToolName | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config' | 'mcp' | 'create' | 'project';
 export type SandboxMode = 'danger' | 'sandboxed';
 
 export type WrapperArgs = {
@@ -63,6 +63,7 @@ export type MigrateConfigCommand = {
 };
 
 export type ParsedInvocation =
+	| { command: 'mcp' | 'create' | 'project'; args: string[] }
 	| RunCommand
 	| CheckCommand
 	| StatusCommand

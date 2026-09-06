@@ -1,9 +1,13 @@
 {
   "name": "@technomoron/agent-run",
-  "version": "0.99.30",
-  "packageManager": "pnpm@10.28.1",
+  "version": "0.99.31",
+  "packageManager": "pnpm@10.34.5",
   "bin": {
-    "agent-run": "dist/agent-run.js"
+    "agent-run": "dist/agent-run.js",
+    "agent-brain": "dist/agent-brain.js"
+  },
+  "engines": {
+    "node": ">=24"
   },
   "files": [
     "dist/",
@@ -12,6 +16,7 @@
     "scripts/agent-config-login-warning.sh",
     "scripts/install-systemd-jobs.sh",
     "scripts/update-ai-tools.sh",
+    "scripts/ensure-agent-brain.sh",
     "README.md",
     "LICENSE",
     "CHANGES"
@@ -22,11 +27,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "postbuild": "node -e \"require('node:fs').chmodSync('dist/agent-run.js', 0o755)\"",
+    "postbuild": "node -e \"for (const bin of ['agent-run', 'agent-brain']) require('node:fs').chmodSync('dist/' + bin + '.js', 0o755)\"",
     "clean:dist": "rimraf ./dist/",
     "cleanbuild": "run-s clean:dist build",
     "prepack": "run-s build",
     "test": "run-s build test:integration test:release",
+    "test:brain": "node --test scripts/test-brain.cjs",
     "test:integration": "bash ./scripts/test.sh",
     "test:release": "bash ./scripts/test-release.sh",
     "release": "bash ./scripts/release.sh",
@@ -43,16 +49,20 @@
   "homepage": "https://github.com/technomoron/agent-run#readme",
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
-    "@types/node": "^20.19.11",
+    "@types/node": "^24.13.3",
     "@types/nunjucks": "^3.2.6",
     "npm-run-all": "^4.1.5",
-    "pnpm": "10.28.1",
+    "pnpm": "10.34.5",
     "rimraf": "^6.1.3",
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@technomoron/apicore-server": "^1.0.0",
     "cross-spawn": "^7.0.6",
     "jsonc-parser": "^3.3.1",
-    "nunjucks": "^3.2.4"
+    "nunjucks": "^3.2.4",
+    "yaml": "^2.9.0",
+    "zod": "^4.5.4"
   }
 }

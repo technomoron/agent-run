@@ -75,6 +75,10 @@ function extractCommand(args: string[]): CommandName {
 
 function parseCommand(command: CommandName, args: string[]): ParsedInvocation {
 	switch (command) {
+		case 'mcp':
+		case 'create':
+		case 'project':
+			return { command, args };
 		case 'check':
 			return parseCheckCommand(args);
 		case 'status':
@@ -395,6 +399,9 @@ function renderHelp(topic: HelpTopic): string {
 		'  setup [org/repo]                      Install the default tree and selected profile',
 		'  check [--all] [path]                  Validate generated profile output',
 		'  status                                Show native agent capabilities',
+		'  create <name> [--quick|--guided]       Create a project with persistent context',
+		'  project list|info|bootstrap           Inspect brain projects or propose initial context',
+		'  mcp [--socket PATH]                   Bridge MCP to the per-user brain service',
 		'  generate [path]                       Create a sparse profile marker and render output',
 		'  edit [path]                           Create or open local.md.njk',
 		'  update [--all] [path]                 Regenerate existing profile output',
@@ -439,7 +446,7 @@ function normalizeCommandName(value: string): CommandName | null {
 	if (base === 'agent-run') {
 		return null;
 	}
-	return [...AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config'].includes(base)
+	return [...AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project'].includes(base)
 		? (base as CommandName)
 		: null;
 }

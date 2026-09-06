@@ -66,6 +66,12 @@ export function main(invokedTool: string, argv: string[]): void {
 
 function dispatch(command: ParsedInvocation): void {
 	switch (command.command) {
+		case 'mcp':
+		case 'create':
+		case 'project':
+			void import('./brain/cli').then(({ brainMain }) => brainMain(command.args, command.command))
+				.catch((error: unknown) => { process.stderr.write(`agent-brain: ${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
+			return;
 		case 'check':
 			runCheck(command);
 			return;
@@ -480,8 +486,10 @@ function activeProject(targetPath: string, action: 'generate' | 'edit'): string 
 }
 
 function initializeProfileSource(projectRoot: string, preferProjectConfigRoot: boolean): string {
-	const profile = resolveProfile(projectRoot);
 	const configRoot = defaultConfigRoot(projectRoot, { preferProjectRoot: preferProjectConfigRoot });
+	const resolved = resolveProfileResult(projectRoot, configRoot, false);
+	if (!resolved.profile) throw new Error(resolved.reason);
+	const profile = resolved.profile;
 	const agentDir = path.join(configRoot, profile);
 	prepareConfigRoot(configRoot);
 	ensureRootDefaultsFile(configRoot);

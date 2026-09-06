@@ -20,6 +20,7 @@ const path = require("path");
 const constants_1 = require("./constants");
 const utils_1 = require("./utils");
 const walk_tree_1 = require("./walk-tree");
+const config_1 = require("./brain/config");
 const envCache = new Map();
 const PRUNED_SOURCE_DIRS = new Set(['node_modules', '.pnpm-store', 'dist', 'build']);
 function resolveAgentDir(projectRoot) {
@@ -98,6 +99,9 @@ function failForLocalAiFiles(tool, projectRoot, localAiFiles) {
     process.exit(1);
 }
 function findProjectRoot(cwd) {
+    const registered = (0, config_1.registeredBrainProject)(defaultConfigRoot(cwd), cwd);
+    if (registered)
+        return registered.root;
     let dir = path.resolve(cwd);
     let nearestPackageRoot = '';
     let workspaceRoot = '';
@@ -146,7 +150,28 @@ function resolveProfile(projectRoot) {
     }
     return result.profile;
 }
-function resolveProfileResult(projectRoot) {
+function resolveProfileResult(projectRoot, configRoot = defaultConfigRoot(projectRoot), useDefault = true) {
+    const explicitProfile = readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim();
+    if (explicitProfile) {
+        const parsed = parseProfile(explicitProfile, `${constants_1.ENV_FILE_NAME} AGENT_RUN_PROFILE`);
+        return parsed.profile ? { ...parsed, profile: (0, config_1.namedBrainProfile)(configRoot, parsed.profile) ?? parsed.profile } : parsed;
+    }
+    const registered = (0, config_1.registeredBrainProfile)(configRoot, projectRoot);
+    if (registered !== null)
+        return { profile: registered, reason: '' };
+    const resolved = resolveLegacyProfileResult(projectRoot);
+    const named = resolved.profile ? (0, config_1.namedBrainProfile)(configRoot, resolved.profile) : null;
+    if (named)
+        return { profile: named, reason: '' };
+    if (useDefault && (0, config_1.readBrainConfig)(configRoot)?.enabled && !readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim()) {
+        const configured = resolved.profile !== null && ['agent-run.jsonc', 'local.md.njk', 'AGENTS-MODS.md']
+            .some((name) => fs.existsSync(path.join(configRoot, resolved.profile, name)));
+        if (!configured)
+            return { profile: 'default', reason: '' };
+    }
+    return resolved;
+}
+function resolveLegacyProfileResult(projectRoot) {
     const envProfile = readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim();
     if (envProfile) {
         (0, utils_1.verbose)(`using ${constants_1.ENV_FILE_NAME} AGENT_RUN_PROFILE=${envProfile}`);
@@ -252,6 +277,9 @@ function parseProfile(profile, source) {
     return { profile: segments.join('/'), reason: '' };
 }
 function projectRootForProfile(profile, configRoot) {
+    const registered = configRoot ? (0, config_1.listBrainProjects)(configRoot).find((project) => project.profile === profile || project.name === profile) : undefined;
+    if (registered?.roots[0])
+        return registered.roots[0];
     if (configRoot && path.basename(configRoot) === 'agent-config') {
         return path.join(path.dirname(configRoot), ...profile.split('/'));
     }

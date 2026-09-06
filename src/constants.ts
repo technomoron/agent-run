@@ -24,6 +24,16 @@ export const LOCAL_AI_FILE_NAMES = new Set([
 
 export const LOCAL_AI_DIRECTORY_NAMES = new Set(['.agents', '.claude', '.codex', '.gemini', '.grok']);
 
+export const BRAIN_GITIGNORE_ENTRIES = [
+	'# Disposable brain state and local credentials',
+	'/index/',
+	'/runtime/',
+	'/cache/',
+	'/secrets/',
+	'*.sock',
+	''
+];
+
 export const GENERATED_GITIGNORE_ENTRIES = [
 	'# Generated agent-run live profiles',
 	'**/live/',

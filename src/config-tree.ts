@@ -2,6 +2,7 @@ import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+	BRAIN_GITIGNORE_ENTRIES,
 	GENERATED_GITIGNORE_ENTRIES,
 	LIVE_DIR_NAME,
 	LOCAL_TEMPLATE_FILE_NAME,
@@ -10,6 +11,7 @@ import {
 import { defaultGlobalTemplates } from './defaults';
 import { isSamePathOrDescendant, isSymlink, nextBackupPath, verbose } from './utils';
 import { walkTree } from './walk-tree';
+import { readBrainConfig } from './brain/config';
 
 const PRUNED_CONFIG_DIRS = new Set([
 	'.git',
@@ -58,7 +60,7 @@ export function ensureConfigRootGitignore(configRoot: string): void {
 	const lines = existing.length > 0 ? existing.replace(/\n+$/, '').split('\n') : [];
 	const present = new Set(lines);
 	let changed = !fs.existsSync(gitignorePath);
-	for (const entry of GENERATED_GITIGNORE_ENTRIES) {
+	for (const entry of [...GENERATED_GITIGNORE_ENTRIES, ...(readBrainConfig(configRoot)?.enabled ? BRAIN_GITIGNORE_ENTRIES : [])]) {
 		if (entry === '' || present.has(entry)) {
 			continue;
 		}
@@ -73,6 +75,7 @@ export function ensureConfigRootGitignore(configRoot: string): void {
 
 export function ensureDefaultGlobalTemplates(configRoot: string): void {
 	for (const [relativePath, content] of defaultGlobalTemplates()) {
+		if (relativePath.endsWith('/SKILL.md.njk') && fs.existsSync(path.join(configRoot, relativePath.slice(0, -4)))) continue;
 		const filePath = path.join(configRoot, relativePath);
 		fs.mkdirSync(path.dirname(filePath), { recursive: true });
 		if (!fs.existsSync(filePath)) {
@@ -87,6 +90,8 @@ export function ensurePortableSystemdFiles(configRoot: string): void {
 	const files = new Map<string, { source: string; mode: number }>([
 		['install-systemd-jobs.sh', { source: 'scripts/install-systemd-jobs.sh', mode: 0o755 }],
 		['update-ai-tools.sh', { source: 'scripts/update-ai-tools.sh', mode: 0o755 }],
+		['ensure-agent-brain.sh', { source: 'scripts/ensure-agent-brain.sh', mode: 0o755 }],
+		['agent-brain.service', { source: 'ops/systemd/agent-brain.service', mode: 0o644 }],
 		['ai-tools-update.service', { source: 'ops/systemd/ai-tools-update.service', mode: 0o644 }],
 		['ai-tools-update.timer', { source: 'ops/systemd/ai-tools-update.timer', mode: 0o644 }]
 	]);
@@ -195,10 +200,10 @@ export function migrateLooseFiles(agentDir: string, pattern: RegExp, targetDirNa
 	return moved;
 }
 
-export function describeLegacyProfileLayout(profileDir: string): string[] {
+export function describeLegacyProfileLayout(profileDir: string, configRoot?: string): string[] {
 	const paths: string[] = [];
 	const legacyMemoryDir = path.join(profileDir, 'memory');
-	if (fs.existsSync(legacyMemoryDir)) {
+	if (!(configRoot && readBrainConfig(configRoot)?.enabled) && fs.existsSync(legacyMemoryDir)) {
 		paths.push(legacyMemoryDir);
 	}
 	for (const filePath of legacyProjectMemoryFiles(profileDir)) {
@@ -216,7 +221,7 @@ export function migrateProfileLayout(
 	profileDir: string,
 	confirmGitMoves: (confirmation: GitMoveConfirmation) => boolean
 ): ProfileLayoutMigrationResult {
-	const projectMoves = planProjectMemoryMoves(profileDir);
+	const projectMoves = planProjectMemoryMoves(profileDir, readBrainConfig(configRoot)?.enabled ?? false);
 	validateMoveTargets(projectMoves);
 	const git = findGitWorktree(configRoot);
 	const trackedMoves = git === null ? [] : projectMoves.filter((move) => isTrackedByGit(git, move.source));
@@ -243,11 +248,11 @@ export function migrateProfileLayout(
 	return { gitMoves, projectMemoryMoves: projectMoves.length, runtimeMoves };
 }
 
-function planProjectMemoryMoves(profileDir: string): PlannedMove[] {
-	const targetDir = path.join(profileDir, 'notes', 'memory');
+function planProjectMemoryMoves(profileDir: string, brainEnabled: boolean): PlannedMove[] {
+	const targetDir = brainEnabled ? path.join(profileDir, 'memory') : path.join(profileDir, 'notes', 'memory');
 	const moves: PlannedMove[] = [];
 	const legacyMemoryDir = path.join(profileDir, 'memory');
-	for (const source of listTreeFiles(legacyMemoryDir)) {
+	for (const source of brainEnabled ? [] : listTreeFiles(legacyMemoryDir)) {
 		moves.push({ source, target: path.join(targetDir, path.relative(legacyMemoryDir, source)) });
 	}
 	for (const source of legacyProjectMemoryFiles(profileDir)) {

@@ -22,15 +22,20 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_LIBEXEC_DIR="${INSTALL_LIBEXEC_DIR:-${INSTALL_LIB_DIR:-/usr/local/libexec/agent-run}}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
+SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-/etc/systemd/user}"
 ORIGINAL_ARGS=("$@")
 
 UPDATE_SCRIPT="$ROOT/scripts/update-ai-tools.sh"
 SERVICE_FILE="$ROOT/ops/systemd/ai-tools-update.service"
 TIMER_FILE="$ROOT/ops/systemd/ai-tools-update.timer"
+BRAIN_HELPER="$ROOT/scripts/ensure-agent-brain.sh"
+BRAIN_SERVICE="$ROOT/ops/systemd/agent-brain.service"
 if [ ! -f "$UPDATE_SCRIPT" ]; then
 	UPDATE_SCRIPT="$SCRIPT_DIR/update-ai-tools.sh"
 	SERVICE_FILE="$SCRIPT_DIR/ai-tools-update.service"
 	TIMER_FILE="$SCRIPT_DIR/ai-tools-update.timer"
+	BRAIN_HELPER="$SCRIPT_DIR/ensure-agent-brain.sh"
+	BRAIN_SERVICE="$SCRIPT_DIR/agent-brain.service"
 fi
 
 INSTALL_AI_TOOLS=0
@@ -81,8 +86,10 @@ run() {
 	"$@"
 }
 
-run install -d -m 0755 "$INSTALL_LIBEXEC_DIR" "$SYSTEMD_DIR"
+run install -d -m 0755 "$INSTALL_LIBEXEC_DIR" "$SYSTEMD_DIR" "$SYSTEMD_USER_DIR"
 run install -m 0755 "$UPDATE_SCRIPT" "$INSTALL_LIBEXEC_DIR/update-ai-tools"
+run install -m 0755 "$BRAIN_HELPER" "$INSTALL_LIBEXEC_DIR/ensure-agent-brain"
+run install -m 0644 "$BRAIN_SERVICE" "$SYSTEMD_USER_DIR/agent-brain.service"
 run install -m 0644 "$SERVICE_FILE" "$SYSTEMD_DIR/ai-tools-update.service"
 run install -m 0644 "$TIMER_FILE" "$SYSTEMD_DIR/ai-tools-update.timer"
 

@@ -8,7 +8,8 @@ const path = require("path");
 const templates_1 = require("../templates");
 function buildCanonicalSkills(env, configRoot, manifest, context, trace) {
     return manifest.skills.install.map((name) => {
-        const sourceTemplate = manifest.skills.overrides[name] ?? `global/skills/${name}/SKILL.md.njk`;
+        const canonical = `global/skills/${name}/SKILL.md`;
+        const sourceTemplate = manifest.skills.overrides[name] ?? (fs.existsSync(path.join(configRoot, canonical)) ? canonical : `${canonical}.njk`);
         const sourcePath = (0, templates_1.resolveConfigPath)(configRoot, sourceTemplate, context);
         if (!fs.existsSync(sourcePath)) {
             throw new Error(`missing skill template for ${name}: ${sourcePath}`);

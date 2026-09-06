@@ -1,6 +1,21 @@
 CHANGES
 =======
 
+Version 0.99.31 (2026-09-06)
+----------------------------
+* Add agent-brain for shared project knowledge, skills, review context and
+  tasks through a per-user MCP service on a private Unix socket.
+* Add project creation and registration, global/project/default scopes,
+  Markdown knowledge with SQLite search, and structured task storage.
+* Add read-only GitHub and Trello task imports and explicit Git synchronization
+  for portable knowledge, with revision checks and conflict reporting.
+* Connect all four native agents to the brain and preserve existing profiles,
+  memory and skill templates.
+* Create the standard knowledge directories and explain automatic placement
+  by scope and type in the brain-memory skill.
+* Add optional systemd service management for selected users, including safe
+  startup pulls, and consolidate project documentation in README.md.
+
 Version 0.99.30 (2026-09-06)
 ----------------------------
 * Add native Gemini CLI and Grok Build adapters alongside Codex and Claude

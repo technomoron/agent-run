@@ -181,6 +181,7 @@ node "$BIN" migrate-config --help >"$TMP_DIR/migrate-help.out"
 assert_contains "$TMP_DIR/migrate-help.out" "migrate-config [--yes] [config-root]"
 
 bash -n "$ROOT/scripts/update-ai-tools.sh"
+bash -n "$ROOT/scripts/ensure-agent-brain.sh"
 bash -n "$ROOT/scripts/agent-config-login-warning.sh"
 bash -n "$ROOT/scripts/install-systemd-jobs.sh"
 assert_file "$ROOT/ops/systemd/ai-tools-update.service"
@@ -202,6 +203,8 @@ assert_contains "$ROOT/scripts/update-ai-tools.sh" '@google/gemini-cli@latest'
 assert_contains "$ROOT/scripts/update-ai-tools.sh" '@xai-official/grok@latest'
 "$ROOT/scripts/install-systemd-jobs.sh" --dry-run --ai-tools >"$TMP_DIR/install-ai-tools.out"
 assert_contains "$TMP_DIR/install-ai-tools.out" "ai-tools-update.timer"
+assert_contains "$TMP_DIR/install-ai-tools.out" "ensure-agent-brain"
+assert_contains "$TMP_DIR/install-ai-tools.out" "agent-brain.service"
 
 CONFIG_SOURCE="$TMP_DIR/agent-config-source"
 CONFIG_TARGET="$TMP_DIR/synced-agent-config"
@@ -384,7 +387,7 @@ UNCONFIGURED_AGENT_DIR="$DEFAULT_CONFIG_ROOT/acme/unconfigured"
 mkdir -p "$UNCONFIGURED_PROJECT"
 printf '{"name":"@acme/unconfigured","private":true}\n' >"$UNCONFIGURED_PROJECT/package.json"
 set +e
-node "$BIN" update "$UNCONFIGURED_PROJECT" >"$TMP_DIR/unconfigured-update.out" 2>&1
+HOME="$DEFAULT_HOME" USERPROFILE="$DEFAULT_HOME" node "$BIN" update "$UNCONFIGURED_PROJECT" >"$TMP_DIR/unconfigured-update.out" 2>&1
 unconfigured_update_status=$?
 set -e
 [ "$unconfigured_update_status" -ne 0 ] || fail "expected update to reject an unconfigured profile"
@@ -1157,6 +1160,7 @@ TEST_WORKSPACE_CHILD="$WORKSPACE_CHILD" \
 TEST_WORKSPACE_ROOT="$WORKSPACE_ROOT" \
 TEST_WORKTREE_CHILD="$WORKTREE_CHECKOUT/nested/path" \
 TEST_WORKTREE_ROOT="$WORKTREE_CHECKOUT" \
+HOME="$DEFAULT_HOME" USERPROFILE="$DEFAULT_HOME" \
 node --input-type=module <<'EOF'
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -1252,5 +1256,7 @@ assert.deepEqual(parseInvocation('agent-run', ['generate', '/tmp/project']), {
 });
 assert.equal(defaultConfigRoot(), path.join(process.env.HOME, '.agent-run'));
 EOF
+
+node --test "$ROOT/scripts/test-brain.cjs"
 
 echo "All tests passed"

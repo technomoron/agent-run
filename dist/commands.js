@@ -19,6 +19,12 @@ function main(invokedTool, argv) {
 }
 function dispatch(command) {
     switch (command.command) {
+        case 'mcp':
+        case 'create':
+        case 'project':
+            void Promise.resolve().then(() => require('./brain/cli')).then(({ brainMain }) => brainMain(command.args, command.command))
+                .catch((error) => { process.stderr.write(`agent-brain: ${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
+            return;
         case 'check':
             runCheck(command);
             return;
@@ -393,8 +399,11 @@ function activeProject(targetPath, action) {
     return null;
 }
 function initializeProfileSource(projectRoot, preferProjectConfigRoot) {
-    const profile = (0, project_1.resolveProfile)(projectRoot);
     const configRoot = (0, project_1.defaultConfigRoot)(projectRoot, { preferProjectRoot: preferProjectConfigRoot });
+    const resolved = (0, project_1.resolveProfileResult)(projectRoot, configRoot, false);
+    if (!resolved.profile)
+        throw new Error(resolved.reason);
+    const profile = resolved.profile;
     const agentDir = path.join(configRoot, profile);
     prepareConfigRoot(configRoot);
     (0, manifest_1.ensureRootDefaultsFile)(configRoot);

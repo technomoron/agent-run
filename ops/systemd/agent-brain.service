@@ -1,0 +1,14 @@
+[Unit]
+Description=Agent-brain local MCP service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/agent-brain serve --pull
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

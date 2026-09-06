@@ -1,0 +1,7 @@
+// Optional persistent context. Save as brain.jsonc in your external config root,
+// then run agent-brain init --configdir /path/to/agent-config.
+{
+  "enabled": true,
+  "contextBudget": 16000,
+  "connectors": {}
+}

@@ -4,6 +4,7 @@ import * as nunjucks from 'nunjucks';
 import { LIVE_DIR_NAME, UNEXPANDED_TEMPLATE_RE } from './constants';
 import { NormalizedManifest, RenderContext, RenderTrace } from './model';
 import { isSamePathOrDescendant, localDateString } from './utils';
+import { readBrainConfig } from './brain/config';
 
 export function createNunjucksEnv(configRoot: string): nunjucks.Environment {
 	return new nunjucks.Environment(new nunjucks.FileSystemLoader(configRoot, { noCache: true }), {
@@ -53,7 +54,7 @@ export function buildRenderContext(
 			? resolveRuntimePath(configRoot, manifest.paths.reviewConsolidatedFile, env, baseContext)
 			: path.join(reviewDir, 'REVIEW.md'),
 		memoriesDir,
-		globalMemoryDir: path.join(configRoot, 'notes', 'memory'),
+		globalMemoryDir: readBrainConfig(configRoot)?.enabled ? path.join(configRoot, 'global', 'memory') : path.join(configRoot, 'notes', 'memory'),
 		projectMemoryDir,
 		nativeMemoryDir: path.join(codexHomeDir, 'memories'),
 		codexHomeDir,

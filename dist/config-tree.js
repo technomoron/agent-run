@@ -21,6 +21,7 @@ const constants_1 = require("./constants");
 const defaults_1 = require("./defaults");
 const utils_1 = require("./utils");
 const walk_tree_1 = require("./walk-tree");
+const config_1 = require("./brain/config");
 const PRUNED_CONFIG_DIRS = new Set([
     '.git',
     'orphaned',
@@ -50,7 +51,7 @@ function ensureConfigRootGitignore(configRoot) {
     const lines = existing.length > 0 ? existing.replace(/\n+$/, '').split('\n') : [];
     const present = new Set(lines);
     let changed = !fs.existsSync(gitignorePath);
-    for (const entry of constants_1.GENERATED_GITIGNORE_ENTRIES) {
+    for (const entry of [...constants_1.GENERATED_GITIGNORE_ENTRIES, ...((0, config_1.readBrainConfig)(configRoot)?.enabled ? constants_1.BRAIN_GITIGNORE_ENTRIES : [])]) {
         if (entry === '' || present.has(entry)) {
             continue;
         }
@@ -64,6 +65,8 @@ function ensureConfigRootGitignore(configRoot) {
 }
 function ensureDefaultGlobalTemplates(configRoot) {
     for (const [relativePath, content] of (0, defaults_1.defaultGlobalTemplates)()) {
+        if (relativePath.endsWith('/SKILL.md.njk') && fs.existsSync(path.join(configRoot, relativePath.slice(0, -4))))
+            continue;
         const filePath = path.join(configRoot, relativePath);
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         if (!fs.existsSync(filePath)) {
@@ -77,6 +80,8 @@ function ensurePortableSystemdFiles(configRoot) {
     const files = new Map([
         ['install-systemd-jobs.sh', { source: 'scripts/install-systemd-jobs.sh', mode: 0o755 }],
         ['update-ai-tools.sh', { source: 'scripts/update-ai-tools.sh', mode: 0o755 }],
+        ['ensure-agent-brain.sh', { source: 'scripts/ensure-agent-brain.sh', mode: 0o755 }],
+        ['agent-brain.service', { source: 'ops/systemd/agent-brain.service', mode: 0o644 }],
         ['ai-tools-update.service', { source: 'ops/systemd/ai-tools-update.service', mode: 0o644 }],
         ['ai-tools-update.timer', { source: 'ops/systemd/ai-tools-update.timer', mode: 0o644 }]
     ]);
@@ -173,10 +178,10 @@ function migrateLooseFiles(agentDir, pattern, targetDirName) {
     }
     return moved;
 }
-function describeLegacyProfileLayout(profileDir) {
+function describeLegacyProfileLayout(profileDir, configRoot) {
     const paths = [];
     const legacyMemoryDir = path.join(profileDir, 'memory');
-    if (fs.existsSync(legacyMemoryDir)) {
+    if (!(configRoot && (0, config_1.readBrainConfig)(configRoot)?.enabled) && fs.existsSync(legacyMemoryDir)) {
         paths.push(legacyMemoryDir);
     }
     for (const filePath of legacyProjectMemoryFiles(profileDir)) {
@@ -189,7 +194,7 @@ function describeLegacyProfileLayout(profileDir) {
     return [...new Set(paths)].sort();
 }
 function migrateProfileLayout(configRoot, profileDir, confirmGitMoves) {
-    const projectMoves = planProjectMemoryMoves(profileDir);
+    const projectMoves = planProjectMemoryMoves(profileDir, (0, config_1.readBrainConfig)(configRoot)?.enabled ?? false);
     validateMoveTargets(projectMoves);
     const git = findGitWorktree(configRoot);
     const trackedMoves = git === null ? [] : projectMoves.filter((move) => isTrackedByGit(git, move.source));
@@ -214,11 +219,11 @@ function migrateProfileLayout(configRoot, profileDir, confirmGitMoves) {
     const runtimeMoves = migrateLegacyCodexHome(profileDir);
     return { gitMoves, projectMemoryMoves: projectMoves.length, runtimeMoves };
 }
-function planProjectMemoryMoves(profileDir) {
-    const targetDir = path.join(profileDir, 'notes', 'memory');
+function planProjectMemoryMoves(profileDir, brainEnabled) {
+    const targetDir = brainEnabled ? path.join(profileDir, 'memory') : path.join(profileDir, 'notes', 'memory');
     const moves = [];
     const legacyMemoryDir = path.join(profileDir, 'memory');
-    for (const source of listTreeFiles(legacyMemoryDir)) {
+    for (const source of brainEnabled ? [] : listTreeFiles(legacyMemoryDir)) {
         moves.push({ source, target: path.join(targetDir, path.relative(legacyMemoryDir, source)) });
     }
     for (const source of legacyProjectMemoryFiles(profileDir)) {

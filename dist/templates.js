@@ -10,6 +10,7 @@ const path = require("path");
 const nunjucks = require("nunjucks");
 const constants_1 = require("./constants");
 const utils_1 = require("./utils");
+const config_1 = require("./brain/config");
 function createNunjucksEnv(configRoot) {
     return new nunjucks.Environment(new nunjucks.FileSystemLoader(configRoot, { noCache: true }), {
         autoescape: false,
@@ -51,7 +52,7 @@ function buildRenderContext(projectRoot, profileDir, configRoot, manifest, env) 
             ? resolveRuntimePath(configRoot, manifest.paths.reviewConsolidatedFile, env, baseContext)
             : path.join(reviewDir, 'REVIEW.md'),
         memoriesDir,
-        globalMemoryDir: path.join(configRoot, 'notes', 'memory'),
+        globalMemoryDir: (0, config_1.readBrainConfig)(configRoot)?.enabled ? path.join(configRoot, 'global', 'memory') : path.join(configRoot, 'notes', 'memory'),
         projectMemoryDir,
         nativeMemoryDir: path.join(codexHomeDir, 'memories'),
         codexHomeDir,

@@ -23,7 +23,7 @@ export function buildCanonicalInstructions(
 ): CanonicalInstructions {
 	const sections = [renderTemplateFile(env, configRoot, manifest.agent.base, context, trace)];
 	for (const include of manifest.agent.includes) {
-		const includePath = resolveConfigPath(configRoot, include, context as unknown as Record<string, unknown>);
+		const includePath = resolveConfigPath(configRoot, include, context as unknown as Record<string, unknown>, env);
 		if (!fs.existsSync(includePath)) {
 			if (include.includes('AGENTS-MODS.md') || include.includes(LOCAL_TEMPLATE_FILE_NAME)) {
 				continue;

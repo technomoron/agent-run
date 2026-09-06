@@ -181,7 +181,7 @@ export function resolveProfileResult(projectRoot: string, configRoot = defaultCo
 	const resolved = resolveLegacyProfileResult(projectRoot);
 	const named = resolved.profile ? namedBrainProfile(configRoot, resolved.profile) : null;
 	if (named) return { profile: named, reason: '' };
-	if (useDefault && readBrainConfig(configRoot)?.enabled && !readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim()) {
+	if (useDefault && readBrainConfig(configRoot)?.enabled) {
 		const configured = resolved.profile !== null && ['agent-run.jsonc', 'local.md.njk', 'AGENTS-MODS.md']
 			.some((name) => fs.existsSync(path.join(configRoot, resolved.profile!, name)));
 		if (!configured) return { profile: 'default', reason: '' };
@@ -190,12 +190,6 @@ export function resolveProfileResult(projectRoot: string, configRoot = defaultCo
 }
 
 function resolveLegacyProfileResult(projectRoot: string): { profile: string | null; reason: string } {
-	const envProfile = readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim();
-	if (envProfile) {
-		verbose(`using ${ENV_FILE_NAME} AGENT_RUN_PROFILE=${envProfile}`);
-		return parseProfile(envProfile, `${ENV_FILE_NAME} AGENT_RUN_PROFILE`);
-	}
-
 	const githubProfile = resolveGitHubProfile(projectRoot);
 	if (githubProfile !== null) {
 		verbose(`using GitHub origin profile=${githubProfile}`);
@@ -349,12 +343,11 @@ function parseEnvFile(content: string): Record<string, string> {
 	return env;
 }
 
-export function defaultConfigRoot(projectRoot?: string, options: { preferProjectRoot?: boolean } = {}): string {
+export function defaultConfigRoot(projectRoot?: string): string {
 	const explicit = explicitConfigRoot(projectRoot);
 	if (explicit !== null) {
 		return explicit;
 	}
-	void options;
 	return path.join(os.homedir(), '.agent-run');
 }
 
@@ -370,24 +363,4 @@ function explicitConfigRoot(projectRoot?: string): string | null {
 	const env = readAgentRunEnv(projectRoot);
 	const localValue = env[CONFIG_DIR_ENV]?.trim();
 	return localValue ? path.resolve(projectRoot, localValue) : null;
-}
-
-export function defaultConfigRootSearchCandidates(
-	_projectRoot?: string,
-	options: { platform?: NodeJS.Platform; homeDir?: string } = {}
-): string[] {
-	const platform = options.platform ?? process.platform;
-	const pathApi = platform === 'win32' ? path.win32 : path.posix;
-	const homeDir = options.homeDir ?? os.homedir();
-	const names = ['agent-config', 'agent-configs'];
-	if (platform === 'win32') {
-		return [pathApi.join(homeDir, 'Documents', 'code'), pathApi.join(homeDir, 'Desktop', 'code'), 'C:\\code'].flatMap(
-			(root) => names.map((name) => pathApi.join(root, name))
-		);
-	}
-	return [
-		...names.map((name) => pathApi.join(homeDir, 'code', name)),
-		...names.map((name) => pathApi.join(homeDir, name)),
-		...names.map((name) => pathApi.join(homeDir, `.${name}`))
-	];
 }

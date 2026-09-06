@@ -614,10 +614,24 @@ and restore the previous unconfigured-project behavior.
 reports omitted items. Use `get_knowledge` to read complete items when necessary.
 Always-recalled knowledge is considered first, then matching file patterns,
 then lexical results. Search uses FTS ranking with extra weight for titles and tags.
+Queries compare the current files with the index and write only added, changed,
+or removed entries. Unchanged queries do not take a database write lock. Context
+retrieval scans the files once. Search and context MCP tools declare that they
+may write because they can refresh this derived index.
 Symbols contribute search terms. Manual Markdown changes are read on every query;
 the index can be deleted while the service is stopped and rebuilt on the next query.
 
 ### Knowledge and skills
+
+Malformed knowledge and task files do not block other entries. When a scan finds
+problems, MCP and CLI list/search responses contain `items` and `brokenFiles`;
+object responses, including context, gain a `brokenFiles` field. Each error lists
+the source path, `status: "broken"`, a reason, and an ID when it can be parsed.
+Responses without errors keep their existing format. Broken entries are excluded
+from search and context, and reads or updates of those entries are refused.
+Correct the file on disk; the next scan picks up the repair automatically.
+Duplicate IDs flag all matching files. External task imports and new review
+numbering stop when broken files would make deduplication or numbering unreliable.
 
 Knowledge is one Markdown file per item, with YAML metadata:
 
@@ -659,7 +673,7 @@ project. The brain-memory skill explains these choices to native agents.
 
 Available MCP tools include `get_context`, `search_knowledge`, `get_knowledge`,
 `remember`, `amend_knowledge`, `promote`, `deprecate_knowledge`, `review_context`,
-`review_list`, and `resolve_review`.
+`review_list`, `resolve_review`, `review_history`, and `review_archive`.
 Writes use atomic file replacement and a shared lock; concurrent writes either
 complete or report that the caller should retry. After a crashed writer, stop
 the service, verify the PID in `runtime/brain-write.lock` is no longer running,
@@ -716,8 +730,19 @@ agent-brain review resolve ITEM_ID --revision REVISION --state fixed "Fixed by u
 `review_list` returns findings in severity then number order, open ones only
 unless states are given, each with the revision needed to resolve it.
 `resolve_review` records the state and reason and takes the finding out of active
-recall, keeping its text and history. Mark a finding `wontfix` only when the user
-has said it is intentional.
+recall. It writes a short record (label, title, outcome, date, reason, and original
+file/revision) to the scope's `review-history.jsonl`, then deletes the full finding
+file. `review-counters.json` preserves numbering. These files participate in brain
+Git sync but are excluded from normal knowledge retrieval.
+
+Use MCP `review_history` to recall old fixes, with optional `query`, `scope`, `state`,
+`offset`, and `limit` (default 100). The CLI equivalent is
+`agent-brain review history [query]`. Git retains full details only when the original
+files were committed before cleanup; the MCP history is sufficient for the short fix list.
+Use `review_archive` with a scope, or `agent-brain review archive --scope project`,
+to compact existing files already marked `fixed` or `wontfix`. Deferred findings
+remain open. Mark a finding `wontfix` only when the user explicitly drops it or
+confirms it is intentional. A request to postpone an issue does not close it.
 
 Finding labels are indexed, so `search_knowledge` for `H2` finds that finding.
 Review files written before these fields existed keep parsing; they simply carry
@@ -735,6 +760,13 @@ Skills use YAML `name` and `description` metadata in `skills/<name>/SKILL.md`.
 A project/default skill overrides a global skill with the same name. Add
 `extends: global:NAME` to include the global skill's instructions before the local
 instructions. The existing native skill-template system continues to work.
+
+Skill templates and their includes must stay under `global/skills/` or the active
+project/default profile's `skills/` directory. Use config-root-relative paths such
+as `{% include "global/skills/shared/checks.md" %}`, or `./` paths relative to the
+including template. Nunjucks variables remain available. Symlinks are rejected,
+and each file is limited to 1 MiB. Move snippets and skill overrides stored
+elsewhere into these directories before rendering or loading those skills.
 
 The installed `brain-memory`, `brain-review`, and `todo-manager` skills describe
 retrieval, persistence, review learning, and task workflows. Review records use
@@ -807,9 +839,14 @@ agent-brain sync push --confirmed
 
 The command without an action previews Git status and eligible files. Saving
 includes Markdown knowledge, skills, tasks, project metadata, and `.gitignore`.
+It also includes all regular files under each scope's `templates/` directory,
+including nested Nunjucks templates and supporting files. Template additions,
+edits, and deletions are synced; symlinks are rejected.
 It excludes indexes, runtime state, secrets, `brain.jsonc`, and native agent
 configuration. Existing staged changes block a save. Configure the remote and
 upstream with normal Git commands using your existing credentials.
+Brain Git operations use `AGENT_RUN_REAL_PATH` when available, so agent-session
+Git guards do not intercept configuration sync.
 After cloning onto another machine, run `agent-brain init` to restore generated
 profile markers and shared templates, then update source roots in `config.yaml`
 to match that machine.
@@ -886,6 +923,9 @@ Transport and connector implementations follow the
 ## Systemd Jobs
 
 The repo includes optional systemd units for keeping global AI tooling current.
+Run the installer from the agent-run checkout. Setup, generation, and updates do
+not copy systemd units or helper scripts into `.agent-run`. Remove legacy copies
+there once any custom changes have been moved to your maintained scripts.
 
 Install the global AI tools updater:
 

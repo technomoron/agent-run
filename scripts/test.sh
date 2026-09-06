@@ -261,10 +261,12 @@ assert_file "$SKELETON_INIT/global/tool-templates/gemini-settings.json.njk"
 assert_file "$SKELETON_INIT/global/tool-templates/grok-config.toml.njk"
 assert_file "$SKELETON_INIT/global/tool-templates/AGENTS.md.njk"
 assert_file "$SKELETON_INIT/global/skills/triage/SKILL.md.njk"
-assert_executable "$SKELETON_INIT/install-systemd-jobs.sh"
-assert_executable "$SKELETON_INIT/update-ai-tools.sh"
-assert_file "$SKELETON_INIT/ai-tools-update.service"
-assert_file "$SKELETON_INIT/ai-tools-update.timer"
+assert_no_file "$SKELETON_INIT/install-systemd-jobs.sh"
+assert_no_file "$SKELETON_INIT/update-ai-tools.sh"
+assert_no_file "$SKELETON_INIT/ai-tools-update.service"
+assert_no_file "$SKELETON_INIT/ai-tools-update.timer"
+assert_no_file "$SKELETON_INIT/ensure-agent-brain.sh"
+assert_no_file "$SKELETON_INIT/agent-brain.service"
 assert_file "$SKELETON_INIT/skills/personal-memory.md"
 assert_file "$SKELETON_INIT/starter/basic-project/agent-run.jsonc"
 assert_file "$SKELETON_INIT/starter/basic-project/overrides/codex-config.toml.njk"
@@ -357,10 +359,12 @@ HOME="$DEFAULT_HOME" USERPROFILE="$DEFAULT_HOME" node "$BIN" generate "$DEFAULT_
 assert_contains "$TMP_DIR/default-code-root-init.out" "OK profile acme/widget"
 assert_file "$DEFAULT_CONFIG_ROOT/.gitignore"
 assert_file "$DEFAULT_CONFIG_ROOT/agent-run.defaults.jsonc"
-assert_executable "$DEFAULT_CONFIG_ROOT/install-systemd-jobs.sh"
-assert_executable "$DEFAULT_CONFIG_ROOT/update-ai-tools.sh"
-assert_file "$DEFAULT_CONFIG_ROOT/ai-tools-update.service"
-assert_file "$DEFAULT_CONFIG_ROOT/ai-tools-update.timer"
+assert_no_file "$DEFAULT_CONFIG_ROOT/install-systemd-jobs.sh"
+assert_no_file "$DEFAULT_CONFIG_ROOT/update-ai-tools.sh"
+assert_no_file "$DEFAULT_CONFIG_ROOT/ai-tools-update.service"
+assert_no_file "$DEFAULT_CONFIG_ROOT/ai-tools-update.timer"
+assert_no_file "$DEFAULT_CONFIG_ROOT/ensure-agent-brain.sh"
+assert_no_file "$DEFAULT_CONFIG_ROOT/agent-brain.service"
 assert_file "$DEFAULT_AGENT_DIR/agent-run.jsonc"
 assert_contains "$DEFAULT_AGENT_DIR/agent-run.jsonc" "{}"
 assert_no_file "$DEFAULT_AGENT_DIR/local.md.njk"
@@ -529,10 +533,10 @@ assert_tool_shim "$LIVE_DIR/bin/npm"
 assert_tool_shim "$LIVE_DIR/bin/pnpm"
 assert_tool_shim "$LIVE_DIR/bin/gh"
 if [ -f "$LIVE_DIR/bin/git.cmd" ]; then
-	assert_contains "$LIVE_DIR/bin/git.cmd" "git.exe %*"
-	assert_contains "$LIVE_DIR/bin/gh.cmd" "gh.exe %*"
-	assert_contains "$LIVE_DIR/bin/npm.cmd" "npm.cmd %*"
-	assert_contains "$LIVE_DIR/bin/pnpm.cmd" "pnpm.cmd %*"
+	for tool in git gh npm pnpm; do
+		assert_contains "$LIVE_DIR/bin/$tool.cmd" '"%AGENT_RUN_COMMAND%" %*'
+		assert_contains "$LIVE_DIR/bin/$tool.cmd" "refused recursive $tool guard resolution"
+	done
 fi
 
 mkdir -p "$EXAMPLE/agent-config/notes/memory"
@@ -683,6 +687,11 @@ assert_not_contains "$TMP_DIR/claude-args.out" "--dangerously-skip-permissions"
 assert_contains "$TMP_DIR/claude-env.out" "CLAUDE_CONFIG_DIR=$USER_CLAUDE_CONFIG"
 assert_contains "$TMP_DIR/claude-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
 
+(cd "$PROJECT" && AGENT_WRAPPER_FORCE_PERMISSIVE=1 AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-legacy-permissions-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check)
+assert_not_contains "$TMP_DIR/claude-legacy-permissions-args.out" "--permission-mode"
+assert_not_contains "$TMP_DIR/claude-legacy-permissions-args.out" "bypassPermissions"
+assert_not_contains "$TMP_DIR/claude-legacy-permissions-args.out" "--dangerously-skip-permissions"
+
 (cd "$PROJECT" && AGENT_RUN_CREATE_LOCAL_SETTINGS=1 AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-local-settings-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check >"$TMP_DIR/claude-local-settings.out" 2>&1)
 assert_no_dir "$PROJECT/.claude"
 assert_contains "$TMP_DIR/claude-local-settings.out" "removed Claude's project-local settings"
@@ -826,6 +835,19 @@ SH
 		PATH="$LIVE_DIR/bin:$FAKE_REAL_GUARD_BIN:/usr/bin:/bin" \
 		run_tool_shim "$LIVE_DIR/bin/pnpm" --version >"$TMP_DIR/pnpm-pass.out"
 	assert_contains "$TMP_DIR/pnpm-pass.out" "real pnpm --version"
+	for word in commit tag push; do
+		AGENT_RUN_REAL_PATH="$FAKE_REAL_GUARD_BIN:/usr/bin:/bin" run_tool_shim "$LIVE_DIR/bin/git" log --grep "$word" >"$TMP_DIR/git-keyword.out"
+		assert_contains "$TMP_DIR/git-keyword.out" "real git log --grep $word"
+		AGENT_RUN_REAL_PATH="$FAKE_REAL_GUARD_BIN:/usr/bin:/bin" run_tool_shim "$LIVE_DIR/bin/git" -C "$word" -c "test.value=$word" log -- "$word" >"$TMP_DIR/git-option-value.out"
+		assert_contains "$TMP_DIR/git-option-value.out" "real git -C $word -c test.value=$word log -- $word"
+		AGENT_RUN_REAL_PATH="$FAKE_REAL_GUARD_BIN:/usr/bin:/bin" run_tool_shim "$LIVE_DIR/bin/git" --git-dir "$word" status >"$TMP_DIR/git-directory-value.out"
+		assert_contains "$TMP_DIR/git-directory-value.out" "real git --git-dir $word status"
+		set +e
+		AGENT_RUN_REAL_PATH="$FAKE_REAL_GUARD_BIN:/usr/bin:/bin" run_tool_shim "$LIVE_DIR/bin/git" -C / -c test.value=push --no-pager "$word" >"$TMP_DIR/git-leading-options.out" 2>&1
+		guard_status=$?
+		set -e
+		[ "$guard_status" -eq 42 ] || fail "expected git $word after leading options to stay blocked, got $guard_status"
+	done
 fi
 
 MANIFEST_BACKUP="$TMP_DIR/basic-project-manifest.jsonc"
@@ -1282,6 +1304,6 @@ assert.deepEqual(parseInvocation('agent-run', ['generate', '/tmp/project']), {
 assert.equal(defaultConfigRoot(), path.join(process.env.HOME, '.agent-run'));
 EOF
 
-node --test "$ROOT/scripts/test-brain.cjs"
+node --test "$ROOT/scripts/test-brain.cjs" "$ROOT/scripts/test-windows-guards.cjs"
 
 echo "All tests passed"

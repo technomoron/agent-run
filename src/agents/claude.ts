@@ -61,13 +61,9 @@ export const claudeAdapter: AgentAdapter = {
 	generate,
 	spawn(runtime, options) {
 		assertRuntimeFile('claude', runtime.instructionFile, runtime.context.profileDir);
-		const forcedPermissionArgs = process.env.AGENT_WRAPPER_FORCE_PERMISSIVE === '1' &&
-			typeof process.getuid === 'function' && process.getuid() !== 0
-			? ['--permission-mode', 'bypassPermissions']
-			: [];
 		const runtimeArgs = options.wrapperArgs.sandboxMode === 'danger'
 			? ['--dangerously-skip-permissions']
-			: forcedPermissionArgs;
+			: [];
 		return {
 			command: options.binary,
 			args: [

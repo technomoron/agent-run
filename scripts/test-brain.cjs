@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { DatabaseSync } = require('node:sqlite');
 const { test } = require('node:test');
 const { stringify } = require('yaml');
 const { BrainStore } = require('../dist/brain/store');
@@ -72,6 +73,68 @@ test('global plus project/default scopes, authority, promotion, revisions, and r
 	assert.equal(store.search('Newword').length, 1);
 });
 
+test('unchanged searches do not write or wait for a writer, and file changes refresh the index', (t) => {
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const first = store.remember({ scope: 'default', type: 'memory', title: 'First', content: 'firstword' });
+	const second = store.remember({ scope: 'default', type: 'memory', title: 'Second', content: 'secondword' });
+	store.search('firstword');
+	const observer = new DatabaseSync(path.join(env.root, 'index', 'knowledge.sqlite'));
+	env.cleanup(() => observer.close());
+	const version = () => observer.prepare('PRAGMA data_version').get().data_version;
+	const before = version();
+	const another = env.store(env.cwd);
+	observer.exec('BEGIN IMMEDIATE');
+	try {
+		assert.deepEqual(another.search('firstword').map((item) => item.id), [first.id]);
+		assert.ok(store.context('secondword').items.some((item) => item.id === second.id));
+	} finally { observer.exec('ROLLBACK'); }
+	assert.equal(version(), before);
+	const secondRow = observer.prepare('SELECT rowid FROM knowledge WHERE source = ?').get(second.source).rowid;
+	const firstFile = path.join(env.root, first.source);
+	const text = fs.readFileSync(firstFile, 'utf8');
+	fs.writeFileSync(firstFile, text.replace('firstword', 'changedword'));
+	assert.deepEqual(store.search('firstword'), []);
+	assert.deepEqual(another.search('changedword').map((item) => item.id), [first.id]);
+	assert.equal(observer.prepare('SELECT rowid FROM knowledge WHERE source = ?').get(second.source).rowid, secondRow);
+	const renamed = path.join(path.dirname(firstFile), 'renamed.md');
+	fs.renameSync(firstFile, renamed);
+	assert.equal(store.search('changedword')[0].source, path.relative(env.root, renamed));
+	fs.unlinkSync(renamed);
+	assert.deepEqual(another.search('changedword'), []);
+	fs.writeFileSync(path.join(path.dirname(firstFile), 'new.md'), '# New\n\nnewword');
+	assert.equal(store.search('newword').length, 1);
+});
+
+test('brain Git operations use the original PATH instead of session guards', { skip: process.platform === 'win32' }, (t) => {
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const previousPath = process.env.PATH;
+	const previousRealPath = process.env.AGENT_RUN_REAL_PATH;
+	const realPath = previousRealPath ?? previousPath;
+	const guardDir = path.join(env.directory, 'guards');
+	fs.mkdirSync(guardDir);
+	fs.writeFileSync(path.join(guardDir, 'git'), '#!/bin/sh\necho "blocked test guard" >&2\nexit 42\n', { mode: 0o755 });
+	try {
+		process.env.PATH = `${guardDir}${path.delimiter}${realPath}`;
+		process.env.AGENT_RUN_REAL_PATH = realPath;
+		assert.equal(spawnSync('git', ['--version']).status, 42);
+		syncGit(store, 'init');
+		for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@example.com']]) {
+			const result = spawnSync('git', ['-C', env.root, 'config', key, value], { env: { ...process.env, PATH: realPath }, encoding: 'utf8' });
+			assert.equal(result.status, 0, result.stderr);
+		}
+		const saved = store.remember({ scope: 'default', type: 'memory', title: 'Saved', content: 'Saved through real Git' });
+		syncGit(store, 'save', 'Save test knowledge');
+		const committed = spawnSync('git', ['-C', env.root, 'show', `HEAD:${saved.source}`], { env: { ...process.env, PATH: realPath }, encoding: 'utf8' });
+		assert.equal(committed.status, 0, committed.stderr);
+		assert.match(committed.stdout, /Saved through real Git/);
+	} finally {
+		if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+		if (previousRealPath === undefined) delete process.env.AGENT_RUN_REAL_PATH; else process.env.AGENT_RUN_REAL_PATH = previousRealPath;
+	}
+});
+
 test('skills inherit global and allow project overrides and explicit extension', (t) => {
 	const env = environment(t);
 	const project = env.project('skills');
@@ -90,6 +153,47 @@ test('skills inherit global and allow project overrides and explicit extension',
 	assert.doesNotMatch(getSkill(store, 'check-extra').content, /Project instructions/);
 	assert.equal('content' in listSkills(store)[0], false);
 	assert.throws(() => getSkill(store, '../../secret'), /not found/);
+});
+
+test('skill includes stay inside active skill directories in brain and native rendering', (t) => {
+	const env = environment(t);
+	const project = env.project('includes');
+	const other = env.project('other');
+	const store = env.store(project.cwd);
+	const globalDir = path.join(env.root, 'global', 'skills', 'included');
+	const localDir = path.join(project.directory, 'skills', 'shared');
+	fs.mkdirSync(globalDir, { recursive: true });
+	fs.mkdirSync(localDir, { recursive: true });
+	const skill = path.join(globalDir, 'SKILL.md');
+	const writeSkill = (body) => fs.writeFileSync(skill, `---\nname: included\ndescription: Include checks\n---\n${body}\n`);
+	fs.writeFileSync(path.join(globalDir, 'part.txt'), 'Global {{ projectRoot }}');
+	fs.writeFileSync(path.join(localDir, 'part.txt'), 'Local');
+	fs.writeFileSync(path.join(project.directory, 'agent-run.jsonc'), JSON.stringify({ skills: { install: ['included'] } }));
+	const render = () => renderProfile(project.cwd, project.directory, true, 'codex', undefined, { configRoot: env.root, profile: 'projects/includes' }).skills.find((item) => item.name === 'included').renderedContent;
+	writeSkill('{% include "./part.txt" %} {% include "projects/includes/skills/shared/part.txt" %}');
+	assert.ok(getSkill(store, 'included').content.includes(`Global ${project.cwd} Local`));
+	assert.ok(render().includes(`Global ${project.cwd} Local`));
+	const secret = path.join(env.root, 'secrets', 'example.txt');
+	fs.mkdirSync(path.dirname(secret));
+	fs.writeFileSync(secret, 'Private test data');
+	const otherPart = path.join(other.directory, 'skills', 'part.txt');
+	fs.mkdirSync(path.dirname(otherPart), { recursive: true });
+	fs.writeFileSync(otherPart, 'Other project');
+	for (const include of ['secrets/example.txt', '../../../secrets/example.txt', secret, 'projects/other/skills/part.txt']) {
+		writeSkill(`{% include ${JSON.stringify(include)} %}`);
+		assert.throws(() => getSkill(store, 'included'), /active skills directory/);
+		assert.throws(render, /active skills directory/);
+	}
+	fs.writeFileSync(path.join(globalDir, 'large.txt'), 'x'.repeat(1024 * 1024 + 1));
+	writeSkill('{% include "./large.txt" %}');
+	assert.throws(() => getSkill(store, 'included'), /exceeds 1 MiB/);
+	assert.throws(render, /exceeds 1 MiB/);
+	if (process.platform !== 'win32') {
+		fs.symlinkSync(path.dirname(secret), path.join(globalDir, 'linked'));
+		writeSkill('{% include "./linked/example.txt" %}');
+		assert.throws(() => getSkill(store, 'included'), /Symlinks/);
+		assert.throws(render, /Symlinks/);
+	}
 });
 
 test('todo imports deduplicate and concurrent revisions cannot overwrite task state', (t) => {
@@ -117,7 +221,101 @@ test('symlinks, escaping paths, and mismatched scopes are rejected', (t) => {
 	const item = store.remember({ scope: 'default', type: 'memory', title: 'x', content: 'x' });
 	const file = path.join(env.root, item.source);
 	fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('scope: default', 'scope: project'));
-	assert.throws(() => store.search('x'), /scope does not match/);
+	assert.deepEqual(store.search('x'), []);
+	assert.match(store.knowledgeErrors[0].error, /scope does not match/);
+	assert.throws(() => store.get(item.id), /Cannot read or update broken file/);
+});
+
+test('broken knowledge files are reported without blocking valid entries or overwriting bad data', (t) => {
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const good = store.remember({ scope: 'default', type: 'memory', title: 'Healthy', content: 'healthyword' });
+	const bad = store.remember({ scope: 'default', type: 'memory', title: 'Broken', content: 'brokenword' });
+	const file = path.join(env.root, bad.source);
+	const original = fs.readFileSync(file, 'utf8');
+	for (const text of [original.replace('scope: default', 'scope: invalid'), '---\ninvalid: [\n---\nBad YAML', '---\nUnfinished']) {
+		fs.writeFileSync(file, text);
+		assert.deepEqual(store.search('healthyword').map((item) => item.id), [good.id]);
+		assert.equal(store.knowledgeErrors[0].source, bad.source);
+		assert.equal(store.knowledgeErrors[0].status, 'broken');
+		assert.ok(store.context('healthyword').items.some((item) => item.id === good.id));
+		assert.throws(() => store.get(bad.id), /broken file/);
+		assert.throws(() => store.amend(bad.id, bad.revision, { title: 'No' }), /broken file/);
+		assert.equal(fs.readFileSync(file, 'utf8'), text);
+		assert.equal(store.get(good.id).title, 'Healthy');
+	}
+	fs.writeFileSync(file, original);
+	assert.equal(store.get(bad.id).title, 'Broken');
+	assert.deepEqual(store.knowledgeErrors, []);
+	const duplicate = path.join(path.dirname(file), 'duplicate.md');
+	fs.writeFileSync(duplicate, original);
+	assert.deepEqual(store.search('brokenword'), []);
+	assert.equal(store.knowledgeErrors.length, 2);
+	assert.throws(() => store.amend(bad.id, bad.revision, { title: 'No' }), /Duplicate knowledge id/);
+	assert.equal(store.amend(good.id, good.revision, { title: 'Still healthy' }).title, 'Still healthy');
+	assert.ok(store.remember({ scope: 'default', type: 'memory', title: 'New', content: 'New' }).id);
+});
+
+test('broken todo files are listed and reject updates while healthy tasks remain usable', (t) => {
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const good = addTodo(store, { scope: 'default', title: 'Healthy' });
+	const bad = addTodo(store, { scope: 'default', title: 'Broken' });
+	const file = path.join(env.root, 'default', 'todo', `${bad.id}.md`);
+	const original = fs.readFileSync(file, 'utf8');
+	fs.writeFileSync(file, '---\ninvalid: [\n---\nBad YAML');
+	assert.deepEqual(listTodos(store).map((item) => item.id), [good.id]);
+	assert.equal(store.todoErrors.length, 1);
+	assert.throws(() => getTodo(store, bad.id), /Cannot read or update broken file/);
+	assert.throws(() => updateTodo(store, bad.id, bad.revision, { status: 'done' }), /broken file/);
+	assert.equal(updateTodo(store, good.id, good.revision, { status: 'done' }).status, 'done');
+	assert.throws(() => importTodos(store, [{ scope: 'default', title: 'Remote', source: { type: 'github', external_id: 'test/1' } }]), /Cannot import tasks/);
+	fs.writeFileSync(file, original);
+	assert.equal(getTodo(store, bad.id).title, 'Broken');
+	assert.deepEqual(store.todoErrors, []);
+});
+
+test('disabled MCP servers are omitted by every native renderer', (t) => {
+	const env = environment(t);
+	const project = env.project('disabled-mcp');
+	fs.writeFileSync(path.join(project.directory, 'agent-run.jsonc'), JSON.stringify({ mcp: { servers: {
+		'disabled-server': { transport: 'stdio', command: 'disabled-command', enabled: false },
+		'enabled-server': { transport: 'stdio', command: 'enabled-command', enabled: true }
+	} } }));
+	for (const agent of ['codex', 'claude', 'gemini', 'grok']) {
+		const rendered = renderProfile(project.cwd, project.directory, true, agent, undefined, { configRoot: env.root, profile: 'projects/disabled-mcp' });
+		const text = rendered.runtimes[agent].files.map((file) => file.content).join('\n');
+		assert.doesNotMatch(text, /disabled-command|disabled-server/);
+		assert.match(text, /enabled-command/);
+	}
+});
+
+test('config paths use the supplied template environment and retain path containment', (t) => {
+	const env = environment(t);
+	const { createNunjucksEnv, resolveConfigPath } = require('../dist/templates');
+	const templates = createNunjucksEnv(env.root);
+	templates.addFilter('customName', () => 'shared.md');
+	assert.equal(resolveConfigPath(env.root, '{{ name | customName }}', { name: 'example' }, templates), path.join(env.root, 'shared.md'));
+	assert.throws(() => resolveConfigPath(env.root, '../outside.md', {}, templates), /escapes config root/);
+});
+
+test('agent generation renders once and writes every enabled native runtime', (t) => {
+	const env = environment(t);
+	const project = env.project('single-render');
+	const script = `
+		const templates = require(process.argv[1] + '/templates');
+		const create = templates.createNunjucksEnv;
+		let count = 0;
+		templates.createNunjucksEnv = (...args) => { count++; return create(...args); };
+		require(process.argv[1] + '/commands').main('agent-run', ['codex', '--generate', '--configdir', process.argv[2]]);
+		if (count !== 1) throw new Error('Expected one rendering environment, got ' + count);
+	`;
+	const result = spawnSync(process.execPath, ['-e', script, path.resolve(__dirname, '../dist'), env.root], { cwd: project.cwd, encoding: 'utf8' });
+	assert.equal(result.status, 0, result.stderr);
+	const rendered = renderProfile(project.cwd, project.directory, true, null, undefined, { configRoot: env.root, profile: 'projects/single-render' });
+	for (const runtime of Object.values(rendered.runtimes)) {
+		for (const file of runtime.files) assert.equal(fs.readFileSync(file.path, 'utf8'), file.content);
+	}
 });
 
 test('project registration and default scope feed every native MCP renderer', (t) => {
@@ -165,6 +363,36 @@ async function client(t, env, extra = []) {
 	await client.connect(transport);
 	return client;
 }
+
+test('MCP and CLI report broken files alongside valid results and recover after repair', { skip: process.platform === 'win32' }, async (t) => {
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const good = store.remember({ scope: 'default', type: 'memory', title: 'Healthy', content: 'survivingword' });
+	const bad = store.remember({ scope: 'default', type: 'memory', title: 'Broken', content: 'Bad' });
+	const file = path.join(env.root, bad.source);
+	const original = fs.readFileSync(file, 'utf8');
+	fs.writeFileSync(file, original.replace('scope: default', 'scope: invalid'));
+	const service = await serveApiCore(env.root, path.join(env.root, 'runtime', 'agent-brain.sock'));
+	env.cleanup(() => service.close());
+	const connection = await client(t, env);
+	const call = (name, args) => connection.callTool({ name, arguments: args });
+	for (const [name, args] of [['search_knowledge', { query: 'survivingword' }], ['get_context', { task: 'survivingword' }], ['review_list', {}]]) {
+		const response = await call(name, args);
+		assert.equal(response.isError, undefined);
+		const result = JSON.parse(response.content[0].text);
+		assert.equal(result.brokenFiles[0].source, bad.source);
+		assert.match(result.brokenFiles[0].error, /scope/);
+		if (name !== 'review_list') assert.ok(result.items.some((item) => item.id === good.id));
+	}
+	const denied = await call('amend_knowledge', { id: bad.id, revision: bad.revision, changes: { title: 'No' } });
+	assert.equal(denied.isError, true);
+	assert.match(denied.content[0].text, /Cannot read or update broken file/);
+	const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/agent-brain.js'), 'search', 'survivingword', '--configdir', env.root, '--cwd', env.cwd], { encoding: 'utf8' });
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(JSON.parse(result.stdout).brokenFiles[0].source, bad.source);
+	fs.writeFileSync(file, original);
+	assert.ok(Array.isArray(JSON.parse((await call('search_knowledge', { query: 'survivingword' })).content[0].text)));
+});
 
 test('default MCP bridge initializes, writes, and retrieves knowledge through the apicore service', { skip: process.platform === 'win32' }, async (t) => {
 	const env = environment(t);
@@ -342,10 +570,11 @@ test('review findings are numbered per severity, listed in order, and resolved w
 
 	const resolved = store.resolveReview(high.id, high.revision, 'fixed', 'Resolved by using a stable command name.');
 	assert.equal(resolved.state, 'fixed');
-	assert.equal(resolved.status, 'deprecated');
+	assert.equal(fs.existsSync(path.join(env.root, high.source)), false);
+	assert.throws(() => store.get(high.id), /not found|Unknown/i);
 	assert.equal(resolved.reason, 'Resolved by using a stable command name.');
 	assert.deepEqual(store.reviews().map((item) => item.finding), ['C1', 'H2', 'L1']);
-	assert.deepEqual(store.reviews({ state: ['fixed'] }).map((item) => item.finding), ['H1']);
+	assert.deepEqual(store.reviewHistory({ state: 'fixed' }).items.map((item) => item.finding), ['H1']);
 	assert.equal(store.context('anything').items.some((item) => item.id === high.id), false);
 
 	// A resolved number is never handed out again.
@@ -527,7 +756,12 @@ test('registered subdirectories use the most specific root and stale write locks
 
 test('Git saves and pushes only eligible files, and refuses an unrelated staged change', (t) => {
 	const env = environment(t);
+	env.project('template-project');
 	const store = env.store(env.cwd);
+	const templates = ['global/templates/shared.njk', 'default/templates/nested/settings.json', 'projects/template-project/templates/message.txt'];
+	for (const file of templates) store.atomicWrite(file, `Template content for ${file}`);
+	assert.ok(templates.every((file) => gitPreview(store).files.includes(file.split('/').join(path.sep))));
+	assert.ok(!store.allKnowledge().some((item) => item.source.includes('templates')));
 	const item = store.remember({ scope: 'default', type: 'memory', title: 'Portable', content: 'Portableword knowledge.' });
 	store.atomicWrite('secrets/token.md', 'Never include this');
 	const git = (cwd, args) => {
@@ -543,6 +777,7 @@ test('Git saves and pushes only eligible files, and refuses an unrelated staged 
 	syncGit(store, 'save', 'Save test knowledge');
 	const tracked = git(env.root, ['ls-files']);
 	assert.ok(tracked.includes(item.source.split(path.sep).join('/')));
+	assert.ok(templates.every((file) => tracked.includes(file)));
 	assert.doesNotMatch(tracked, /secrets|knowledge.sqlite|brain.jsonc|runtime/);
 	const remote = path.join(env.directory, 'remote.git');
 	fs.mkdirSync(remote);
@@ -552,6 +787,16 @@ test('Git saves and pushes only eligible files, and refuses an unrelated staged 
 	git(env.root, ['config', 'branch.main.merge', 'refs/heads/main']);
 	syncGit(store, 'push');
 	assert.equal(git(remote, ['rev-parse', 'main']), git(env.root, ['rev-parse', 'HEAD']));
+	const checkout = path.join(env.directory, 'template-checkout');
+	git(env.directory, ['clone', remote, checkout]);
+	for (const file of templates) assert.equal(fs.readFileSync(path.join(checkout, file), 'utf8'), `Template content for ${file}`);
+	store.atomicWrite(templates[0], 'Updated template');
+	fs.unlinkSync(path.join(env.root, templates[1]));
+	syncGit(store, 'save', 'Update test templates');
+	syncGit(store, 'push');
+	git(checkout, ['pull', '--ff-only']);
+	assert.equal(fs.readFileSync(path.join(checkout, templates[0]), 'utf8'), 'Updated template');
+	assert.equal(fs.existsSync(path.join(checkout, templates[1])), false);
 	syncGit(store, 'pull');
 	fs.writeFileSync(path.join(env.root, 'unrelated.txt'), 'Unrelated user work');
 	git(env.root, ['add', 'unrelated.txt']);
@@ -693,4 +938,66 @@ test('service helper manages only the named normal account', { skip: process.pla
 	assert.match(commands, /runuser -u bjorn .*systemctl --user restart agent-brain.service/);
 	assert.match(commands, /systemctl --user is-active --quiet agent-brain.service/);
 	assert.notEqual(run('unknown').status, 0);
+});
+
+
+test('review archive migrates closed files, recovers interrupted deletion, and syncs history', (t) => {
+	const env = environment(t);
+	const project = env.project('archive');
+	const store = env.store(project.cwd);
+	const item = store.remember({ scope: 'project', type: 'review', severity: 'medium', title: 'Old fix', content: 'Full old details.' });
+	const deferred = store.remember({ scope: 'project', type: 'review', severity: 'low', title: 'Deferred', content: 'Still relevant.' });
+	syncGit(store, 'init');
+	for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@example.com']]) assert.equal(spawnSync('git', ['-C', env.root, 'config', key, value]).status, 0);
+	syncGit(store, 'save', 'Initial reviews');
+	const { source, revision, content, ...metadata } = item;
+	store.atomicWrite(source, `---\n${stringify({ ...metadata, state: 'fixed', status: 'deprecated', reason: 'Verified old fix' })}---\n\n${content}\n`);
+	assert.equal(store.archiveReviews('project').length, 1);
+	assert.deepEqual(store.archiveReviews('project'), []);
+	assert.equal(store.reviewHistory({ query: 'M1' }).items[0].reason, 'Verified old fix');
+	assert.equal(store.reviewHistory({ query: 'absent' }).total, 0);
+	assert.deepEqual(store.reviews().map((item) => item.id), [deferred.id]);
+	assert.ok(gitPreview(store).files.includes(source));
+	syncGit(store, 'save', 'Compact closed review');
+	assert.notEqual(spawnSync('git', ['-C', env.root, 'cat-file', '-e', `HEAD:${source}`]).status, 0);
+	assert.equal(spawnSync('git', ['-C', env.root, 'cat-file', '-e', 'HEAD:projects/archive/review-history.jsonl']).status, 0);
+	assert.equal(spawnSync('git', ['-C', env.root, 'cat-file', '-e', 'HEAD:projects/archive/review-counters.json']).status, 0);
+	const next = store.remember({ scope: 'project', type: 'review', severity: 'medium', title: 'Another', content: 'New details.' });
+	assert.equal(next.finding, 'M2');
+	const originalUnlink = fs.unlinkSync;
+	fs.unlinkSync = (file) => { if (file === path.join(env.root, next.source)) throw new Error('Deletion failed'); return originalUnlink(file); };
+	try { assert.throws(() => store.resolveReview(next.id, next.revision, 'fixed', 'Recovery check'), /Deletion failed/); }
+	finally { fs.unlinkSync = originalUnlink; }
+	assert.equal(store.reviewHistory().total, 2);
+	assert.equal(store.archiveReviews('project').length, 1);
+	assert.equal(store.reviewHistory().total, 2);
+	assert.equal(fs.existsSync(path.join(env.root, next.source)), false);
+	// A damaged history must never cause the original finding to be removed.
+	store.atomicWrite(path.join(project.directory, 'review-history.jsonl'), 'broken\n');
+	assert.throws(() => store.resolveReview(deferred.id, deferred.revision, 'wontfix', 'No'), /JSON/);
+	assert.equal(store.get(deferred.id).state, 'open');
+});
+
+
+test('MCP recalls paginated closure history while normal retrieval stays clear', { skip: process.platform === 'win32' }, async (t) => {
+	const env = environment(t);
+	const service = await serveApiCore(env.root, path.join(env.root, 'runtime', 'agent-brain.sock'));
+	env.cleanup(() => service.close());
+	const mcp = await client(t, env);
+	const call = async (name, args) => { const result = await mcp.callTool({ name, arguments: args }); assert.ok(!result.isError, result.content[0].text); return JSON.parse(result.content[0].text); };
+	for (const state of ['fixed', 'wontfix']) {
+		const finding = await call('remember', { scope: 'default', type: 'review', severity: 'high', title: `Closed ${state}`, content: 'Archiveduniqueword' });
+		await call('resolve_review', { id: finding.id, revision: finding.revision, state, reason: 'User authorized completion' });
+	}
+	assert.deepEqual(await call('review_list', {}), []);
+	assert.deepEqual(await call('search_knowledge', { query: 'Archiveduniqueword' }), []);
+	const first = await call('review_history', { limit: 1 });
+	const second = await call('review_history', { offset: 1, limit: 1 });
+	assert.equal(first.total, 2);
+	assert.notEqual(first.items[0].id, second.items[0].id);
+	assert.equal((await call('review_history', { state: 'wontfix' })).items[0].state, 'wontfix');
+	assert.deepEqual(await call('review_archive', { scope: 'default' }), []);
+	const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/agent-brain.js'), 'review', 'history', 'H1', '--configdir', env.root, '--cwd', env.cwd], { encoding: 'utf8' });
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(JSON.parse(result.stdout).items[0].finding, 'H1');
 });

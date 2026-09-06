@@ -26,17 +26,42 @@ exports.todoInput = zod_1.z.object({
 const remoteTask = exports.todoInput.pick({ title: true, description: true, status: true, labels: true, due: true }).strip();
 const todoMetadata = exports.todoInput.omit({ description: true }).extend({ id: zod_1.z.uuid(), created: zod_1.z.string(), updated: zod_1.z.string(), remote: remoteTask.optional() });
 function listTodos(store) {
-    return store.scopes.flatMap(({ scope, directory }) => store.files(path.join(directory, 'todo')).map((file) => {
-        const text = store.read(file);
-        const document = (0, store_1.readMarkdown)(text);
-        const metadata = todoMetadata.parse(document.metadata);
-        if (metadata.scope !== scope || path.basename(file) !== `${metadata.id}.md`)
-            throw new Error(`Todo metadata does not match its location: ${file}`);
-        return { ...metadata, description: document.content, revision: (0, node_crypto_1.createHash)('sha256').update(text).digest('hex') };
+    store.todoErrors.length = 0;
+    const sources = new Map();
+    const todos = store.scopes.flatMap(({ scope, directory }) => store.files(path.join(directory, 'todo'), { onError: (file, error) => store.todoErrors.push(store.brokenFile(file, error)) }).flatMap((file) => {
+        let id;
+        try {
+            const text = store.read(file);
+            const document = (0, store_1.readMarkdown)(text);
+            if (document.metadata && typeof document.metadata === 'object' && 'id' in document.metadata && typeof document.metadata.id === 'string')
+                id = document.metadata.id;
+            const metadata = todoMetadata.parse(document.metadata);
+            if (metadata.scope !== scope || path.basename(file) !== `${metadata.id}.md`)
+                throw new Error(`Todo metadata does not match its location: ${file}`);
+            const todo = { ...metadata, description: document.content, revision: (0, node_crypto_1.createHash)('sha256').update(text).digest('hex') };
+            sources.set(todo, file);
+            return [todo];
+        }
+        catch (error) {
+            store.todoErrors.push(store.brokenFile(file, error, id));
+            return [];
+        }
     }));
+    const counts = new Map();
+    for (const item of [...todos, ...store.todoErrors]) {
+        if (item.id)
+            counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
+    }
+    return todos.filter((todo) => {
+        if (counts.get(todo.id) === 1)
+            return true;
+        store.todoErrors.push(store.brokenFile(sources.get(todo), new Error(`Duplicate todo id: ${todo.id}`), todo.id));
+        return false;
+    });
 }
 function getTodo(store, id) {
     const todo = listTodos(store).find((item) => item.id === id);
+    store.assertReadable(id, store.todoErrors);
     if (!todo)
         throw new Error(`Todo not found: ${id}`);
     return todo;
@@ -54,6 +79,8 @@ function addTodo(store, input) {
             const existing = listTodos(store).find((item) => item.scope === value.scope && item.source?.type === value.source?.type && item.source?.external_id === value.source?.external_id);
             if (existing)
                 return existing;
+            if (store.todoErrors.length)
+                throw new Error('Cannot deduplicate an external task while todo files are broken. List tasks and correct the reported files first.');
         }
         const now = new Date().toISOString();
         return writeTodo(store, { ...value, id: (0, node_crypto_1.randomUUID)(), created: now, updated: now });
@@ -86,6 +113,8 @@ function importTodos(store, input) {
     return store.writeLocked(() => {
         const result = { imported: [], updated: [], conflicts: [] };
         const existing = listTodos(store);
+        if (store.todoErrors.length)
+            throw new Error('Cannot import tasks while todo files are broken. List tasks and correct the reported files first.');
         for (const item of incoming) {
             if (!item.source)
                 throw new Error('Imported tasks require an external source');

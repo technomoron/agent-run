@@ -20,9 +20,11 @@ export function createBrainServer(store: BrainStore): McpServer {
 	function tool<T extends z.ZodRawShape>(name: string, description: string, shape: T, readOnly: boolean, handler: (input: z.output<z.ZodObject<T>>) => unknown): void {
 		const schema: z.ZodType = z.object(shape).strict();
 		server.registerTool(name, { description, inputSchema: schema, annotations: { readOnlyHint: readOnly, destructiveHint: false, openWorldHint: false } }, async (input: unknown) => {
+			store.knowledgeErrors.length = 0;
+			store.todoErrors.length = 0;
 			try {
 				const result = await handler(z.object(shape).strict().parse(input));
-				return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+				return { content: [{ type: 'text' as const, text: JSON.stringify(store.withDiagnostics(result)) }] };
 			} catch (error) { return { isError: true, content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }] }; }
 		});
 	}
@@ -39,11 +41,11 @@ export function createBrainServer(store: BrainStore): McpServer {
 	});
 	tool('get_context', 'Retrieve relevant constraints and knowledge before substantial work. Check omitted; explicitly fetch required knowledge if the budget excluded it.', {
 		task: z.string().max(10000), files: z.array(z.string()).max(100).optional(), symbols: z.array(z.string()).max(100).optional()
-	}, true, ({ task, files, symbols }) => store.context(task, files, symbols));
+	}, false, ({ task, files, symbols }) => store.context(task, files, symbols));
 	tool('search_knowledge', 'Search Markdown knowledge in the active scopes using SQLite FTS.', {
 		query: z.string().max(10000), scopes: z.array(scopeSchema).optional(), types: z.array(typeSchema).optional(),
 		includeDeprecated: z.boolean().optional(), limit: z.number().int().min(1).max(100).optional()
-	}, true, ({ query, ...options }) => store.search(query, options));
+	}, false, ({ query, ...options }) => store.search(query, options));
 	tool('get_knowledge', 'Read a complete knowledge item and its current revision.', { id }, true, ({ id }) => store.get(id));
 	tool('remember', 'Persist durable knowledge when authorized by the user. Choose scope and a singular type; the server stores it in the matching directory (for example constraint in constraints/, preference in preferences/). Explicit user instructions have authority=user; deductions remain inferred observations. Global writes require explicit global intent. Use todo tools for tasks; skills and templates are separate files.', knowledgeInput.shape, false, (input) => store.remember(input));
 	tool('amend_knowledge', 'Revise an active item in place using its last-read revision, keeping its id, file name, scope, type, authority, and history. Use this to correct or extend existing knowledge instead of writing a near-duplicate. Scope, type, authority, and review severity cannot be changed this way.', {
@@ -58,14 +60,21 @@ export function createBrainServer(store: BrainStore): McpServer {
 	tool('get_skill', 'Load a full skill only when it applies to the current task.', { name: z.string().max(100) }, true, ({ name }) => getSkill(store, name));
 	tool('review_context', 'Retrieve constraints, decisions, prior review findings, and path-specific knowledge for a code review.', {
 		task: z.string().max(10000), files: z.array(z.string()).max(100).optional()
-	}, true, ({ task, files }) => store.context(`review constraint decision ${task}`, files));
-	tool('review_list', 'List review findings in severity then number order. Open findings only unless states are given. Each finding carries its label, severity, state, and the revision needed to resolve it.', {
+	}, false, ({ task, files }) => store.context(`review constraint decision ${task}`, files));
+	tool('review_list', 'List review findings in severity then number order. Open findings only unless states are given; archived findings are in review_history. Each finding carries its label, severity, state, and the revision needed to resolve it.', {
 		severity: z.array(severitySchema).optional(), state: z.array(reviewStateSchema).optional()
 	}, true, ({ severity, state }) => store.reviews({ severity, state }).map((item) => ({
 		finding: item.finding, severity: item.severity, state: item.state ?? 'open', title: item.title,
 		applies_to: item.applies_to, id: item.id, revision: item.revision
 	})));
-	tool('resolve_review', 'Close a review finding as fixed or wontfix, with a reason and the revision you last read. Use wontfix only when the user has said the finding is intentional.', {
+	tool('review_history', 'Recall compact closed review records by label, ID, title, or reason. Excluded from normal knowledge retrieval; newest first, with pagination.', {
+		scope: scopeSchema.optional(), query: z.string().max(1000).optional(), state: z.enum(['fixed', 'wontfix']).optional(),
+		offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(1000).optional()
+	}, true, (options) => store.reviewHistory(options));
+	tool('review_archive', 'Compact already finished review files in one scope into closure history and remove their full files. Leaves unresolved and deferred findings alone.', {
+		scope: scopeSchema
+	}, false, ({ scope }) => store.archiveReviews(scope));
+	tool('resolve_review', 'Close a review finding as fixed or wontfix, preserving a compact closure record and deleting the full finding file. Supply the revision you last read. Use wontfix only when the user has said the finding is intentional.', {
 		id, revision, state: z.enum(['fixed', 'wontfix']), reason: z.string().max(2000).optional()
 	}, false, ({ id, revision, state, reason }) => store.resolveReview(id, revision, state, reason));
 	tool('todo_list', 'List structured tasks in the active scopes.', { status: todoInput.shape.status.optional() }, true,

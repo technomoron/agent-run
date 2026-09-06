@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createNunjucksEnv = createNunjucksEnv;
+exports.createSkillNunjucksEnv = createSkillNunjucksEnv;
 exports.buildRenderContext = buildRenderContext;
 exports.resolveConfigPath = resolveConfigPath;
 exports.renderTemplateFile = renderTemplateFile;
@@ -17,6 +18,33 @@ function createNunjucksEnv(configRoot) {
         trimBlocks: true,
         lstripBlocks: true,
         throwOnUndefined: true
+    });
+}
+function createSkillNunjucksEnv(configRoot, profileDir, trace) {
+    const roots = [path.join(configRoot, 'global', 'skills'), path.join(profileDir, 'skills')];
+    class SkillLoader extends nunjucks.Loader {
+        getSource(name) {
+            const target = path.resolve(configRoot, name);
+            if (!roots.some((root) => (0, utils_1.isSamePathOrDescendant)(target, root))) {
+                throw new Error(`Skill template must be inside an active skills directory: ${name}`);
+            }
+            let current = configRoot;
+            for (const part of path.relative(configRoot, target).split(path.sep).filter(Boolean)) {
+                current = path.join(current, part);
+                if (fs.lstatSync(current).isSymbolicLink()) {
+                    throw new Error(`Symlinks are not supported in skill templates: ${current}`);
+                }
+            }
+            if (fs.statSync(target).size > 1024 * 1024) {
+                throw new Error(`Skill template exceeds 1 MiB: ${target}`);
+            }
+            const src = fs.readFileSync(target, 'utf8');
+            trace?.sourceFiles.add(target);
+            return { src, path: target, noCache: true };
+        }
+    }
+    return new nunjucks.Environment(new SkillLoader(), {
+        autoescape: false, trimBlocks: true, lstripBlocks: true, throwOnUndefined: true
     });
 }
 function buildRenderContext(projectRoot, profileDir, configRoot, manifest, env) {
@@ -84,8 +112,8 @@ function buildPermissionsAllow(manifest) {
     }
     return [...allow];
 }
-function resolveConfigPath(configRoot, relativePath, context) {
-    const rendered = createNunjucksEnv(configRoot).renderString(relativePath, context);
+function resolveConfigPath(configRoot, relativePath, context, env) {
+    const rendered = env.renderString(relativePath, context);
     const resolved = path.resolve(configRoot, rendered);
     if (!(0, utils_1.isSamePathOrDescendant)(resolved, path.resolve(configRoot))) {
         throw new Error(`config path escapes config root: ${relativePath}`);
@@ -97,20 +125,20 @@ function resolveRuntimePath(configRoot, pathTemplate, env, context) {
     return path.isAbsolute(rendered) ? path.resolve(rendered) : path.resolve(configRoot, rendered);
 }
 function renderTemplateFile(env, configRoot, templatePath, context, trace) {
-    const resolvedPath = resolveConfigPath(configRoot, templatePath, context);
+    const resolvedPath = resolveConfigPath(configRoot, templatePath, context, env);
     if (!fs.existsSync(resolvedPath)) {
         throw new Error(`missing template: ${resolvedPath}`);
     }
     const relativePath = path.relative(configRoot, resolvedPath).replace(/\\/g, '/');
     let content = fs.readFileSync(resolvedPath, 'utf8');
-    traceTemplateSource(configRoot, resolvedPath, content, context, trace);
+    traceTemplateSource(env, configRoot, resolvedPath, content, context, trace);
     if (path.basename(resolvedPath) === 'AGENTS-MODS.md') {
         content = renderLegacyAgentsMods(resolvedPath, [], trace);
         return env.renderString(content, context);
     }
     return env.render(relativePath, context);
 }
-function traceTemplateSource(configRoot, sourcePath, content, context, trace, stack = []) {
+function traceTemplateSource(env, configRoot, sourcePath, content, context, trace, stack = []) {
     if (trace === undefined) {
         return;
     }
@@ -126,9 +154,9 @@ function traceTemplateSource(configRoot, sourcePath, content, context, trace, st
         if (!includePath) {
             continue;
         }
-        const includedPath = resolveConfigPath(configRoot, includePath, context);
+        const includedPath = resolveConfigPath(configRoot, includePath, context, env);
         if (fs.existsSync(includedPath)) {
-            traceTemplateSource(configRoot, includedPath, fs.readFileSync(includedPath, 'utf8'), context, trace, nextStack);
+            traceTemplateSource(env, configRoot, includedPath, fs.readFileSync(includedPath, 'utf8'), context, trace, nextStack);
         }
     }
 }

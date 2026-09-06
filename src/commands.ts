@@ -9,7 +9,6 @@ import {
 	ensureConfigRootGitignore,
 	ensureConfigRootLayout,
 	ensureDefaultGlobalTemplates,
-	ensurePortableSystemdFiles,
 	findLegacyProfileDirs,
 	findProfileDirs,
 	migrateCodexRuntimeFiles,
@@ -56,7 +55,7 @@ import {
 	resolveProfileResult,
 	warnForLocalAiFiles
 } from './project';
-import { renderProfile, syncAgentProfile } from './renderer';
+import { renderProfile, syncAgentProfile, syncRenderedProfile } from './renderer';
 import { spawnAgent } from './runtime/spawn-agent';
 import { fail, formatCommand, formatPathList, uniqueSorted, verbose } from './utils';
 
@@ -138,16 +137,16 @@ function runTool(parsed: RunCommand): void {
 	prepareConfigRoot(configRoot);
 	requireProfile(command, agentDir);
 	migrateProfileOnStart(configRoot, agentDir, false);
-	const preview = renderProfile(projectRoot, agentDir, true, command);
+	const preview = renderProfile(projectRoot, agentDir, true);
 	ensureToolEnabled(preview.context, command);
 	if (wrapperArgs.generate) {
-		printUpdateSummary(syncAgentProfile(projectRoot, agentDir));
+		printUpdateSummary(syncRenderedProfile(preview));
 		return;
 	}
 
 	checkLocalAiFiles(command, projectRoot, agentDir, preview.context, wrapperArgs.local);
 	const realBinary = findRealBinary(command);
-	const rendered = syncAgentProfile(projectRoot, agentDir);
+	const rendered = syncRenderedProfile(preview);
 	const runtime = rendered.runtimes[command];
 	if (!runtime) {
 		fail(`no generated ${command} runtime found for profile ${rendered.profile}`);
@@ -253,7 +252,7 @@ function runGenerate(parsed: InitCommand | GenerateCommand): void {
 	if (projectRoot === null) {
 		return;
 	}
-	const agentDir = initializeProfileSource(projectRoot, true);
+	const agentDir = initializeProfileSource(projectRoot);
 	migrateProfileOnStart(defaultConfigRoot(projectRoot), agentDir, false);
 	printUpdateSummary(syncAgentProfile(projectRoot, agentDir));
 }
@@ -268,7 +267,6 @@ function runSetup(parsed: SetupCommand): void {
 		fail(`starter config skeleton not found: ${sourcePath}`);
 	}
 	copySkeletonTree(sourcePath, configRoot, new Set(['starter']));
-	ensurePortableSystemdFiles(configRoot);
 	const agentDir = path.join(configRoot, profile);
 	migrateProfileOnStart(configRoot, agentDir, false);
 	copySkeletonTree(path.join(sourcePath, 'starter', 'basic-project'), agentDir);
@@ -340,7 +338,7 @@ function runEdit(parsed: EditCommand): void {
 	if (projectRoot === null) {
 		return;
 	}
-	const agentDir = initializeProfileSource(projectRoot, false);
+	const agentDir = initializeProfileSource(projectRoot);
 	migrateProfileOnStart(defaultConfigRoot(projectRoot), agentDir, false);
 	const editPath = createDefaultLocalFile(agentDir);
 	syncAgentProfile(projectRoot, agentDir);
@@ -472,7 +470,6 @@ function prepareConfigRoot(configRoot: string): void {
 	ensureConfigRootLayout(configRoot);
 	ensureConfigRootGitignore(configRoot);
 	ensureDefaultGlobalTemplates(configRoot);
-	ensurePortableSystemdFiles(configRoot);
 }
 
 function activeProject(targetPath: string, action: 'generate' | 'edit'): string | null {
@@ -485,8 +482,8 @@ function activeProject(targetPath: string, action: 'generate' | 'edit'): string 
 	return null;
 }
 
-function initializeProfileSource(projectRoot: string, preferProjectConfigRoot: boolean): string {
-	const configRoot = defaultConfigRoot(projectRoot, { preferProjectRoot: preferProjectConfigRoot });
+function initializeProfileSource(projectRoot: string): string {
+	const configRoot = defaultConfigRoot(projectRoot);
 	const resolved = resolveProfileResult(projectRoot, configRoot, false);
 	if (!resolved.profile) throw new Error(resolved.reason);
 	const profile = resolved.profile;

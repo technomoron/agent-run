@@ -11,7 +11,7 @@ const store_1 = require("./store");
 const config_1 = require("./config");
 function git(root, args) {
     const result = (0, node_child_process_1.spawnSync)('git', ['-C', root, ...args], { encoding: 'utf8', shell: false, timeout: 60000,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, maxBuffer: 16 * 1024 * 1024 });
+        env: { ...process.env, PATH: process.env.AGENT_RUN_REAL_PATH ?? process.env.PATH, GIT_TERMINAL_PROMPT: '0' }, maxBuffer: 16 * 1024 * 1024 });
     if (result.error || result.status !== 0)
         throw new Error(`git ${args[0]} failed: ${result.error?.message ?? result.stderr.trim()}`);
     return result.stdout.trimEnd();
@@ -40,11 +40,17 @@ function syncableFiles(store) {
     for (const root of roots) {
         for (const folder of folders)
             files.push(...store.files(path.join(root, folder)));
-        for (const name of ['config.yaml', 'project.md']) {
+        files.push(...store.files(path.join(root, 'templates'), { includeAllFiles: true }));
+        for (const name of ['config.yaml', 'project.md', 'review-history.jsonl', 'review-counters.json']) {
             const file = store.safePath(root, name);
             if (fs.existsSync(file))
                 files.push(file);
         }
+    }
+    if (fs.existsSync(path.join(store.configRoot, '.git'))) {
+        const removable = roots.flatMap((root) => ['templates', 'reviews'].map((folder) => path.relative(store.configRoot, path.join(root, folder))));
+        const deleted = git(store.configRoot, ['ls-files', '--deleted', '-z', '--', ...removable]).split('\0').filter(Boolean);
+        files.push(...deleted.map((file) => store.safePath(file)));
     }
     const ignore = store.safePath('.gitignore');
     if (fs.existsSync(ignore))

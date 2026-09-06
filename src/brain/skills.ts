@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import { z } from 'zod';
 import { BrainStore, readMarkdown, type Scope } from './store';
-import { createNunjucksEnv, buildRenderContext } from '../templates';
+import { createNunjucksEnv, createSkillNunjucksEnv, buildRenderContext } from '../templates';
 import { loadManifest, normalizeManifest } from '../manifest';
 
 const metadata = z.object({
@@ -19,11 +19,12 @@ export function getSkills(store: BrainStore): Skill[] {
 	const env = createNunjucksEnv(store.configRoot);
 	const context = buildRenderContext(store.projectRoot, directory, store.configRoot,
 		normalizeManifest(loadManifest(store.configRoot, directory, profile), profile), env);
+	const skillEnv = createSkillNunjucksEnv(store.configRoot, directory);
 	const skills = new Map<string, Skill>();
 	const globalSkills = new Map<string, Skill>();
 	for (const { scope, directory } of store.scopes) {
 		for (const file of store.files(path.join(directory, 'skills')).filter((file) => path.basename(file) === 'SKILL.md')) {
-			const text = env.renderString(store.read(file), context);
+			const text = skillEnv.render(path.relative(store.configRoot, file), context);
 			const document = readMarkdown(text);
 			const parsed = metadata.parse(document.metadata);
 			if (path.basename(path.dirname(file)) !== parsed.name) throw new Error(`Skill name must match directory: ${file}`);

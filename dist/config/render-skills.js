@@ -7,14 +7,15 @@ const fs = require("fs");
 const path = require("path");
 const templates_1 = require("../templates");
 function buildCanonicalSkills(env, configRoot, manifest, context, trace) {
+    const skillEnv = (0, templates_1.createSkillNunjucksEnv)(configRoot, context.profileDir, trace);
     return manifest.skills.install.map((name) => {
         const canonical = `global/skills/${name}/SKILL.md`;
         const sourceTemplate = manifest.skills.overrides[name] ?? (fs.existsSync(path.join(configRoot, canonical)) ? canonical : `${canonical}.njk`);
-        const sourcePath = (0, templates_1.resolveConfigPath)(configRoot, sourceTemplate, context);
+        const sourcePath = (0, templates_1.resolveConfigPath)(configRoot, sourceTemplate, context, env);
         if (!fs.existsSync(sourcePath)) {
             throw new Error(`missing skill template for ${name}: ${sourcePath}`);
         }
-        const renderedContent = (0, templates_1.renderTemplateFile)(env, configRoot, sourceTemplate, context, trace);
+        const renderedContent = skillEnv.render(path.relative(configRoot, sourcePath), context);
         (0, templates_1.assertNoUnexpandedTemplateVars)(`skill ${name}`, renderedContent);
         validateRenderedSkill(renderedContent, sourcePath);
         return { name, sourcePath, renderedContent, description: extractSkillDescription(renderedContent) };

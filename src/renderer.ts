@@ -117,6 +117,11 @@ export function syncAgentProfile(
 	options?: { configRoot?: string; profile?: string }
 ): RenderedProfile {
 	const rendered = renderProfile(projectRoot, agentDir, false, null, undefined, options);
+	return syncRenderedProfile(rendered);
+}
+
+export function syncRenderedProfile(rendered: RenderedProfile): RenderedProfile {
+	ensureConfigRootGitignore(rendered.configRoot);
 	syncRuntimeDirs(rendered);
 	removeStaleGeneratedEntries(rendered);
 	for (const file of rendered.files) {

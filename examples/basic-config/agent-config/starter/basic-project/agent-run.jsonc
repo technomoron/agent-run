@@ -14,7 +14,7 @@
       "triage"
     ],
     "overrides": {
-      "triage": "{{ profile }}/overrides/triage.SKILL.md.njk"
+      "triage": "{{ profile }}/skills/triage/SKILL.md.njk"
     }
   },
   "mcp": {

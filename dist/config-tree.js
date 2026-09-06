@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ensureConfigRootLayout = ensureConfigRootLayout;
 exports.ensureConfigRootGitignore = ensureConfigRootGitignore;
 exports.ensureDefaultGlobalTemplates = ensureDefaultGlobalTemplates;
-exports.ensurePortableSystemdFiles = ensurePortableSystemdFiles;
 exports.migrateOldTemplates = migrateOldTemplates;
 exports.findLegacyProfileDirs = findLegacyProfileDirs;
 exports.findProfileDirs = findProfileDirs;
@@ -73,27 +72,6 @@ function ensureDefaultGlobalTemplates(configRoot) {
             fs.writeFileSync(filePath, content, 'utf8');
             (0, utils_1.verbose)(`created ${filePath}`);
         }
-    }
-}
-function ensurePortableSystemdFiles(configRoot) {
-    const packageRoot = path.resolve(__dirname, '..');
-    const files = new Map([
-        ['install-systemd-jobs.sh', { source: 'scripts/install-systemd-jobs.sh', mode: 0o755 }],
-        ['update-ai-tools.sh', { source: 'scripts/update-ai-tools.sh', mode: 0o755 }],
-        ['ensure-agent-brain.sh', { source: 'scripts/ensure-agent-brain.sh', mode: 0o755 }],
-        ['agent-brain.service', { source: 'ops/systemd/agent-brain.service', mode: 0o644 }],
-        ['ai-tools-update.service', { source: 'ops/systemd/ai-tools-update.service', mode: 0o644 }],
-        ['ai-tools-update.timer', { source: 'ops/systemd/ai-tools-update.timer', mode: 0o644 }]
-    ]);
-    for (const [targetName, asset] of files) {
-        const sourcePath = path.join(packageRoot, asset.source);
-        const targetPath = path.join(configRoot, targetName);
-        if (!fs.existsSync(sourcePath)) {
-            continue;
-        }
-        fs.copyFileSync(sourcePath, targetPath);
-        fs.chmodSync(targetPath, asset.mode);
-        (0, utils_1.verbose)(`updated ${targetPath}`);
     }
 }
 function migrateOldTemplates(configRoot) {

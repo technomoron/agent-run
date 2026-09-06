@@ -1,7 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.findRealBinary = findRealBinary;
-exports.execTool = execTool;
 exports.execCommand = execCommand;
 exports.openEditor = openEditor;
 exports.parseEditorCommand = parseEditorCommand;
@@ -72,10 +71,6 @@ function isAgentRunRedirectShim(filePath) {
     catch {
         return false;
     }
-}
-function execTool(command, args) {
-    (0, utils_1.verbose)(`exec tool: ${(0, utils_1.formatCommand)(command, args)}`);
-    execCommand(command, args);
 }
 function execCommand(command, args, env, cwd, onExit) {
     (0, utils_1.verbose)(`spawn: ${(0, utils_1.formatCommand)(command, args)} cwd=${cwd ?? process.cwd()}`);

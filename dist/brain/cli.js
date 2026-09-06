@@ -39,6 +39,8 @@ async function brainMain(argv, wrapperCommand) {
             'agent-brain deprecate <id> --revision <hash> [reason]',
             'agent-brain skills [name]',
             'agent-brain review list [--severity <level>] [--state <state>]',
+            'agent-brain review history [query] [--scope <scope>] [--state fixed|wontfix]',
+            'agent-brain review archive --scope <scope>',
             'agent-brain review resolve <id> --revision <hash> --state fixed|wontfix [reason]',
             'agent-brain todo list | get <id> | add --json <task-object>',
             'agent-brain todo update <id> --revision <hash> --json <changes>',
@@ -100,48 +102,55 @@ async function brainMain(argv, wrapperCommand) {
         throw new Error('--revision is required; read the item first'); return values.revision; };
     const json = () => { if (!values.json)
         throw new Error('--json is required'); return JSON.parse(values.json); };
+    const report = (value) => print(store.withDiagnostics(value));
     try {
         switch (command) {
             case 'status':
-                print({ configRoot: root, enabled: (0, config_1.readBrainConfig)(root)?.enabled ?? false, profile: store.profile, scopes: store.scopes, knowledge: store.allKnowledge().length, todos: (0, todos_1.listTodos)(store).length });
+                report({ configRoot: root, enabled: (0, config_1.readBrainConfig)(root)?.enabled ?? false, profile: store.profile, scopes: store.scopes, knowledge: store.allKnowledge().length, todos: (0, todos_1.listTodos)(store).length });
                 break;
             case 'search':
-                print(store.search(positionals.join(' ')));
+                report(store.search(positionals.join(' ')));
                 break;
             case 'context':
-                print(store.context(positionals.join(' ')));
+                report(store.context(positionals.join(' ')));
                 break;
             case 'get':
-                print(store.get(requireId()));
+                report(store.get(requireId()));
                 break;
             case 'remember':
-                print(store.remember(store_1.knowledgeInput.parse(json())));
+                report(store.remember(store_1.knowledgeInput.parse(json())));
                 break;
             case 'promote':
                 if (!values.confirmed)
                     throw new Error('Promotion requires --confirmed after explicit user approval');
-                print(store.promote(requireId(), store_1.scopeSchema.parse(values.scope), requireRevision()));
+                report(store.promote(requireId(), store_1.scopeSchema.parse(values.scope), requireRevision()));
                 break;
             case 'amend':
-                print(store.amend(requireId(), requireRevision(), store_1.knowledgeChanges.parse(json())));
+                report(store.amend(requireId(), requireRevision(), store_1.knowledgeChanges.parse(json())));
                 break;
             case 'deprecate':
-                print(store.deprecate(requireId(), requireRevision(), positionals.slice(1).join(' ')));
+                report(store.deprecate(requireId(), requireRevision(), positionals.slice(1).join(' ')));
                 break;
             case 'skills':
-                print(positionals[0] ? (0, skills_1.getSkill)(store, positionals[0]) : (0, skills_1.listSkills)(store));
+                report(positionals[0] ? (0, skills_1.getSkill)(store, positionals[0]) : (0, skills_1.listSkills)(store));
                 break;
             case 'review': {
                 const operation = positionals.shift() ?? 'list';
                 if (operation === 'list') {
-                    print(store.reviews({
+                    report(store.reviews({
                         ...(values.severity ? { severity: [store_1.severitySchema.parse(values.severity)] } : {}),
                         ...(values.state ? { state: [store_1.reviewStateSchema.parse(values.state)] } : {})
                     }).map((item) => ({ finding: item.finding, severity: item.severity, state: item.state ?? 'open', title: item.title, id: item.id, revision: item.revision })));
                 }
+                else if (operation === 'history') {
+                    report(store.reviewHistory({ query: positionals.join(' '), ...(values.scope ? { scope: store_1.scopeSchema.parse(values.scope) } : {}), ...(values.state ? { state: zod_1.z.enum(['fixed', 'wontfix']).parse(values.state) } : {}), limit: Number.MAX_SAFE_INTEGER }));
+                }
+                else if (operation === 'archive') {
+                    report(store.archiveReviews(store_1.scopeSchema.parse(values.scope)));
+                }
                 else if (operation === 'resolve') {
                     const state = zod_1.z.enum(['fixed', 'wontfix']).parse(values.state);
-                    print(store.resolveReview(requireId(), requireRevision(), state, positionals.slice(1).join(' ') || undefined));
+                    report(store.resolveReview(requireId(), requireRevision(), state, positionals.slice(1).join(' ') || undefined));
                 }
                 else
                     throw new Error('Usage: agent-brain review list | resolve <id> --revision <hash> --state fixed|wontfix');
@@ -150,30 +159,30 @@ async function brainMain(argv, wrapperCommand) {
             case 'sync': {
                 const action = positionals[0];
                 if (!action) {
-                    print((0, git_1.gitPreview)(store));
+                    report((0, git_1.gitPreview)(store));
                     break;
                 }
                 if (!['init', 'save', 'pull', 'push'].includes(action))
                     throw new Error('Unknown sync action');
                 if (!values.confirmed)
                     throw new Error('Review agent-brain sync output and obtain authorization before using --confirmed');
-                print((0, git_1.syncGit)(store, action, values.message));
+                report((0, git_1.syncGit)(store, action, values.message));
                 break;
             }
             case 'todo': {
                 const operation = positionals.shift();
                 if (operation === 'list')
-                    print((0, todos_1.listTodos)(store));
+                    report((0, todos_1.listTodos)(store));
                 else if (operation === 'get')
-                    print((0, todos_1.getTodo)(store, requireId()));
+                    report((0, todos_1.getTodo)(store, requireId()));
                 else if (operation === 'add')
-                    print((0, todos_1.addTodo)(store, todos_1.todoInput.parse(json())));
+                    report((0, todos_1.addTodo)(store, todos_1.todoInput.parse(json())));
                 else if (operation === 'update')
-                    print((0, todos_1.updateTodo)(store, requireId(), requireRevision(), todos_1.todoChanges.parse(json())));
+                    report((0, todos_1.updateTodo)(store, requireId(), requireRevision(), todos_1.todoChanges.parse(json())));
                 else if (operation === 'complete')
-                    print((0, todos_1.updateTodo)(store, requireId(), requireRevision(), { status: 'done' }));
+                    report((0, todos_1.updateTodo)(store, requireId(), requireRevision(), { status: 'done' }));
                 else if (operation === 'import' || operation === 'sync')
-                    print(await (0, connectors_1.syncConnector)(store, requireId(), store_1.scopeSchema.parse(values.scope)));
+                    report(await (0, connectors_1.syncConnector)(store, requireId(), store_1.scopeSchema.parse(values.scope)));
                 else
                     throw new Error('Unknown todo command; use agent-brain --help');
                 break;
@@ -181,11 +190,11 @@ async function brainMain(argv, wrapperCommand) {
             case 'project': {
                 const operation = positionals[0];
                 if (operation === 'list')
-                    print((0, config_1.listBrainProjects)(root));
+                    report((0, config_1.listBrainProjects)(root));
                 else if (operation === 'info')
-                    print({ profile: store.profile, ...(0, projects_1.inspectProject)(cwd) });
+                    report({ profile: store.profile, ...(0, projects_1.inspectProject)(cwd) });
                 else if (operation === 'bootstrap')
-                    print({ status: 'proposal', message: 'Inspect the listed documents to propose architecture, constraints, conventions, and specs. Confirm proposals before saving authoritative knowledge.', ...(0, projects_1.inspectProject)(cwd) });
+                    report({ status: 'proposal', message: 'Inspect the listed documents to propose architecture, constraints, conventions, and specs. Confirm proposals before saving authoritative knowledge.', ...(0, projects_1.inspectProject)(cwd) });
                 else
                     throw new Error('Usage: agent-run project list | info | bootstrap');
                 break;

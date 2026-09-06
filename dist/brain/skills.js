@@ -19,11 +19,12 @@ function getSkills(store) {
     const directory = store.scopeDirectory(store.profile ? 'project' : 'default');
     const env = (0, templates_1.createNunjucksEnv)(store.configRoot);
     const context = (0, templates_1.buildRenderContext)(store.projectRoot, directory, store.configRoot, (0, manifest_1.normalizeManifest)((0, manifest_1.loadManifest)(store.configRoot, directory, profile), profile), env);
+    const skillEnv = (0, templates_1.createSkillNunjucksEnv)(store.configRoot, directory);
     const skills = new Map();
     const globalSkills = new Map();
     for (const { scope, directory } of store.scopes) {
         for (const file of store.files(path.join(directory, 'skills')).filter((file) => path.basename(file) === 'SKILL.md')) {
-            const text = env.renderString(store.read(file), context);
+            const text = skillEnv.render(path.relative(store.configRoot, file), context);
             const document = (0, store_1.readMarkdown)(text);
             const parsed = metadata.parse(document.metadata);
             if (path.basename(path.dirname(file)) !== parsed.name)

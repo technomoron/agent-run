@@ -85,28 +85,6 @@ export function ensureDefaultGlobalTemplates(configRoot: string): void {
 	}
 }
 
-export function ensurePortableSystemdFiles(configRoot: string): void {
-	const packageRoot = path.resolve(__dirname, '..');
-	const files = new Map<string, { source: string; mode: number }>([
-		['install-systemd-jobs.sh', { source: 'scripts/install-systemd-jobs.sh', mode: 0o755 }],
-		['update-ai-tools.sh', { source: 'scripts/update-ai-tools.sh', mode: 0o755 }],
-		['ensure-agent-brain.sh', { source: 'scripts/ensure-agent-brain.sh', mode: 0o755 }],
-		['agent-brain.service', { source: 'ops/systemd/agent-brain.service', mode: 0o644 }],
-		['ai-tools-update.service', { source: 'ops/systemd/ai-tools-update.service', mode: 0o644 }],
-		['ai-tools-update.timer', { source: 'ops/systemd/ai-tools-update.timer', mode: 0o644 }]
-	]);
-	for (const [targetName, asset] of files) {
-		const sourcePath = path.join(packageRoot, asset.source);
-		const targetPath = path.join(configRoot, targetName);
-		if (!fs.existsSync(sourcePath)) {
-			continue;
-		}
-		fs.copyFileSync(sourcePath, targetPath);
-		fs.chmodSync(targetPath, asset.mode);
-		verbose(`updated ${targetPath}`);
-	}
-}
-
 export function migrateOldTemplates(configRoot: string): void {
 	const oldCodeTemplate = path.join(configRoot, 'templates', 'AGENTS-CODE.md');
 	const newCodeTemplate = path.join(configRoot, 'global', 'agents', 'code.md.njk');

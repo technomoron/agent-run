@@ -21,7 +21,7 @@ const builtInSkills = {
     },
     'brain-review': {
         description: 'Review changes against project constraints and previous findings, and save confirmed review knowledge.',
-        content: 'Call review_context with the task and changed paths. Check correctness, security, architecture, and meaningful test coverage against relevant constraints. Report concrete, actionable findings with severity and file references. If authorized to save the review, call remember with type=review. Keep suspected hazards marked inferred. Never convert a finding into an authoritative constraint without user confirmation.'
+        content: 'Call review_context with the task and changed paths. Check correctness, security, architecture, and meaningful test coverage against relevant constraints. Report concrete, actionable findings with severity and file references. If authorized to save the review, call remember with type=review. Keep suspected hazards marked inferred. Never convert a finding into an authoritative constraint without user confirmation. Use review_list for open findings. After completing an authorized fix and relevant checks, resolve_review as fixed with a short explanation and verification result; use wontfix only for an explicit user decision to drop the finding. Postponed findings stay open. Closing saves compact history and removes the full finding file. Recall old fixes through review_history, not normal knowledge search. Use review_archive to compact already closed files when cleanup is requested. Do not create separate done lists or full archived review copies.'
     },
     'todo-manager': {
         description: 'Manage local tasks and import externally tracked tasks without duplicates.',

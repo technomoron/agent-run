@@ -45,6 +45,8 @@ function renderJsonMcp(servers, target) {
 function renderTomlMcp(servers, target) {
     const sections = [];
     for (const [name, server] of Object.entries(servers)) {
+        if (!server.enabled)
+            continue;
         const lines = [`[mcp_servers.${tomlKey(name)}]`];
         if (server.transport === 'stdio') {
             lines.push(`command = ${tomlString(server.command ?? '')}`);
@@ -63,9 +65,6 @@ function renderTomlMcp(servers, target) {
             if (Object.keys(server.headers).length > 0) {
                 lines.push(`${target === 'codex' ? 'http_headers' : 'headers'} = ${tomlInlineTable(server.headers)}`);
             }
-        }
-        if (!server.enabled) {
-            lines.push('enabled = false');
         }
         sections.push(lines.join('\n'));
     }

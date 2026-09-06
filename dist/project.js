@@ -12,7 +12,6 @@ exports.resolveProfileResult = resolveProfileResult;
 exports.parseProfile = parseProfile;
 exports.projectRootForProfile = projectRootForProfile;
 exports.defaultConfigRoot = defaultConfigRoot;
-exports.defaultConfigRootSearchCandidates = defaultConfigRootSearchCandidates;
 const childProcess = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -163,7 +162,7 @@ function resolveProfileResult(projectRoot, configRoot = defaultConfigRoot(projec
     const named = resolved.profile ? (0, config_1.namedBrainProfile)(configRoot, resolved.profile) : null;
     if (named)
         return { profile: named, reason: '' };
-    if (useDefault && (0, config_1.readBrainConfig)(configRoot)?.enabled && !readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim()) {
+    if (useDefault && (0, config_1.readBrainConfig)(configRoot)?.enabled) {
         const configured = resolved.profile !== null && ['agent-run.jsonc', 'local.md.njk', 'AGENTS-MODS.md']
             .some((name) => fs.existsSync(path.join(configRoot, resolved.profile, name)));
         if (!configured)
@@ -172,11 +171,6 @@ function resolveProfileResult(projectRoot, configRoot = defaultConfigRoot(projec
     return resolved;
 }
 function resolveLegacyProfileResult(projectRoot) {
-    const envProfile = readAgentRunEnv(projectRoot).AGENT_RUN_PROFILE?.trim();
-    if (envProfile) {
-        (0, utils_1.verbose)(`using ${constants_1.ENV_FILE_NAME} AGENT_RUN_PROFILE=${envProfile}`);
-        return parseProfile(envProfile, `${constants_1.ENV_FILE_NAME} AGENT_RUN_PROFILE`);
-    }
     const githubProfile = resolveGitHubProfile(projectRoot);
     if (githubProfile !== null) {
         (0, utils_1.verbose)(`using GitHub origin profile=${githubProfile}`);
@@ -321,12 +315,11 @@ function parseEnvFile(content) {
     }
     return env;
 }
-function defaultConfigRoot(projectRoot, options = {}) {
+function defaultConfigRoot(projectRoot) {
     const explicit = explicitConfigRoot(projectRoot);
     if (explicit !== null) {
         return explicit;
     }
-    void options;
     return path.join(os.homedir(), '.agent-run');
 }
 function explicitConfigRoot(projectRoot) {
@@ -341,18 +334,4 @@ function explicitConfigRoot(projectRoot) {
     const env = readAgentRunEnv(projectRoot);
     const localValue = env[constants_1.CONFIG_DIR_ENV]?.trim();
     return localValue ? path.resolve(projectRoot, localValue) : null;
-}
-function defaultConfigRootSearchCandidates(_projectRoot, options = {}) {
-    const platform = options.platform ?? process.platform;
-    const pathApi = platform === 'win32' ? path.win32 : path.posix;
-    const homeDir = options.homeDir ?? os.homedir();
-    const names = ['agent-config', 'agent-configs'];
-    if (platform === 'win32') {
-        return [pathApi.join(homeDir, 'Documents', 'code'), pathApi.join(homeDir, 'Desktop', 'code'), 'C:\\code'].flatMap((root) => names.map((name) => pathApi.join(root, name)));
-    }
-    return [
-        ...names.map((name) => pathApi.join(homeDir, 'code', name)),
-        ...names.map((name) => pathApi.join(homeDir, name)),
-        ...names.map((name) => pathApi.join(homeDir, `.${name}`))
-    ];
 }

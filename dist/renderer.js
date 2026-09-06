@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderProfile = renderProfile;
 exports.syncAgentProfile = syncAgentProfile;
+exports.syncRenderedProfile = syncRenderedProfile;
 exports.checkRenderedProfile = checkRenderedProfile;
 const fs = require("fs");
 const path = require("path");
@@ -87,6 +88,10 @@ function validateManifestProfile(manifestProfile, inferredProfile, agentDir) {
 }
 function syncAgentProfile(projectRoot, agentDir, options) {
     const rendered = renderProfile(projectRoot, agentDir, false, null, undefined, options);
+    return syncRenderedProfile(rendered);
+}
+function syncRenderedProfile(rendered) {
+    (0, config_tree_1.ensureConfigRootGitignore)(rendered.configRoot);
     syncRuntimeDirs(rendered);
     removeStaleGeneratedEntries(rendered);
     for (const file of rendered.files) {

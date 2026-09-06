@@ -4,7 +4,7 @@ import * as path from 'path';
 import { main } from './commands';
 
 export { parseInvocation } from './cli';
-export { defaultConfigRoot, defaultConfigRootSearchCandidates, findProjectRoot, resolveAgentDir, resolveProfile } from './project';
+export { defaultConfigRoot, findProjectRoot, resolveAgentDir, resolveProfile } from './project';
 export { parseEditorCommand } from './process';
 
 if (require.main === module) {

@@ -89,15 +89,15 @@ function runTool(parsed) {
     prepareConfigRoot(configRoot);
     requireProfile(command, agentDir);
     migrateProfileOnStart(configRoot, agentDir, false);
-    const preview = (0, renderer_1.renderProfile)(projectRoot, agentDir, true, command);
+    const preview = (0, renderer_1.renderProfile)(projectRoot, agentDir, true);
     ensureToolEnabled(preview.context, command);
     if (wrapperArgs.generate) {
-        printUpdateSummary((0, renderer_1.syncAgentProfile)(projectRoot, agentDir));
+        printUpdateSummary((0, renderer_1.syncRenderedProfile)(preview));
         return;
     }
     checkLocalAiFiles(command, projectRoot, agentDir, preview.context, wrapperArgs.local);
     const realBinary = (0, process_1.findRealBinary)(command);
-    const rendered = (0, renderer_1.syncAgentProfile)(projectRoot, agentDir);
+    const rendered = (0, renderer_1.syncRenderedProfile)(preview);
     const runtime = rendered.runtimes[command];
     if (!runtime) {
         (0, utils_1.fail)(`no generated ${command} runtime found for profile ${rendered.profile}`);
@@ -186,7 +186,7 @@ function runGenerate(parsed) {
     if (projectRoot === null) {
         return;
     }
-    const agentDir = initializeProfileSource(projectRoot, true);
+    const agentDir = initializeProfileSource(projectRoot);
     migrateProfileOnStart((0, project_1.defaultConfigRoot)(projectRoot), agentDir, false);
     printUpdateSummary((0, renderer_1.syncAgentProfile)(projectRoot, agentDir));
 }
@@ -200,7 +200,6 @@ function runSetup(parsed) {
         (0, utils_1.fail)(`starter config skeleton not found: ${sourcePath}`);
     }
     (0, config_tree_1.copySkeletonTree)(sourcePath, configRoot, new Set(['starter']));
-    (0, config_tree_1.ensurePortableSystemdFiles)(configRoot);
     const agentDir = path.join(configRoot, profile);
     migrateProfileOnStart(configRoot, agentDir, false);
     (0, config_tree_1.copySkeletonTree)(path.join(sourcePath, 'starter', 'basic-project'), agentDir);
@@ -265,7 +264,7 @@ function runEdit(parsed) {
     if (projectRoot === null) {
         return;
     }
-    const agentDir = initializeProfileSource(projectRoot, false);
+    const agentDir = initializeProfileSource(projectRoot);
     migrateProfileOnStart((0, project_1.defaultConfigRoot)(projectRoot), agentDir, false);
     const editPath = (0, manifest_1.createDefaultLocalFile)(agentDir);
     (0, renderer_1.syncAgentProfile)(projectRoot, agentDir);
@@ -387,7 +386,6 @@ function prepareConfigRoot(configRoot) {
     (0, config_tree_1.ensureConfigRootLayout)(configRoot);
     (0, config_tree_1.ensureConfigRootGitignore)(configRoot);
     (0, config_tree_1.ensureDefaultGlobalTemplates)(configRoot);
-    (0, config_tree_1.ensurePortableSystemdFiles)(configRoot);
 }
 function activeProject(targetPath, action) {
     const projectRoot = (0, project_1.findProjectRoot)(targetPath);
@@ -398,8 +396,8 @@ function activeProject(targetPath, action) {
     process.stdout.write(`SKIP ignored ${projectRoot}\n`);
     return null;
 }
-function initializeProfileSource(projectRoot, preferProjectConfigRoot) {
-    const configRoot = (0, project_1.defaultConfigRoot)(projectRoot, { preferProjectRoot: preferProjectConfigRoot });
+function initializeProfileSource(projectRoot) {
+    const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
     const resolved = (0, project_1.resolveProfileResult)(projectRoot, configRoot, false);
     if (!resolved.profile)
         throw new Error(resolved.reason);

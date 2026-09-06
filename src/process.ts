@@ -78,11 +78,6 @@ function isAgentRunRedirectShim(filePath: string): boolean {
 	}
 }
 
-export function execTool(command: string, args: string[]): void {
-	verbose(`exec tool: ${formatCommand(command, args)}`);
-	execCommand(command, args);
-}
-
 export function execCommand(
 	command: string,
 	args: string[],

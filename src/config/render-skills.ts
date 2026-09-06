@@ -4,7 +4,7 @@ import type * as nunjucks from 'nunjucks';
 import type { NormalizedManifest, RenderContext, RenderedFile, RenderTrace } from '../model';
 import {
 	assertNoUnexpandedTemplateVars,
-	renderTemplateFile,
+	createSkillNunjucksEnv,
 	resolveConfigPath
 } from '../templates';
 
@@ -15,14 +15,15 @@ export function buildCanonicalSkills(
 	context: RenderContext,
 	trace?: RenderTrace
 ): RenderContext['skills'] {
+	const skillEnv = createSkillNunjucksEnv(configRoot, context.profileDir, trace);
 	return manifest.skills.install.map((name) => {
 		const canonical = `global/skills/${name}/SKILL.md`;
 		const sourceTemplate = manifest.skills.overrides[name] ?? (fs.existsSync(path.join(configRoot, canonical)) ? canonical : `${canonical}.njk`);
-		const sourcePath = resolveConfigPath(configRoot, sourceTemplate, context as unknown as Record<string, unknown>);
+		const sourcePath = resolveConfigPath(configRoot, sourceTemplate, context as unknown as Record<string, unknown>, env);
 		if (!fs.existsSync(sourcePath)) {
 			throw new Error(`missing skill template for ${name}: ${sourcePath}`);
 		}
-		const renderedContent = renderTemplateFile(env, configRoot, sourceTemplate, context, trace);
+		const renderedContent = skillEnv.render(path.relative(configRoot, sourcePath), context);
 		assertNoUnexpandedTemplateVars(`skill ${name}`, renderedContent);
 		validateRenderedSkill(renderedContent, sourcePath);
 		return { name, sourcePath, renderedContent, description: extractSkillDescription(renderedContent) };

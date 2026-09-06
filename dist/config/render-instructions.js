@@ -11,7 +11,7 @@ const templates_1 = require("../templates");
 function buildCanonicalInstructions(env, configRoot, manifest, context, trace) {
     const sections = [(0, templates_1.renderTemplateFile)(env, configRoot, manifest.agent.base, context, trace)];
     for (const include of manifest.agent.includes) {
-        const includePath = (0, templates_1.resolveConfigPath)(configRoot, include, context);
+        const includePath = (0, templates_1.resolveConfigPath)(configRoot, include, context, env);
         if (!fs.existsSync(includePath)) {
             if (include.includes('AGENTS-MODS.md') || include.includes(constants_1.LOCAL_TEMPLATE_FILE_NAME)) {
                 continue;

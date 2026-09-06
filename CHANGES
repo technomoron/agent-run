@@ -1,6 +1,19 @@
 CHANGES
 =======
 
+Version 0.99.30 (2026-09-06)
+----------------------------
+* Add native Gemini CLI and Grok Build adapters alongside Codex and Claude
+  Code, with private runtimes, shared instructions, skills, and MCP servers.
+* Add `agent-run gemini`, `agent-run grok`, and a native capability matrix
+  through `agent-run status`.
+* Keep vendor configuration and launch options behind a common adapter
+  interface, with native arguments passed through to the selected CLI.
+* Add Gemini and Grok to the AI tools updater, use fixed `/usr/local` paths,
+  install pnpm last, and remove recurring command-shim deletion.
+* Update the starter configuration, documentation, and integration tests for
+  all four native agents.
+
 Version 0.99.29 (2026-09-04)
 ----------------------------
 * Add tracked per-profile project memory under `notes/memory`, while keeping

@@ -100,6 +100,11 @@ function mergeManifest(base, override, allowProfile, inferredProfile) {
         agent: { ...base.agent, ...override.agent },
         skills: mergeSkills(base.skills, override.skills),
         tools: { ...base.tools, ...override.tools },
+        mcp: {
+            ...base.mcp,
+            ...override.mcp,
+            servers: { ...base.mcp?.servers, ...override.mcp?.servers }
+        },
         guardrails: { ...base.guardrails, ...override.guardrails },
         paths: { ...base.paths, ...override.paths }
     };
@@ -151,8 +156,11 @@ function normalizeManifest(manifest, profile) {
         },
         tools: {
             codex: manifest.tools?.codex ?? true,
-            claude: manifest.tools?.claude ?? true
+            claude: manifest.tools?.claude ?? true,
+            gemini: manifest.tools?.gemini ?? true,
+            grok: manifest.tools?.grok ?? true
         },
+        mcpServers: normalizeMcpServers(manifest.mcp?.servers ?? {}),
         checks: manifest.checks ?? fallback.checks ?? [],
         guardrails: {
             blockGitWrite: manifest.guardrails?.blockGitWrite ?? true,
@@ -169,6 +177,34 @@ function normalizeManifest(manifest, profile) {
             projectMemoryDir: paths.projectMemoryDir ?? fallbackPaths.projectMemoryDir ?? '{{ profileDir }}/notes/memory'
         }
     };
+}
+function normalizeMcpServers(servers) {
+    const normalized = {};
+    for (const [name, server] of Object.entries(servers ?? {})) {
+        if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+            throw new Error(`invalid MCP server name: ${name}`);
+        }
+        const transport = server.transport ?? (server.command ? 'stdio' : 'http');
+        if (transport === 'stdio') {
+            if (!server.command?.trim() || server.url !== undefined) {
+                throw new Error(`MCP server ${name} must set command and must not set url for stdio transport`);
+            }
+        }
+        else if (!server.url?.trim() || server.command !== undefined) {
+            throw new Error(`MCP server ${name} must set url and must not set command for ${transport} transport`);
+        }
+        normalized[name] = {
+            transport,
+            ...(server.command ? { command: server.command } : {}),
+            args: server.args ?? [],
+            ...(server.cwd ? { cwd: server.cwd } : {}),
+            env: server.env ?? {},
+            ...(server.url ? { url: server.url } : {}),
+            headers: server.headers ?? {},
+            enabled: server.enabled ?? true
+        };
+    }
+    return normalized;
 }
 function normalizeInstalledSkills(names) {
     return [...new Set(names.map(normalizeSkillName))];

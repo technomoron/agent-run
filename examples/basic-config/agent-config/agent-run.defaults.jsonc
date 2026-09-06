@@ -17,7 +17,12 @@
   },
   "tools": {
     "codex": true,
-    "claude": true
+    "claude": true,
+    "gemini": true,
+    "grok": true
+  },
+  "mcp": {
+    "servers": {}
   },
   "checks": [
     "agent-run check .",

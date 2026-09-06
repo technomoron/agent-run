@@ -65,7 +65,7 @@ Example:
           README.md      # durable project memory, normally tracked
       live/
         CLAUDE.md
-        .claude/
+        .claude/         # Claude settings, MCP, and skills
         bin/
         memories/
           codex-home/
@@ -73,6 +73,14 @@ Example:
             config.toml
             memories/    # native Codex memory, local generated state
             skills/
+        gemini/
+          AGENTS.md
+          settings.json
+          home/          # private Gemini state and generated skills
+        grok/
+          AGENTS.md
+          config.toml
+          skills/
 ~/source/org/my-api/
 ```
 
@@ -96,10 +104,37 @@ the agent config tree.
 - `live/memories/codex-home/config.toml`: generated Codex config
 - `live/memories/codex-home/skills/`: generated Codex skills
 - `live/CLAUDE.md`: generated Claude instructions
-- `live/.claude/`: generated Claude settings and local plugin skills
+- `live/.claude/`: generated Claude settings, MCP configuration, and local
+  plugin skills
+- `live/gemini/`: generated Gemini instructions, settings, skills, and private
+  runtime state
+- `live/grok/`: generated Grok instructions, configuration, skills, and private
+  runtime state
 
 Edit only the root defaults and profile overrides that differ. `agent-run` keeps
 generated files in sync.
+
+## Native Agent Adapters
+
+Each supported CLI is isolated behind an adapter in `src/agents/`. The shared
+flow is:
+
+```text
+profile and templates
+        ↓
+canonical instructions, skills, and MCP servers
+        ↓
+Codex | Claude | Gemini | Grok adapter
+        ↓
+private generated runtime
+        ↓
+native vendor CLI in the real project directory
+```
+
+Codex, Gemini, and Grok receive the same generated `AGENTS.md` content. Claude
+receives a thin `CLAUDE.md` serialization of those same canonical instruction
+sections. Vendor-specific paths, settings formats, environment variables, and
+launch flags stay inside the matching adapter.
 
 ## Manifest Defaults
 
@@ -119,6 +154,48 @@ A profile with no differences from the root defaults needs only this marker:
 ```json
 {}
 ```
+
+Enable or disable native agents under `tools`:
+
+```json
+{
+  "tools": {
+    "codex": true,
+    "claude": true,
+    "gemini": true,
+    "grok": true
+  }
+}
+```
+
+MCP servers have one canonical manifest representation. A server uses either a
+local command or a remote URL:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "local-tools": {
+        "command": "node",
+        "args": ["/opt/team-mcp/server.js"],
+        "env": {
+          "TEAM": "docs"
+        }
+      },
+      "remote-tools": {
+        "transport": "http",
+        "url": "https://mcp.example.com/mcp",
+        "enabled": true
+      }
+    }
+  }
+}
+```
+
+`transport` may be `stdio`, `http`, or `sse`; it is inferred as `stdio` when
+`command` is present and `http` otherwise. The adapters serialize enabled
+servers into each CLI's native MCP format. Disabled servers remain disabled in
+Codex and Grok and are omitted from Claude and Gemini.
 
 `local.md.njk` and `overrides/` are not created unless they contain actual
 profile-specific configuration.
@@ -178,11 +255,11 @@ Global flag:
 - `-v`, `--verbose`: print path resolution, file creation, include expansion,
   generated file writes, and spawned commands
 
-`agent-run codex --help` and `agent-run claude --help` still pass `--help`
-through to the underlying tool.
+`agent-run codex --help`, `agent-run claude --help`, `agent-run gemini --help`,
+and `agent-run grok --help` pass `--help` through to the underlying tool.
 
-For `codex` and `claude`, use `--generate` to generate profile files without
-launching the underlying tool.
+For any native agent command, use `--generate` to generate profile files
+without launching the underlying tool.
 
 Codex defaults to `-a on-request -s workspace-write`. `agent-run` sets
 `CODEX_HOME` under the private agent directory, where Codex discovers the
@@ -222,17 +299,38 @@ replace the user's normal `CLAUDE_CONFIG_DIR`. If Claude writes remembered
 permissions to `.claude/settings.local.json`, `agent-run` removes that file
 after the session unless `--local` was used.
 
-`--yolo` runs either tool unattended, with no approval prompts: Codex with
-`-a never -s danger-full-access`, Claude with `--dangerously-skip-permissions`.
+Gemini runs from the real project directory with a private
+`GEMINI_CLI_HOME`. Its generated system settings configure `AGENTS.md` as the
+context filename and add the private runtime plus project memory as context
+directories. Generated skills use Gemini's `.agents/skills` alias. Existing
+Gemini user settings, login credentials, commands, and user skills are linked
+into the private home when present; generated system settings remain the
+highest-priority project layer.
+
+Grok runs from the real project directory with `GROK_HOME` set to
+`live/grok/`. Grok natively reads the generated home-level `AGENTS.md`,
+`config.toml`, and `skills/`. Existing Grok login and MCP OAuth credential
+files are linked into the private runtime when present.
+
+`--yolo` runs the selected tool unattended, with no approval prompts: Codex
+with `-a never -s danger-full-access`, Claude with
+`--dangerously-skip-permissions`, Gemini with `--yolo`, and Grok with
+`--always-approve`.
 Only use it when the agent may change or delete anything it can reach. Claude
 refuses `--dangerously-skip-permissions` when it runs as root, so run it as a
-normal user. `--sandboxed` and `--network` stay Codex-only because Claude has no
-matching sandbox.
+normal user. `--sandboxed` selects the native workspace sandbox for Codex,
+Gemini, or Grok. `--network` remains Codex-only.
 
-By default, `agent-run codex` and `agent-run claude` fail when local AI files
-such as `AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.agents`,
-`.claude`, or `.codex` are present inside the project repository. Use `--local`
-to warn and continue for a specific invocation.
+By default, all four native agent commands fail when local AI files such as
+`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json`, `.agents`, `.claude`,
+`.codex`, `.gemini`, or `.grok` are present inside the project repository. Use
+`--local` to warn and continue for a specific invocation.
+
+Show the native capability matrix:
+
+```sh
+agent-run status
+```
 
 Initialize mapped files for the current repo:
 
@@ -278,6 +376,8 @@ You can also generate from a tool command and stop before launch:
 ```sh
 agent-run codex --generate
 agent-run claude --generate
+agent-run gemini --generate
+agent-run grok --generate
 ```
 
 This reads the root defaults, sparse profile manifest, and Nunjucks templates,
@@ -288,12 +388,16 @@ then rewrites generated files:
 - `live/memories/codex-home/config.toml`
 - `live/memories/codex-home/skills/**`
 - `live/.claude/**`
+- `live/gemini/**`
+- `live/grok/**`
 - `live/bin/**`
 
 Per-profile override templates can be placed in:
 
 - `overrides/codex-config.toml.njk`
 - `overrides/claude-settings.json.njk`
+- `overrides/gemini-settings.json.njk`
+- `overrides/grok-config.toml.njk`
 
 ## Default Config Tree
 
@@ -336,8 +440,9 @@ This reports:
 
 - local AI files accidentally present in the source repo
 - missing mapped files
-- stale generated Codex instructions or config
-- invalid `CLAUDE.md`
+- stale generated instructions, settings, MCP configuration, or skills for any
+  enabled native agent
+- invalid generated JSON or skill metadata
 - profile resolution problems
 
 Check every repo under a source tree:
@@ -372,13 +477,19 @@ sudo scripts/install-systemd-jobs.sh --ai-tools
 ```
 
 This installs and enables `ai-tools-update.timer`, which runs hourly. The
-package list is configurable through systemd environment overrides:
+updater uses `/usr/local/bin/npm`, `/usr/local/bin/node`, and
+`/usr/local/bin/pnpm`, keeps global Node packages under `/usr/local`, and does
+not delete command shims during recurring runs. It updates this fixed list of
+Node packages with npm:
 
 ```text
-AI_TOOLS_NPM_PACKAGES="npm@latest pnpm@latest corepack@latest fallow@latest ripgrep@latest pm2@latest tsx@latest typescript@latest @openai/codex@latest @anthropic-ai/claude-code@latest @technomoron/agent-run@latest"
-AI_TOOLS_PNPM_PACKAGE="pnpm@latest"
-AI_TOOLS_APT_PACKAGES="gh"
+npm, pnpm, corepack, fallow, ripgrep, pm2, tsx, typescript,
+@openai/codex, @anthropic-ai/claude-code, @google/gemini-cli,
+@xai-official/grok, and @technomoron/agent-run
 ```
+
+The optional apt package list still defaults to `gh` and can be changed with
+`AI_TOOLS_APT_PACKAGES`.
 
 ## Login Warning
 

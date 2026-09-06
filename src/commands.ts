@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { getAgentAdapter, listAgentAdapters } from './agents/registry';
 import { checkProject, checkSourceTree, hasErrors, printBatchReport, printProjectReport } from './checks';
 import { parseInvocation } from './cli';
 import {
@@ -37,10 +38,11 @@ import {
 	RenderTrace,
 	RunCommand,
 	SetupCommand,
+	StatusCommand,
 	ToolName,
 	UpdateCommand
 } from './model';
-import { execTool, findRealBinary, openEditor } from './process';
+import { findRealBinary, openEditor } from './process';
 import {
 	defaultConfigRoot,
 	failForLocalAiFiles,
@@ -55,7 +57,7 @@ import {
 	warnForLocalAiFiles
 } from './project';
 import { renderProfile, syncAgentProfile } from './renderer';
-import { getDangerArgs, getPermissionArgs, runClaude, runCodex } from './tools';
+import { spawnAgent } from './runtime/spawn-agent';
 import { fail, formatCommand, formatPathList, uniqueSorted, verbose } from './utils';
 
 export function main(invokedTool: string, argv: string[]): void {
@@ -66,6 +68,9 @@ function dispatch(command: ParsedInvocation): void {
 	switch (command.command) {
 		case 'check':
 			runCheck(command);
+			return;
+		case 'status':
+			runStatus(command);
 			return;
 		case 'init':
 			runGenerate(command);
@@ -92,13 +97,18 @@ function dispatch(command: ParsedInvocation): void {
 
 function runTool(parsed: RunCommand): void {
 	const { args, command, wrapperArgs } = parsed;
+	const adapter = getAgentAdapter(command);
 	const projectRoot = findProjectRoot(process.cwd());
 	verbose(`run ${command}: cwd=${process.cwd()} projectRoot=${projectRoot}`);
 	validateRunModes(parsed, projectRoot);
 	if (wrapperArgs.none || isIgnoredDir(projectRoot)) {
 		verbose(`wrapper bypassed for ${command}${wrapperArgs.none ? ' via --none' : ' because project is ignored'}`);
-		const runtimeArgs = wrapperArgs.sandboxMode === 'danger' ? getDangerArgs(command) : getPermissionArgs(command);
-		execTool(findRealBinary(command), [...runtimeArgs, ...args]);
+		spawnAgent({
+			command: findRealBinary(command),
+			args: [...adapter.bypassArgs(wrapperArgs), ...args],
+			cwd: process.cwd(),
+			env: { ...process.env }
+		});
 		return;
 	}
 
@@ -131,13 +141,32 @@ function runTool(parsed: RunCommand): void {
 
 	checkLocalAiFiles(command, projectRoot, agentDir, preview.context, wrapperArgs.local);
 	const realBinary = findRealBinary(command);
-	const permissionArgs = getPermissionArgs(command);
 	const rendered = syncAgentProfile(projectRoot, agentDir);
-	if (command === 'codex') {
-		runCodex(realBinary, permissionArgs, rendered.context, args, wrapperArgs);
-	} else {
-		runClaude(realBinary, permissionArgs, rendered.context, args, wrapperArgs);
+	const runtime = rendered.runtimes[command];
+	if (!runtime) {
+		fail(`no generated ${command} runtime found for profile ${rendered.profile}`);
 	}
+	spawnAgent(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
+}
+
+function runStatus(_parsed: StatusCommand): void {
+	const adapters = listAgentAdapters();
+	const columns = adapters.map((adapter) => adapter.displayName);
+	const capabilityRows = [
+		['Instructions', 'instructions'],
+		['Skills', 'skills'],
+		['MCP', 'mcp'],
+		['Hooks', 'hooks'],
+		['Subagents', 'subagents'],
+		['Headless', 'headless']
+	] as const;
+	const firstWidth = Math.max(...capabilityRows.map(([label]) => label.length));
+	const widths = columns.map((label) => Math.max(label.length, 3));
+	const header = `${''.padEnd(firstWidth)}  ${columns.map((label, index) => label.padStart(widths[index] ?? 3)).join('  ')}`;
+	const rows = capabilityRows.map(([label, capability]) =>
+		`${label.padEnd(firstWidth)}  ${adapters.map((adapter, index) => (adapter.capabilities[capability] ? 'yes' : '-').padStart(widths[index] ?? 3)).join('  ')}`
+	);
+	process.stdout.write(['Native agent capabilities', '', header, ...rows, ''].join('\n'));
 }
 
 function validateRunModes(parsed: RunCommand, projectRoot: string): void {

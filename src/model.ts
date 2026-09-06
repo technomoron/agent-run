@@ -1,5 +1,7 @@
-export type ToolName = 'codex' | 'claude';
-export type CommandName = ToolName | 'check' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
+import type { AgentId, AgentRuntime } from './agents/types';
+
+export type ToolName = AgentId;
+export type CommandName = ToolName | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
 export type SandboxMode = 'danger' | 'sandboxed';
 
 export type WrapperArgs = {
@@ -22,6 +24,10 @@ export type CheckCommand = {
 	all: boolean;
 	command: 'check';
 	targetPath: string;
+};
+
+export type StatusCommand = {
+	command: 'status';
 };
 
 export type InitCommand = {
@@ -59,6 +65,7 @@ export type MigrateConfigCommand = {
 export type ParsedInvocation =
 	| RunCommand
 	| CheckCommand
+	| StatusCommand
 	| InitCommand
 	| GenerateCommand
 	| SetupCommand
@@ -89,6 +96,11 @@ export type AgentRunManifest = {
 	tools?: {
 		codex?: boolean;
 		claude?: boolean;
+		gemini?: boolean;
+		grok?: boolean;
+	};
+	mcp?: {
+		servers?: Record<string, McpServerConfig>;
 	};
 	checks?: string[];
 	guardrails?: {
@@ -107,6 +119,28 @@ export type AgentRunManifest = {
 	};
 };
 
+export type McpServerConfig = {
+	transport?: 'stdio' | 'http' | 'sse';
+	command?: string;
+	args?: string[];
+	cwd?: string;
+	env?: Record<string, string>;
+	url?: string;
+	headers?: Record<string, string>;
+	enabled?: boolean;
+};
+
+export type NormalizedMcpServer = {
+	transport: 'stdio' | 'http' | 'sse';
+	command?: string;
+	args: string[];
+	cwd?: string;
+	env: Record<string, string>;
+	url?: string;
+	headers: Record<string, string>;
+	enabled: boolean;
+};
+
 export type NormalizedManifest = {
 	profile: string;
 	kind: string;
@@ -121,7 +155,10 @@ export type NormalizedManifest = {
 	tools: {
 		codex: boolean;
 		claude: boolean;
+		gemini: boolean;
+		grok: boolean;
 	};
+	mcpServers: Record<string, NormalizedMcpServer>;
 	checks: string[];
 	guardrails: {
 		blockGitWrite: boolean;
@@ -149,6 +186,7 @@ export type RenderContext = {
 	date: string;
 	checks: string[];
 	tools: NormalizedManifest['tools'];
+	mcpServers: NormalizedManifest['mcpServers'];
 	guardrails: NormalizedManifest['guardrails'];
 	permissionsAllow: string[];
 	paths: {
@@ -166,6 +204,11 @@ export type RenderContext = {
 		overridesDir: string;
 		codexSkillsDir: string;
 		claudeSkillsDir: string;
+		geminiRuntimeDir: string;
+		geminiHomeDir: string;
+		geminiSkillsDir: string;
+		grokRuntimeDir: string;
+		grokSkillsDir: string;
 		binDir: string;
 	};
 	skills: Array<{
@@ -186,6 +229,7 @@ export type RenderedProfile = {
 	context: RenderContext;
 	files: RenderedFile[];
 	skills: RenderContext['skills'];
+	runtimes: Partial<Record<ToolName, AgentRuntime>>;
 };
 
 export type RenderTrace = {

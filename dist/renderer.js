@@ -4,8 +4,10 @@ exports.renderProfile = renderProfile;
 exports.syncAgentProfile = syncAgentProfile;
 exports.checkRenderedProfile = checkRenderedProfile;
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
+const registry_1 = require("./agents/registry");
+const render_instructions_1 = require("./config/render-instructions");
+const render_skills_1 = require("./config/render-skills");
 const constants_1 = require("./constants");
 const config_tree_1 = require("./config-tree");
 const defaults_1 = require("./defaults");
@@ -24,10 +26,32 @@ function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = nu
         (0, config_tree_1.ensureConfigRootGitignore)(configRoot);
     }
     const context = (0, templates_1.buildRenderContext)(projectRoot, agentDir, configRoot, manifest, env);
-    context.renderedAgentSections = renderAgentSections(env, configRoot, manifest, context, trace);
-    context.skills = renderSkills(env, configRoot, manifest, context, trace);
-    const files = renderProfileFiles(env, configRoot, context, targetTool, trace);
-    return { agentDir, configRoot, profile, context, files, skills: context.skills };
+    const canonicalInstructions = (0, render_instructions_1.buildCanonicalInstructions)(env, configRoot, manifest, context, trace);
+    context.renderedAgentSections = canonicalInstructions.sections;
+    context.skills = (0, render_skills_1.buildCanonicalSkills)(env, configRoot, manifest, context, trace);
+    const adapters = (0, registry_1.enabledAgentAdapters)(context).filter((adapter) => targetTool === null || adapter.id === targetTool);
+    const agentsMd = adapters.some((adapter) => adapter.id !== 'claude')
+        ? (0, render_instructions_1.writeAgentsMd)(env, configRoot, context, trace)
+        : '';
+    const claudeMd = adapters.some((adapter) => adapter.id === 'claude')
+        ? (0, render_instructions_1.writeClaudeMd)(env, configRoot, context, trace)
+        : '';
+    const runtimes = {};
+    for (const adapter of adapters) {
+        runtimes[adapter.id] = adapter.generate({
+            context,
+            configRoot,
+            env,
+            trace,
+            agentsMd,
+            claudeMd
+        });
+    }
+    const files = [
+        ...Object.values(runtimes).flatMap((runtime) => runtime?.files ?? []),
+        ...(0, guards_1.renderGuardShims)(context)
+    ];
+    return { agentDir, configRoot, profile, context, files, skills: context.skills, runtimes };
 }
 function validateManifestProfile(manifestProfile, inferredProfile, agentDir) {
     if (manifestProfile === inferredProfile) {
@@ -39,70 +63,9 @@ function validateManifestProfile(manifestProfile, inferredProfile, agentDir) {
     }
     throw new Error(`${path.join(agentDir, constants_1.MANIFEST_FILE_NAME)} profile must match inferred profile ${inferredProfile}`);
 }
-function renderAgentSections(env, configRoot, manifest, context, trace) {
-    const sections = [(0, templates_1.renderTemplateFile)(env, configRoot, manifest.agent.base, context, trace)];
-    for (const include of manifest.agent.includes) {
-        const includePath = (0, templates_1.resolveConfigPath)(configRoot, include, context);
-        if (!fs.existsSync(includePath)) {
-            if (include.includes('AGENTS-MODS.md') || include.includes(constants_1.LOCAL_TEMPLATE_FILE_NAME)) {
-                continue;
-            }
-            throw new Error(`missing template: ${includePath}`);
-        }
-        sections.push((0, templates_1.renderTemplateFile)(env, configRoot, include, context, trace));
-    }
-    const renderedSections = sections.map((section, index) => {
-        const label = index === 0 ? manifest.agent.base : manifest.agent.includes[index - 1] ?? `section ${index}`;
-        (0, templates_1.assertNoUnexpandedTemplateVars)(label, section);
-        return section.trimEnd();
-    });
-    renderedSections.push(projectMemoryInstructions(context));
-    return renderedSections;
-}
-function projectMemoryInstructions(context) {
-    return [
-        '## Project Memory',
-        '',
-        `Project memory is stored in ${context.paths.projectMemoryDir}.`,
-        'Read README.md there before starting work when prior project context may matter, then read only the linked files relevant to the task.',
-        'Do not store secrets, raw chat transcripts, or temporary task state there.',
-        'Update project memory only when the user explicitly asks you to remember or update something for this project.'
-    ].join('\n');
-}
-function renderProfileFiles(env, configRoot, context, targetTool, trace) {
-    const files = [];
-    if (context.tools.codex && (targetTool === null || targetTool === 'codex')) {
-        files.push({
-            path: path.join(context.paths.codexHomeDir, 'AGENTS.md'),
-            content: renderToolInstructions('AGENTS.md', env, configRoot, context, false, trace)
-        });
-        files.push({
-            path: path.join(context.paths.codexHomeDir, 'config.toml'),
-            content: renderCodexConfig(env, configRoot, context, trace)
-        });
-        files.push(...renderNativeSkillFiles(context, 'codex'));
-    }
-    if (context.tools.claude && (targetTool === null || targetTool === 'claude')) {
-        files.push({
-            path: path.join(context.paths.liveDir, 'CLAUDE.md'),
-            content: renderToolInstructions('CLAUDE.md', env, configRoot, context, true, trace)
-        });
-        files.push({
-            path: path.join(context.paths.liveDir, '.claude', 'agent-run-settings.json'),
-            content: renderClaudeSettings(env, configRoot, context, trace)
-        });
-        files.push({
-            path: path.join(context.paths.liveDir, '.claude', '.claude-plugin', 'plugin.json'),
-            content: claudePluginManifestContent(context)
-        });
-        files.push(...renderNativeSkillFiles(context, 'claude'));
-    }
-    files.push(...(0, guards_1.renderGuardShims)(context));
-    return files;
-}
 function syncAgentProfile(projectRoot, agentDir, options) {
     const rendered = renderProfile(projectRoot, agentDir, false, null, undefined, options);
-    syncRuntimeDirs(rendered.context);
+    syncRuntimeDirs(rendered);
     removeStaleGeneratedEntries(rendered);
     for (const file of rendered.files) {
         writeGeneratedFile(file.path, file.content, file.executable ?? false);
@@ -110,6 +73,33 @@ function syncAgentProfile(projectRoot, agentDir, options) {
     removeLegacyGeneratedCodexFiles(rendered.context);
     removeLegacyGeneratedClaudeSettings(rendered.context);
     return rendered;
+}
+function syncRuntimeDirs(rendered) {
+    const context = rendered.context;
+    const runtimeDirs = Object.values(rendered.runtimes).flatMap((runtime) => runtime?.requiredDirs ?? []);
+    for (const dir of [
+        context.paths.reviewDir,
+        context.paths.projectMemoryDir,
+        context.paths.memoriesDir,
+        context.paths.liveDir,
+        context.paths.binDir,
+        ...runtimeDirs
+    ]) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    const projectMemoryIndex = path.join(context.paths.projectMemoryDir, 'README.md');
+    if (!fs.existsSync(projectMemoryIndex)) {
+        fs.writeFileSync(projectMemoryIndex, (0, defaults_1.defaultProjectMemoryIndex)(), 'utf8');
+        (0, utils_1.verbose)(`created ${projectMemoryIndex}`);
+    }
+    migrateLiveReviewFiles(context);
+    removeLegacyCodexSkillDirs(context);
+    removeLegacyCodeReviewSkillDirs(context);
+    for (const runtime of Object.values(rendered.runtimes)) {
+        if (runtime) {
+            (0, registry_1.getAgentAdapter)(runtime.id).prepare?.(runtime);
+        }
+    }
 }
 function writeGeneratedFile(filePath, content, executable) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -128,24 +118,24 @@ function writeGeneratedFile(filePath, content, executable) {
 }
 function removeStaleGeneratedEntries(rendered) {
     const expectedFiles = new Set(rendered.files.map((file) => path.resolve(file.path)));
-    const context = rendered.context;
-    const generatedCandidates = [
-        path.join(context.paths.codexHomeDir, 'AGENTS.md'),
-        path.join(context.paths.codexHomeDir, 'config.toml'),
-        path.join(context.paths.liveDir, 'CLAUDE.md'),
-        path.join(context.paths.liveDir, '.claude', 'CLAUDE.md'),
-        path.join(context.paths.liveDir, '.claude', 'agent-run-settings.json'),
-        path.join(context.paths.liveDir, '.claude', '.claude-plugin', 'plugin.json'),
-        ...['git', 'git.cmd', 'npm', 'npm.cmd', 'pnpm', 'pnpm.cmd', 'gh', 'gh.cmd'].map((name) => path.join(context.paths.binDir, name))
-    ];
-    for (const filePath of generatedCandidates) {
+    for (const adapter of (0, registry_1.listAgentAdapters)()) {
+        const agentLayout = adapter.layout(rendered.context);
+        for (const filePath of [agentLayout.instructionFile, ...agentLayout.configFiles]) {
+            if (!expectedFiles.has(path.resolve(filePath))) {
+                fs.rmSync(filePath, { force: true });
+            }
+        }
+        const expectedSkills = rendered.context.tools[adapter.id]
+            ? new Set(rendered.skills.map((skill) => skill.name))
+            : new Set();
+        removeStaleGeneratedSkills(agentLayout.skillsDir, expectedSkills, agentLayout.preservedSkillNames ?? new Set());
+    }
+    for (const name of ['git', 'git.cmd', 'npm', 'npm.cmd', 'pnpm', 'pnpm.cmd', 'gh', 'gh.cmd']) {
+        const filePath = path.join(rendered.context.paths.binDir, name);
         if (!expectedFiles.has(path.resolve(filePath))) {
             fs.rmSync(filePath, { force: true });
         }
     }
-    const skillNames = new Set(rendered.skills.map((skill) => skill.name));
-    removeStaleGeneratedSkills(context.paths.codexSkillsDir, context.tools.codex ? skillNames : new Set(), new Set(['.system']));
-    removeStaleGeneratedSkills(context.paths.claudeSkillsDir, context.tools.claude ? skillNames : new Set());
 }
 function removeStaleGeneratedSkills(dir, expectedNames, preservedNames = new Set()) {
     if (!fs.existsSync(dir)) {
@@ -158,10 +148,7 @@ function removeStaleGeneratedSkills(dir, expectedNames, preservedNames = new Set
     }
 }
 function removeLegacyGeneratedCodexFiles(context) {
-    for (const legacyPath of [
-        path.join(context.paths.liveDir, 'AGENTS.md'),
-        path.join(context.paths.liveDir, 'config.toml')
-    ]) {
+    for (const legacyPath of [path.join(context.paths.liveDir, 'AGENTS.md'), path.join(context.paths.liveDir, 'config.toml')]) {
         if (fs.existsSync(legacyPath)) {
             fs.rmSync(legacyPath);
             (0, utils_1.verbose)(`removed legacy generated Codex file ${legacyPath}`);
@@ -193,9 +180,9 @@ function checkRenderedProfile(projectRoot, agentDir) {
     try {
         const rendered = renderProfile(projectRoot, agentDir, true);
         checkRenderedFiles(rendered, findings);
-        checkRuntimeDirectories(rendered.context, findings);
+        checkRuntimeDirectories(rendered, findings);
         for (const skill of rendered.skills) {
-            validateRenderedSkill(skill.renderedContent, skill.sourcePath);
+            (0, render_skills_1.validateRenderedSkill)(skill.renderedContent, skill.sourcePath);
         }
     }
     catch (error) {
@@ -219,16 +206,16 @@ function checkRenderedFiles(rendered, findings) {
         }
     }
 }
-function checkRuntimeDirectories(context, findings) {
+function checkRuntimeDirectories(rendered, findings) {
+    const context = rendered.context;
+    const runtimeDirs = Object.values(rendered.runtimes).flatMap((runtime) => runtime?.requiredDirs ?? []);
     for (const dir of [
         context.paths.reviewDir,
         context.paths.projectMemoryDir,
         context.paths.memoriesDir,
-        context.paths.codexHomeDir,
         context.paths.liveDir,
-        context.paths.codexSkillsDir,
-        context.paths.claudeSkillsDir,
-        context.paths.binDir
+        context.paths.binDir,
+        ...runtimeDirs
     ]) {
         if (!fs.existsSync(dir)) {
             findings.push({ message: `missing generated runtime directory: ${dir}`, severity: 'ERROR' });
@@ -248,133 +235,6 @@ function checkConfigGitignore(configRoot, findings) {
         }
     }
 }
-function renderSkills(env, configRoot, manifest, context, trace) {
-    return manifest.skills.install.map((name) => {
-        const sourceTemplate = manifest.skills.overrides[name] ?? `global/skills/${name}/SKILL.md.njk`;
-        const sourcePath = (0, templates_1.resolveConfigPath)(configRoot, sourceTemplate, context);
-        if (!fs.existsSync(sourcePath)) {
-            throw new Error(`missing skill template for ${name}: ${sourcePath}`);
-        }
-        const renderedContent = (0, templates_1.renderTemplateFile)(env, configRoot, sourceTemplate, context, trace);
-        (0, templates_1.assertNoUnexpandedTemplateVars)(`skill ${name}`, renderedContent);
-        validateRenderedSkill(renderedContent, sourcePath);
-        return { name, sourcePath, renderedContent, description: extractSkillDescription(renderedContent) };
-    });
-}
-function renderNativeSkillFiles(context, targetTool) {
-    const targetDir = targetTool === 'codex' ? context.paths.codexSkillsDir : context.paths.claudeSkillsDir;
-    return context.skills.map((skill) => ({
-        path: path.join(targetDir, skill.name, 'SKILL.md'),
-        content: skill.renderedContent
-    }));
-}
-function renderToolInstructions(templateName, env, configRoot, context, isClaude, trace) {
-    const templatePath = `global/tool-templates/${templateName}.njk`;
-    const content = fs.existsSync(path.join(configRoot, templatePath))
-        ? (0, templates_1.renderTemplateFile)(env, configRoot, templatePath, context, trace)
-        : env.renderString((0, defaults_1.defaultToolInstructionsTemplate)(isClaude), context);
-    (0, templates_1.assertNoUnexpandedTemplateVars)(templateName, content);
-    return content.replace(/\n*$/, '\n');
-}
-function renderCodexConfig(env, configRoot, context, trace) {
-    const templatePath = resolveProfileOverrideTemplate(configRoot, context, 'codex-config.toml.njk', 'global/tool-templates/codex-config.toml.njk');
-    const content = templatePath
-        ? (0, templates_1.renderTemplateFile)(env, configRoot, templatePath, context, trace)
-        : (0, defaults_1.defaultCodexConfigContent)(context);
-    (0, templates_1.assertNoUnexpandedTemplateVars)('config.toml', content);
-    return content.replace(/\n*$/, '\n');
-}
-function renderClaudeSettings(env, configRoot, context, trace) {
-    const templatePath = resolveProfileOverrideTemplate(configRoot, context, 'claude-settings.json.njk', 'global/tool-templates/claude-settings.json.njk');
-    const content = templatePath
-        ? (0, templates_1.renderTemplateFile)(env, configRoot, templatePath, context, trace)
-        : (0, defaults_1.defaultClaudeSettingsContent)(context);
-    (0, templates_1.assertNoUnexpandedTemplateVars)('claude settings.json', content);
-    try {
-        JSON.parse(content);
-    }
-    catch (error) {
-        throw new Error(`invalid generated Claude settings JSON: ${(0, utils_1.formatError)(error)}`);
-    }
-    return content.replace(/\n*$/, '\n');
-}
-function claudePluginManifestContent(context) {
-    return `${JSON.stringify({
-        name: 'agent-run-profile',
-        description: `Generated skills for agent-run profile ${context.profile}`,
-        version: '1.0.0',
-        author: { name: 'Technomoron' }
-    }, null, 2)}\n`;
-}
-function resolveProfileOverrideTemplate(configRoot, context, overrideFileName, globalTemplatePath) {
-    const overridePath = `${context.profile}/overrides/${overrideFileName}`;
-    if (fs.existsSync(path.join(configRoot, overridePath))) {
-        return overridePath;
-    }
-    return fs.existsSync(path.join(configRoot, globalTemplatePath)) ? globalTemplatePath : null;
-}
-function syncRuntimeDirs(context) {
-    for (const dir of [
-        context.paths.reviewDir,
-        context.paths.projectMemoryDir,
-        context.paths.memoriesDir,
-        context.paths.codexHomeDir,
-        context.paths.codexSkillsDir,
-        context.paths.claudeSkillsDir,
-        context.paths.binDir,
-        path.join(context.paths.liveDir, '.claude')
-    ]) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-    const projectMemoryIndex = path.join(context.paths.projectMemoryDir, 'README.md');
-    if (!fs.existsSync(projectMemoryIndex)) {
-        fs.writeFileSync(projectMemoryIndex, (0, defaults_1.defaultProjectMemoryIndex)(), 'utf8');
-        (0, utils_1.verbose)(`created ${projectMemoryIndex}`);
-    }
-    migrateLiveReviewFiles(context);
-    removeLegacyCodexSkillDirs(context);
-    removeLegacyCodeReviewSkillDirs(context);
-    ensureSharedCodexAuth(context.paths.codexHomeDir);
-}
-function ensureSharedCodexAuth(codexHomeDir) {
-    const sharedAuthPath = path.join(os.homedir(), '.codex', 'auth.json');
-    if (!fs.existsSync(sharedAuthPath)) {
-        return;
-    }
-    const profileAuthPath = path.join(codexHomeDir, 'auth.json');
-    if (path.resolve(profileAuthPath) === path.resolve(sharedAuthPath) || isSymlinkTo(profileAuthPath, sharedAuthPath)) {
-        return;
-    }
-    if (fs.existsSync(profileAuthPath) || (0, utils_1.isSymlink)(profileAuthPath)) {
-        const backupPath = (0, utils_1.nextBackupPath)(profileAuthPath);
-        fs.renameSync(profileAuthPath, backupPath);
-        (0, utils_1.verbose)(`backed up profile Codex auth ${profileAuthPath} -> ${backupPath}`);
-    }
-    fs.mkdirSync(path.dirname(profileAuthPath), { recursive: true });
-    try {
-        fs.symlinkSync(sharedAuthPath, profileAuthPath);
-        (0, utils_1.verbose)(`linked profile Codex auth ${profileAuthPath} -> ${sharedAuthPath}`);
-    }
-    catch (error) {
-        if (!constants_1.IS_WINDOWS) {
-            throw error;
-        }
-        fs.copyFileSync(sharedAuthPath, profileAuthPath);
-        (0, utils_1.verbose)(`copied shared Codex auth ${sharedAuthPath} -> ${profileAuthPath}`);
-    }
-}
-function isSymlinkTo(filePath, targetPath) {
-    try {
-        if (!fs.lstatSync(filePath).isSymbolicLink()) {
-            return false;
-        }
-        const linkTarget = fs.readlinkSync(filePath);
-        return path.resolve(path.dirname(filePath), linkTarget) === path.resolve(targetPath);
-    }
-    catch {
-        return false;
-    }
-}
 function removeLegacyCodexSkillDirs(context) {
     const legacyCodexDir = path.join(context.paths.liveDir, '.agents');
     if (!(0, utils_1.isSamePathOrDescendant)(context.paths.codexSkillsDir, legacyCodexDir)) {
@@ -387,8 +247,7 @@ function removeLegacyCodeReviewSkillDirs(context) {
     }
     for (const dir of [
         path.join(context.paths.liveDir, '.agents', 'skills', 'code-review'),
-        path.join(context.paths.codexSkillsDir, 'code-review'),
-        path.join(context.paths.claudeSkillsDir, 'code-review')
+        ...(0, registry_1.listAgentAdapters)().map((adapter) => path.join(adapter.layout(context).skillsDir, 'code-review'))
     ]) {
         fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -440,28 +299,4 @@ function moveFile(sourcePath, targetPath) {
         fs.copyFileSync(sourcePath, targetPath);
         fs.rmSync(sourcePath);
     }
-}
-function validateRenderedSkill(content, sourcePath) {
-    const frontMatter = /^---\n([\s\S]*?)\n---\n/.exec(content.replace(/\r\n/g, '\n'));
-    if (frontMatter === null) {
-        throw new Error(`generated skill missing YAML front matter: ${sourcePath}`);
-    }
-    const yaml = frontMatter[1] ?? '';
-    if (!/^name:\s*\S+/m.test(yaml)) {
-        throw new Error(`generated skill missing name: ${sourcePath}`);
-    }
-    if (!/^description:\s*(?:\S|>\s*$)/m.test(yaml)) {
-        throw new Error(`generated skill missing description: ${sourcePath}`);
-    }
-}
-function extractSkillDescription(content) {
-    const normalized = content.replace(/\r\n/g, '\n');
-    const simple = /^description:\s*['"]?(.+?)['"]?\s*$/m.exec(normalized);
-    if (simple?.[1]) {
-        return simple[1].trim();
-    }
-    const folded = /^description:\s*>\s*\n((?:[ \t]+.+\n?)+)/m.exec(normalized);
-    return folded?.[1]
-        ? folded[1].split('\n').map((line) => line.trim()).filter(Boolean).join(' ')
-        : '';
 }

@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.main = main;
 const fs = require("fs");
 const path = require("path");
+const registry_1 = require("./agents/registry");
 const checks_1 = require("./checks");
 const cli_1 = require("./cli");
 const config_tree_1 = require("./config-tree");
@@ -11,7 +12,7 @@ const manifest_1 = require("./manifest");
 const process_1 = require("./process");
 const project_1 = require("./project");
 const renderer_1 = require("./renderer");
-const tools_1 = require("./tools");
+const spawn_agent_1 = require("./runtime/spawn-agent");
 const utils_1 = require("./utils");
 function main(invokedTool, argv) {
     dispatch((0, cli_1.parseInvocation)(invokedTool, argv));
@@ -20,6 +21,9 @@ function dispatch(command) {
     switch (command.command) {
         case 'check':
             runCheck(command);
+            return;
+        case 'status':
+            runStatus(command);
             return;
         case 'init':
             runGenerate(command);
@@ -45,13 +49,18 @@ function dispatch(command) {
 }
 function runTool(parsed) {
     const { args, command, wrapperArgs } = parsed;
+    const adapter = (0, registry_1.getAgentAdapter)(command);
     const projectRoot = (0, project_1.findProjectRoot)(process.cwd());
     (0, utils_1.verbose)(`run ${command}: cwd=${process.cwd()} projectRoot=${projectRoot}`);
     validateRunModes(parsed, projectRoot);
     if (wrapperArgs.none || (0, project_1.isIgnoredDir)(projectRoot)) {
         (0, utils_1.verbose)(`wrapper bypassed for ${command}${wrapperArgs.none ? ' via --none' : ' because project is ignored'}`);
-        const runtimeArgs = wrapperArgs.sandboxMode === 'danger' ? (0, tools_1.getDangerArgs)(command) : (0, tools_1.getPermissionArgs)(command);
-        (0, process_1.execTool)((0, process_1.findRealBinary)(command), [...runtimeArgs, ...args]);
+        (0, spawn_agent_1.spawnAgent)({
+            command: (0, process_1.findRealBinary)(command),
+            args: [...adapter.bypassArgs(wrapperArgs), ...args],
+            cwd: process.cwd(),
+            env: { ...process.env }
+        });
         return;
     }
     const profileResult = (0, project_1.resolveProfileResult)(projectRoot);
@@ -82,14 +91,29 @@ function runTool(parsed) {
     }
     checkLocalAiFiles(command, projectRoot, agentDir, preview.context, wrapperArgs.local);
     const realBinary = (0, process_1.findRealBinary)(command);
-    const permissionArgs = (0, tools_1.getPermissionArgs)(command);
     const rendered = (0, renderer_1.syncAgentProfile)(projectRoot, agentDir);
-    if (command === 'codex') {
-        (0, tools_1.runCodex)(realBinary, permissionArgs, rendered.context, args, wrapperArgs);
+    const runtime = rendered.runtimes[command];
+    if (!runtime) {
+        (0, utils_1.fail)(`no generated ${command} runtime found for profile ${rendered.profile}`);
     }
-    else {
-        (0, tools_1.runClaude)(realBinary, permissionArgs, rendered.context, args, wrapperArgs);
-    }
+    (0, spawn_agent_1.spawnAgent)(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
+}
+function runStatus(_parsed) {
+    const adapters = (0, registry_1.listAgentAdapters)();
+    const columns = adapters.map((adapter) => adapter.displayName);
+    const capabilityRows = [
+        ['Instructions', 'instructions'],
+        ['Skills', 'skills'],
+        ['MCP', 'mcp'],
+        ['Hooks', 'hooks'],
+        ['Subagents', 'subagents'],
+        ['Headless', 'headless']
+    ];
+    const firstWidth = Math.max(...capabilityRows.map(([label]) => label.length));
+    const widths = columns.map((label) => Math.max(label.length, 3));
+    const header = `${''.padEnd(firstWidth)}  ${columns.map((label, index) => label.padStart(widths[index] ?? 3)).join('  ')}`;
+    const rows = capabilityRows.map(([label, capability]) => `${label.padEnd(firstWidth)}  ${adapters.map((adapter, index) => (adapter.capabilities[capability] ? 'yes' : '-').padStart(widths[index] ?? 3)).join('  ')}`);
+    process.stdout.write(['Native agent capabilities', '', header, ...rows, ''].join('\n'));
 }
 function validateRunModes(parsed, projectRoot) {
     const { command, wrapperArgs } = parsed;

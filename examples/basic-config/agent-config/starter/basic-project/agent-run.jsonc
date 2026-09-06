@@ -17,6 +17,26 @@
       "triage": "{{ profile }}/overrides/triage.SKILL.md.njk"
     }
   },
+  "mcp": {
+    "servers": {
+      "example-stdio": {
+        "command": "node",
+        "args": ["tools/example-mcp.js"],
+        "env": {
+          "EXAMPLE_TOKEN": "${EXAMPLE_TOKEN}"
+        },
+        "enabled": false
+      },
+      "example-http": {
+        "transport": "http",
+        "url": "https://example.invalid/mcp",
+        "headers": {
+          "Authorization": "Bearer ${EXAMPLE_TOKEN}"
+        },
+        "enabled": false
+      }
+    }
+  },
   "checks": [
     "agent-run check .",
     "pnpm test"

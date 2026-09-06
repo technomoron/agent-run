@@ -8,7 +8,7 @@ export const LIVE_DIR_NAME = 'live';
 export const CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
 export const CONFIG_DIR_ENV = 'AGENT_CONFIG_DIR';
 export const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
-export const PACKAGE_VERSION = '0.99.29';
+export const PACKAGE_VERSION = '0.99.30';
 export const UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 
 export const LOCAL_AI_FILE_NAMES = new Set([
@@ -17,11 +17,12 @@ export const LOCAL_AI_FILE_NAMES = new Set([
 	'AGENTS.override.md',
 	'CLAUDE.md',
 	'CLAUDE.local.md',
+	'GEMINI.md',
 	'.mcp.json',
 	'codex.md'
 ]);
 
-export const LOCAL_AI_DIRECTORY_NAMES = new Set(['.agents', '.claude', '.codex']);
+export const LOCAL_AI_DIRECTORY_NAMES = new Set(['.agents', '.claude', '.codex', '.gemini', '.grok']);
 
 export const GENERATED_GITIGNORE_ENTRIES = [
 	'# Generated agent-run live profiles',
@@ -56,6 +57,8 @@ export const REQUIRED_GLOBAL_TEMPLATES = [
 	'global/snippets/verification.md.njk',
 	'global/tool-templates/codex-config.toml.njk',
 	'global/tool-templates/claude-settings.json.njk',
+	'global/tool-templates/gemini-settings.json.njk',
+	'global/tool-templates/grok-config.toml.njk',
 	'global/skills/commit-workflow/SKILL.md.njk',
 	'global/skills/github-release/SKILL.md.njk',
 	'global/skills/release-package-check/SKILL.md.njk',

@@ -85,7 +85,27 @@ CODEX_HOME_DIR="$LIVE_DIR/memories/codex-home"
 CODEX_AGENTS_FILE="$CODEX_HOME_DIR/AGENTS.md"
 CODEX_CONFIG_FILE="$CODEX_HOME_DIR/config.toml"
 CODEX_SKILLS_DIR="$CODEX_HOME_DIR/skills"
+GEMINI_RUNTIME_DIR="$LIVE_DIR/gemini"
+GEMINI_HOME_DIR="$GEMINI_RUNTIME_DIR/home"
+GEMINI_AGENTS_FILE="$GEMINI_RUNTIME_DIR/AGENTS.md"
+GEMINI_SETTINGS_FILE="$GEMINI_RUNTIME_DIR/settings.json"
+GEMINI_SKILLS_DIR="$GEMINI_HOME_DIR/.agents/skills"
+GROK_RUNTIME_DIR="$LIVE_DIR/grok"
+GROK_AGENTS_FILE="$GROK_RUNTIME_DIR/AGENTS.md"
+GROK_CONFIG_FILE="$GROK_RUNTIME_DIR/config.toml"
+GROK_SKILLS_DIR="$GROK_RUNTIME_DIR/skills"
 BIN="$ROOT/dist/agent-run.js"
+
+# Keep packaged example MCP servers disabled, but enable one in this isolated
+# test tree so every adapter's active MCP serialization is exercised.
+node - "$AGENT_DIR/agent-run.jsonc" <<'NODE'
+const fs = require('node:fs');
+const file = process.argv[2];
+const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+manifest.mcp.servers['example-stdio'].enabled = true;
+fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+NODE
+
 EXPECTED_EXAMPLE="$EXAMPLE"
 EXPECTED_AGENT_DIR="$AGENT_DIR"
 EXPECTED_PROJECT="$PROJECT"
@@ -102,6 +122,15 @@ if command -v cygpath >/dev/null 2>&1; then
 	EXPECTED_CODEX_AGENTS_FILE="$EXPECTED_CODEX_HOME_DIR\\AGENTS.md"
 	EXPECTED_CODEX_CONFIG_FILE="$EXPECTED_CODEX_HOME_DIR\\config.toml"
 	EXPECTED_CODEX_SKILLS_DIR="$EXPECTED_CODEX_HOME_DIR\\skills"
+	EXPECTED_GEMINI_RUNTIME_DIR="$EXPECTED_LIVE_DIR\\gemini"
+	EXPECTED_GEMINI_HOME_DIR="$EXPECTED_GEMINI_RUNTIME_DIR\\home"
+	EXPECTED_GEMINI_AGENTS_FILE="$EXPECTED_GEMINI_RUNTIME_DIR\\AGENTS.md"
+	EXPECTED_GEMINI_SETTINGS_FILE="$EXPECTED_GEMINI_RUNTIME_DIR\\settings.json"
+	EXPECTED_GEMINI_SKILLS_DIR="$EXPECTED_GEMINI_HOME_DIR\\.agents\\skills"
+	EXPECTED_GROK_RUNTIME_DIR="$EXPECTED_LIVE_DIR\\grok"
+	EXPECTED_GROK_AGENTS_FILE="$EXPECTED_GROK_RUNTIME_DIR\\AGENTS.md"
+	EXPECTED_GROK_CONFIG_FILE="$EXPECTED_GROK_RUNTIME_DIR\\config.toml"
+	EXPECTED_GROK_SKILLS_DIR="$EXPECTED_GROK_RUNTIME_DIR\\skills"
 	EXPECTED_AGENT_CONFIG_FILE="$EXPECTED_AGENT_DIR\\agent-run.jsonc"
 	EXPECTED_ROOT_DEFAULTS_FILE="$EXPECTED_EXAMPLE\\agent-config\\agent-run.defaults.jsonc"
 	EXPECTED_LOCAL_FILE="$EXPECTED_AGENT_DIR\\local.md.njk"
@@ -116,6 +145,15 @@ else
 	EXPECTED_CODEX_AGENTS_FILE="$EXPECTED_CODEX_HOME_DIR/AGENTS.md"
 	EXPECTED_CODEX_CONFIG_FILE="$EXPECTED_CODEX_HOME_DIR/config.toml"
 	EXPECTED_CODEX_SKILLS_DIR="$EXPECTED_CODEX_HOME_DIR/skills"
+	EXPECTED_GEMINI_RUNTIME_DIR="$EXPECTED_LIVE_DIR/gemini"
+	EXPECTED_GEMINI_HOME_DIR="$EXPECTED_GEMINI_RUNTIME_DIR/home"
+	EXPECTED_GEMINI_AGENTS_FILE="$EXPECTED_GEMINI_RUNTIME_DIR/AGENTS.md"
+	EXPECTED_GEMINI_SETTINGS_FILE="$EXPECTED_GEMINI_RUNTIME_DIR/settings.json"
+	EXPECTED_GEMINI_SKILLS_DIR="$EXPECTED_GEMINI_HOME_DIR/.agents/skills"
+	EXPECTED_GROK_RUNTIME_DIR="$EXPECTED_LIVE_DIR/grok"
+	EXPECTED_GROK_AGENTS_FILE="$EXPECTED_GROK_RUNTIME_DIR/AGENTS.md"
+	EXPECTED_GROK_CONFIG_FILE="$EXPECTED_GROK_RUNTIME_DIR/config.toml"
+	EXPECTED_GROK_SKILLS_DIR="$EXPECTED_GROK_RUNTIME_DIR/skills"
 	EXPECTED_AGENT_CONFIG_FILE="$EXPECTED_AGENT_DIR/agent-run.jsonc"
 	EXPECTED_ROOT_DEFAULTS_FILE="$EXPECTED_EXAMPLE/agent-config/agent-run.defaults.jsonc"
 	EXPECTED_LOCAL_FILE="$EXPECTED_AGENT_DIR/local.md.njk"
@@ -132,6 +170,13 @@ assert_contains "$TMP_DIR/version.out" "agent-run $PACKAGE_VERSION"
 node "$BIN" --help >"$TMP_DIR/help.out"
 assert_contains "$TMP_DIR/help.out" "agent-run $PACKAGE_VERSION"
 assert_contains "$TMP_DIR/help.out" "-V, --version"
+assert_contains "$TMP_DIR/help.out" "gemini"
+assert_contains "$TMP_DIR/help.out" "grok"
+node "$BIN" status >"$TMP_DIR/status.out"
+assert_contains "$TMP_DIR/status.out" "Native agent capabilities"
+assert_contains "$TMP_DIR/status.out" "Codex"
+assert_contains "$TMP_DIR/status.out" "Gemini"
+assert_contains "$TMP_DIR/status.out" "Grok"
 node "$BIN" migrate-config --help >"$TMP_DIR/migrate-help.out"
 assert_contains "$TMP_DIR/migrate-help.out" "migrate-config [--yes] [config-root]"
 
@@ -144,11 +189,17 @@ assert_contains "$ROOT/ops/systemd/ai-tools-update.service" "ExecStart=/usr/loca
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "/etc/environment"
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "/etc/npmrc"
 assert_not_contains "$ROOT/ops/systemd/ai-tools-update.service" "rm -"
-assert_contains "$ROOT/scripts/update-ai-tools.sh" "AI_TOOLS_PNPM_PACKAGE"
-assert_contains "$ROOT/scripts/update-ai-tools.sh" "install -g --force \"\${pnpm_packages[@]}\""
-assert_contains "$ROOT/scripts/update-ai-tools.sh" 'AI_TOOLS_NPM_BIN:-/usr/bin/npm'
-assert_contains "$ROOT/scripts/update-ai-tools.sh" 'AI_TOOLS_NODE_BIN:-/usr/bin/node'
-assert_contains "$ROOT/scripts/update-ai-tools.sh" 'AI_TOOLS_CLEAN_BINS:-agent-run claude codex'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'install -g --force "${packages[@]}"'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'install -g --force pnpm@latest'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'NPM_BIN=/usr/local/bin/npm'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'NODE_BIN=/usr/local/bin/node'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'PNPM_BIN=/usr/local/bin/pnpm'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'global-dir /usr/local/share/pnpm/global'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'global-bin-dir /usr/local/bin'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" 'store-dir /usr/local/share/pnpm/store'
+assert_not_contains "$ROOT/scripts/update-ai-tools.sh" 'clean_tool_bins'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" '@google/gemini-cli@latest'
+assert_contains "$ROOT/scripts/update-ai-tools.sh" '@xai-official/grok@latest'
 "$ROOT/scripts/install-systemd-jobs.sh" --dry-run --ai-tools >"$TMP_DIR/install-ai-tools.out"
 assert_contains "$TMP_DIR/install-ai-tools.out" "ai-tools-update.timer"
 
@@ -202,6 +253,8 @@ assert_contains "$TMP_DIR/setup.out" "OK installed default config tree at $SKELE
 assert_file "$SKELETON_INIT/.gitignore"
 assert_file "$SKELETON_INIT/agent-run.defaults.jsonc"
 assert_file "$SKELETON_INIT/global/agents/code.md.njk"
+assert_file "$SKELETON_INIT/global/tool-templates/gemini-settings.json.njk"
+assert_file "$SKELETON_INIT/global/tool-templates/grok-config.toml.njk"
 assert_file "$SKELETON_INIT/global/tool-templates/AGENTS.md.njk"
 assert_file "$SKELETON_INIT/global/skills/triage/SKILL.md.njk"
 assert_executable "$SKELETON_INIT/install-systemd-jobs.sh"
@@ -307,6 +360,8 @@ assert_contains "$DEFAULT_AGENT_DIR/agent-run.jsonc" "{}"
 assert_no_file "$DEFAULT_AGENT_DIR/local.md.njk"
 assert_no_dir "$DEFAULT_AGENT_DIR/overrides"
 assert_file "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
+assert_file "$DEFAULT_AGENT_DIR/live/gemini/AGENTS.md"
+assert_file "$DEFAULT_AGENT_DIR/live/grok/AGENTS.md"
 assert_file "$DEFAULT_AGENT_DIR/notes/memory/README.md"
 assert_no_dir "$DEFAULT_CODE_ROOT/agent-config"
 rm "$DEFAULT_AGENT_DIR/live/memories/codex-home/AGENTS.md"
@@ -321,6 +376,8 @@ HOME="$DEFAULT_HOME" USERPROFILE="$DEFAULT_HOME" node "$BIN" generate "$PLAIN_PR
 assert_contains "$TMP_DIR/plain-project-init.out" "OK profile plain-owner/plain-project"
 assert_file "$PLAIN_AGENT_DIR/agent-run.jsonc"
 assert_file "$PLAIN_AGENT_DIR/live/memories/codex-home/AGENTS.md"
+assert_file "$PLAIN_AGENT_DIR/live/gemini/AGENTS.md"
+assert_file "$PLAIN_AGENT_DIR/live/grok/AGENTS.md"
 
 UNCONFIGURED_PROJECT="$DEFAULT_CODE_ROOT/acme/unconfigured"
 UNCONFIGURED_AGENT_DIR="$DEFAULT_CONFIG_ROOT/acme/unconfigured"
@@ -356,6 +413,7 @@ CONFIG_MTIME_AFTER="$(node -p "require('node:fs').statSync(process.argv[1]).mtim
 
 assert_file "$CODEX_AGENTS_FILE"
 assert_file "$LIVE_DIR/CLAUDE.md"
+assert_file "$LIVE_DIR/.claude/mcp.json"
 assert_no_file "$LIVE_DIR/.claude/CLAUDE.md"
 assert_file "$CODEX_CONFIG_FILE"
 assert_contains "$CODEX_CONFIG_FILE" 'approval_policy = "on-request"'
@@ -368,6 +426,20 @@ assert_contains "$LIVE_DIR/.claude/.claude-plugin/plugin.json" '"name": "agent-r
 assert_contains "$LIVE_DIR/.claude/.claude-plugin/plugin.json" '"author": {'
 assert_file "$CODEX_SKILLS_DIR/triage/SKILL.md"
 assert_file "$LIVE_DIR/.claude/skills/triage/SKILL.md"
+assert_file "$GEMINI_AGENTS_FILE"
+assert_file "$GEMINI_SETTINGS_FILE"
+assert_file "$GEMINI_SKILLS_DIR/triage/SKILL.md"
+assert_file "$GROK_AGENTS_FILE"
+assert_file "$GROK_CONFIG_FILE"
+assert_file "$GROK_SKILLS_DIR/triage/SKILL.md"
+cmp -s "$CODEX_AGENTS_FILE" "$GEMINI_AGENTS_FILE" || fail "expected Gemini to use canonical AGENTS.md content"
+cmp -s "$CODEX_AGENTS_FILE" "$GROK_AGENTS_FILE" || fail "expected Grok to use canonical AGENTS.md content"
+assert_contains "$CODEX_CONFIG_FILE" '[mcp_servers.example-stdio]'
+assert_contains "$LIVE_DIR/.claude/mcp.json" '"example-stdio"'
+assert_contains "$GEMINI_SETTINGS_FILE" '"example-stdio"'
+assert_contains "$GROK_CONFIG_FILE" '[mcp_servers.example-stdio]'
+assert_contains "$GEMINI_SETTINGS_FILE" '"fileName": ['
+assert_contains "$GEMINI_SETTINGS_FILE" '"AGENTS.md"'
 assert_dir "$AGENT_DIR/reviews"
 assert_file "$AGENT_DIR/notes/memory/README.md"
 assert_dir "$LIVE_DIR/memories"
@@ -376,8 +448,12 @@ assert_dir "$AGENT_DIR/overrides"
 assert_dir "$LIVE_DIR/bin"
 
 TEST_HOME="$TMP_DIR/home"
-mkdir -p "$TEST_HOME/.codex"
+mkdir -p "$TEST_HOME/.codex" "$TEST_HOME/.gemini/skills/personal" "$TEST_HOME/.grok"
 printf '{"token":"shared"}\n' >"$TEST_HOME/.codex/auth.json"
+printf '{"refresh_token":"shared"}\n' >"$TEST_HOME/.gemini/oauth_creds.json"
+printf '%s\n' '{}' >"$TEST_HOME/.gemini/settings.json"
+printf '%s\n' '{"token":"shared"}' >"$TEST_HOME/.grok/auth.json"
+printf '%s\n' '---' 'name: personal' 'description: Personal test skill.' '---' >"$TEST_HOME/.gemini/skills/personal/SKILL.md"
 HOME="$TEST_HOME" USERPROFILE="$TEST_HOME" node "$BIN" update "$PROJECT" >"$TMP_DIR/update-auth.out"
 assert_contains "$TMP_DIR/update-auth.out" "OK profile starter/basic-project"
 PROFILE_AUTH="$LIVE_DIR/memories/codex-home/auth.json"
@@ -393,6 +469,10 @@ else
 	assert_file "$PROFILE_AUTH"
 	cmp -s "$PROFILE_AUTH" "$TEST_HOME/.codex/auth.json" || fail "expected profile auth.json to match shared auth"
 fi
+assert_file "$GEMINI_HOME_DIR/.gemini/oauth_creds.json"
+assert_file "$GEMINI_HOME_DIR/.gemini/settings.json"
+assert_file "$GEMINI_HOME_DIR/.gemini/skills/personal/SKILL.md"
+assert_file "$GROK_RUNTIME_DIR/auth.json"
 
 rm "$CODEX_AGENTS_FILE"
 mkdir -p "$EXAMPLE/agent-config/orphaned/acme/old-profile"
@@ -476,7 +556,24 @@ if [ -n "${AGENT_RUN_CREATE_LOCAL_SETTINGS:-}" ]; then
 	printf '{"permissions":{"allow":["Bash(pnpm test)"]}}\n' >.claude/settings.local.json
 fi
 SH
-chmod +x "$FAKE_TOOL_BIN/codex" "$FAKE_TOOL_BIN/claude"
+cat >"$FAKE_TOOL_BIN/gemini" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$AGENT_RUN_ARG_CAPTURE"
+if [ -n "${AGENT_RUN_ENV_CAPTURE:-}" ]; then
+	printf 'GEMINI_CLI_HOME=%s\nGEMINI_CLI_SYSTEM_SETTINGS_PATH=%s\nPWD=%s\nAGENT_PROJECT_MEMORY_DIR=%s\n' \
+		"${GEMINI_CLI_HOME-<unset>}" "${GEMINI_CLI_SYSTEM_SETTINGS_PATH-<unset>}" "$PWD" \
+		"${AGENT_PROJECT_MEMORY_DIR-<unset>}" >"$AGENT_RUN_ENV_CAPTURE"
+fi
+SH
+cat >"$FAKE_TOOL_BIN/grok" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$AGENT_RUN_ARG_CAPTURE"
+if [ -n "${AGENT_RUN_ENV_CAPTURE:-}" ]; then
+	printf 'GROK_HOME=%s\nPWD=%s\nAGENT_PROJECT_MEMORY_DIR=%s\n' \
+		"${GROK_HOME-<unset>}" "$PWD" "${AGENT_PROJECT_MEMORY_DIR-<unset>}" >"$AGENT_RUN_ENV_CAPTURE"
+fi
+SH
+chmod +x "$FAKE_TOOL_BIN/codex" "$FAKE_TOOL_BIN/claude" "$FAKE_TOOL_BIN/gemini" "$FAKE_TOOL_BIN/grok"
 cat >"$FAKE_TOOL_BIN/codex.cmd" <<'BAT'
 @echo off
 bash "%~dp0codex" %*
@@ -484,6 +581,14 @@ BAT
 cat >"$FAKE_TOOL_BIN/claude.cmd" <<'BAT'
 @echo off
 bash "%~dp0claude" %*
+BAT
+cat >"$FAKE_TOOL_BIN/gemini.cmd" <<'BAT'
+@echo off
+bash "%~dp0gemini" %*
+BAT
+cat >"$FAKE_TOOL_BIN/grok.cmd" <<'BAT'
+@echo off
+bash "%~dp0grok" %*
 BAT
 
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-args.out" AGENT_RUN_ENV_CAPTURE="$TMP_DIR/codex-env.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --memory-check)
@@ -563,6 +668,8 @@ assert_contains "$TMP_DIR/claude-args.out" "--append-system-prompt-file"
 assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_LIVE_DIR${EXPECTED_PATH_SEP}CLAUDE.md"
 assert_contains "$TMP_DIR/claude-args.out" "--plugin-dir"
 assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_LIVE_DIR${EXPECTED_PATH_SEP}.claude"
+assert_contains "$TMP_DIR/claude-args.out" "--mcp-config"
+assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_LIVE_DIR${EXPECTED_PATH_SEP}.claude${EXPECTED_PATH_SEP}mcp.json"
 assert_line_count "$TMP_DIR/claude-args.out" "--add-dir" 1
 assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_PROJECT_MEMORY_DIR"
 assert_not_contains "$TMP_DIR/claude-args.out" "$EXPECTED_MEMORY_DIR"
@@ -587,7 +694,7 @@ set +e
 claude_sandboxed_status=$?
 set -e
 [ "$claude_sandboxed_status" -ne 0 ] || fail "expected claude --sandboxed to fail"
-assert_contains "$TMP_DIR/claude-sandboxed.out" "--sandboxed is only supported for agent-run codex"
+assert_contains "$TMP_DIR/claude-sandboxed.out" "--sandboxed is not supported for agent-run claude"
 
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-show-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --show >"$TMP_DIR/claude-show.out")
 assert_no_file "$TMP_DIR/claude-show-args.out"
@@ -602,6 +709,50 @@ assert_contains "$TMP_DIR/claude-show.out" "$EXPECTED_LIVE_DIR${EXPECTED_PATH_SE
 assert_contains "$TMP_DIR/claude-show.out" "$EXPECTED_LIVE_DIR${EXPECTED_PATH_SEP}.claude${EXPECTED_PATH_SEP}skills${EXPECTED_PATH_SEP}code-review-organizer${EXPECTED_PATH_SEP}SKILL.md"
 assert_not_contains "$TMP_DIR/claude-show.out" "$EXPECTED_CODEX_CONFIG_FILE"
 assert_not_contains "$TMP_DIR/claude-show.out" "$EXPECTED_CODEX_SKILLS_DIR${EXPECTED_PATH_SEP}commit-workflow${EXPECTED_PATH_SEP}SKILL.md"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/gemini-args.out" AGENT_RUN_ENV_CAPTURE="$TMP_DIR/gemini-env.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" gemini -p "fix the failing tests")
+assert_contains "$TMP_DIR/gemini-args.out" "-p"
+assert_contains "$TMP_DIR/gemini-args.out" "fix the failing tests"
+assert_not_contains "$TMP_DIR/gemini-args.out" "--yolo"
+assert_contains "$TMP_DIR/gemini-env.out" "GEMINI_CLI_HOME=$EXPECTED_GEMINI_HOME_DIR"
+assert_contains "$TMP_DIR/gemini-env.out" "GEMINI_CLI_SYSTEM_SETTINGS_PATH=$EXPECTED_GEMINI_SETTINGS_FILE"
+assert_contains "$TMP_DIR/gemini-env.out" "PWD=$EXPECTED_PROJECT"
+assert_contains "$TMP_DIR/gemini-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/gemini-yolo-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" gemini --yolo -p hello)
+assert_contains "$TMP_DIR/gemini-yolo-args.out" "--yolo"
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/gemini-sandbox-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" gemini --sandboxed -p hello)
+assert_contains "$TMP_DIR/gemini-sandbox-args.out" "--sandbox"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/gemini-show-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" gemini --show >"$TMP_DIR/gemini-show.out")
+assert_no_file "$TMP_DIR/gemini-show-args.out"
+assert_contains "$TMP_DIR/gemini-show.out" "Agent: gemini"
+assert_contains "$TMP_DIR/gemini-show.out" "$EXPECTED_GEMINI_AGENTS_FILE"
+assert_contains "$TMP_DIR/gemini-show.out" "$EXPECTED_GEMINI_SETTINGS_FILE"
+assert_contains "$TMP_DIR/gemini-show.out" "$EXPECTED_GEMINI_SKILLS_DIR${EXPECTED_PATH_SEP}commit-workflow${EXPECTED_PATH_SEP}SKILL.md"
+assert_not_contains "$TMP_DIR/gemini-show.out" "$EXPECTED_CODEX_CONFIG_FILE"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/grok-args.out" AGENT_RUN_ENV_CAPTURE="$TMP_DIR/grok-env.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" grok -p "fix the failing tests")
+assert_contains "$TMP_DIR/grok-args.out" "-p"
+assert_contains "$TMP_DIR/grok-args.out" "fix the failing tests"
+assert_not_contains "$TMP_DIR/grok-args.out" "--always-approve"
+assert_contains "$TMP_DIR/grok-env.out" "GROK_HOME=$EXPECTED_GROK_RUNTIME_DIR"
+assert_contains "$TMP_DIR/grok-env.out" "PWD=$EXPECTED_PROJECT"
+assert_contains "$TMP_DIR/grok-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/grok-yolo-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" grok --yolo -p hello)
+assert_contains "$TMP_DIR/grok-yolo-args.out" "--always-approve"
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/grok-sandbox-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" grok --sandboxed -p hello)
+assert_contains "$TMP_DIR/grok-sandbox-args.out" "--sandbox"
+assert_contains "$TMP_DIR/grok-sandbox-args.out" "workspace"
+
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/grok-show-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" grok --show >"$TMP_DIR/grok-show.out")
+assert_no_file "$TMP_DIR/grok-show-args.out"
+assert_contains "$TMP_DIR/grok-show.out" "Agent: grok"
+assert_contains "$TMP_DIR/grok-show.out" "$EXPECTED_GROK_AGENTS_FILE"
+assert_contains "$TMP_DIR/grok-show.out" "$EXPECTED_GROK_CONFIG_FILE"
+assert_contains "$TMP_DIR/grok-show.out" "$EXPECTED_GROK_SKILLS_DIR${EXPECTED_PATH_SEP}commit-workflow${EXPECTED_PATH_SEP}SKILL.md"
+assert_not_contains "$TMP_DIR/grok-show.out" "$EXPECTED_CODEX_CONFIG_FILE"
 
 LEGACY_AGENT_DIR="$EXPECTED_LIVE_DIR" \
 LEGACY_PROJECT_ROOT="$EXPECTED_PROJECT" \
@@ -685,6 +836,7 @@ node "$BIN" update "$PROJECT" >/dev/null
 assert_file "$CODEX_AGENTS_FILE"
 assert_no_file "$LIVE_DIR/CLAUDE.md"
 assert_no_file "$LIVE_DIR/.claude/agent-run-settings.json"
+assert_no_file "$LIVE_DIR/.claude/mcp.json"
 assert_no_file "$LIVE_DIR/.claude/.claude-plugin/plugin.json"
 assert_no_file "$LIVE_DIR/.claude/skills/triage/SKILL.md"
 set +e
@@ -693,6 +845,32 @@ claude_disabled_status=$?
 set -e
 [ "$claude_disabled_status" -ne 0 ] || fail "expected disabled Claude profile command to fail"
 assert_contains "$TMP_DIR/claude-disabled.out" "claude is disabled for agent-run profile"
+
+node - "$AGENT_DIR/agent-run.jsonc" <<'NODE'
+const fs = require('node:fs');
+const file = process.argv[2];
+const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+manifest.tools.gemini = false;
+manifest.tools.grok = false;
+fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+NODE
+node "$BIN" update "$PROJECT" >/dev/null
+assert_no_file "$GEMINI_AGENTS_FILE"
+assert_no_file "$GEMINI_SETTINGS_FILE"
+assert_no_file "$GEMINI_SKILLS_DIR/triage/SKILL.md"
+assert_no_file "$GROK_AGENTS_FILE"
+assert_no_file "$GROK_CONFIG_FILE"
+assert_no_file "$GROK_SKILLS_DIR/triage/SKILL.md"
+set +e
+(cd "$PROJECT" && node "$BIN" gemini --show >"$TMP_DIR/gemini-disabled.out" 2>&1)
+gemini_disabled_status=$?
+(cd "$PROJECT" && node "$BIN" grok --show >"$TMP_DIR/grok-disabled.out" 2>&1)
+grok_disabled_status=$?
+set -e
+[ "$gemini_disabled_status" -ne 0 ] || fail "expected disabled Gemini profile command to fail"
+[ "$grok_disabled_status" -ne 0 ] || fail "expected disabled Grok profile command to fail"
+assert_contains "$TMP_DIR/gemini-disabled.out" "gemini is disabled for agent-run profile"
+assert_contains "$TMP_DIR/grok-disabled.out" "grok is disabled for agent-run profile"
 
 cp "$MANIFEST_BACKUP" "$AGENT_DIR/agent-run.jsonc"
 node "$BIN" update "$PROJECT" >/dev/null
@@ -847,7 +1025,8 @@ rm "$PROJECT/AGENTS.md"
 node "$BIN" check "$PROJECT" >/dev/null
 
 printf '{}\n' >"$PROJECT/.mcp.json"
-mkdir "$PROJECT/.claude"
+mkdir "$PROJECT/.claude" "$PROJECT/.gemini" "$PROJECT/.grok"
+printf 'local Gemini instructions\n' >"$PROJECT/GEMINI.md"
 printf 'symlink target\n' >"$PROJECT/local-instructions-target"
 linked_local_instructions=false
 if ln -s local-instructions-target "$PROJECT/CLAUDE.local.md" 2>/dev/null; then
@@ -860,12 +1039,15 @@ set -e
 [ "$current_local_ai_status" -ne 0 ] || fail "expected current local AI config names to fail checks"
 assert_contains "$TMP_DIR/current-local-ai.out" ".mcp.json"
 assert_contains "$TMP_DIR/current-local-ai.out" ".claude"
+assert_contains "$TMP_DIR/current-local-ai.out" ".gemini"
+assert_contains "$TMP_DIR/current-local-ai.out" ".grok"
+assert_contains "$TMP_DIR/current-local-ai.out" "GEMINI.md"
 if [ "$linked_local_instructions" = true ]; then
 	assert_contains "$TMP_DIR/current-local-ai.out" "CLAUDE.local.md"
 	rm "$PROJECT/CLAUDE.local.md"
 fi
-rm "$PROJECT/.mcp.json" "$PROJECT/local-instructions-target"
-rmdir "$PROJECT/.claude"
+rm "$PROJECT/.mcp.json" "$PROJECT/GEMINI.md" "$PROJECT/local-instructions-target"
+rmdir "$PROJECT/.claude" "$PROJECT/.gemini" "$PROJECT/.grok"
 
 WORKSPACE_ROOT="$TMP_DIR/workspace-without-package"
 WORKSPACE_CHILD="$WORKSPACE_ROOT/packages/widget"
@@ -1030,7 +1212,12 @@ assert.deepEqual(
 
 assert.equal(parseInvocation('agent-run', ['claude', '--yolo']).wrapperArgs.sandboxMode, 'danger');
 assert.equal(parseInvocation('agent-run', ['codex', '--yolo']).wrapperArgs.sandboxMode, 'danger');
+assert.equal(parseInvocation('agent-run', ['gemini', '--yolo']).wrapperArgs.sandboxMode, 'danger');
+assert.equal(parseInvocation('agent-run', ['grok', '--sandboxed']).wrapperArgs.sandboxMode, 'sandboxed');
 assert.deepEqual(parseInvocation('agent-run', ['claude', '--yolo', 'hello']).args, ['hello']);
+assert.deepEqual(parseInvocation('agent-run', ['gemini', '-p', 'hello']).args, ['-p', 'hello']);
+assert.deepEqual(parseInvocation('agent-run', ['grok', '-p', 'hello']).args, ['-p', 'hello']);
+assert.deepEqual(parseInvocation('agent-run', ['status']), { command: 'status' });
 
 assert.deepEqual(parseInvocation('agent-run', ['--create', 'claude', 'hello']), {
 	args: ['hello'],

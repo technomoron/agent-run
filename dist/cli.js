@@ -4,6 +4,8 @@ exports.parseInvocation = parseInvocation;
 const fs = require("fs");
 const path = require("path");
 const constants_1 = require("./constants");
+const registry_1 = require("./agents/registry");
+const types_1 = require("./agents/types");
 const project_1 = require("./project");
 const utils_1 = require("./utils");
 function parseInvocation(invokedTool, argv) {
@@ -25,7 +27,7 @@ function applyGlobalOptions(options) {
 }
 function extractCommand(args) {
     if (args.length === 0) {
-        (0, utils_1.fail)('usage: agent-run <codex|claude|check|setup|generate|edit|update> [options] (run with --help for details)');
+        (0, utils_1.fail)('usage: agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options] (run with --help for details)');
     }
     if (isHelpFlag(args[0])) {
         printHelp('general');
@@ -48,6 +50,8 @@ function parseCommand(command, args) {
     switch (command) {
         case 'check':
             return parseCheckCommand(args);
+        case 'status':
+            return parseStatusCommand(args);
         case 'init':
             return parseInitCommand(args);
         case 'generate':
@@ -162,7 +166,11 @@ function applySandboxRunOption(command, arg, options) {
     if (!['--yolo', '--sandboxed', '--network'].includes(arg)) {
         return false;
     }
-    if (arg !== '--yolo' && command !== 'codex') {
+    const adapter = (0, registry_1.getAgentAdapter)(command);
+    if (arg === '--sandboxed' && !adapter.wrapperOptions.sandboxed) {
+        (0, utils_1.fail)(`${arg} is not supported for agent-run ${command}`);
+    }
+    if (arg === '--network' && !adapter.wrapperOptions.network) {
         (0, utils_1.fail)(`${arg} is only supported for agent-run codex`);
     }
     if (arg === '--network') {
@@ -175,6 +183,15 @@ function applySandboxRunOption(command, arg, options) {
     }
     options.sandboxMode = mode;
     return true;
+}
+function parseStatusCommand(inputArgs) {
+    for (const arg of inputArgs) {
+        if (isHelpFlag(arg)) {
+            printHelp('status');
+        }
+        (0, utils_1.fail)(`unknown status option: ${arg}`);
+    }
+    return { command: 'status' };
 }
 function parseCheckCommand(inputArgs) {
     let all = false;
@@ -298,6 +315,7 @@ function renderHelp(topic) {
             '  --all       Check every repo under path',
             ''
         ],
+        status: ['Usage:', '  agent-run status', '', 'Show the native agent capability matrix.', ''],
         init: ['Usage:', '  agent-run init [path]', '', 'Deprecated alias for `agent-run generate [path]`.', ''],
         generate: ['Usage:', '  agent-run generate [path]', '', 'Create a minimal mapped profile marker and render generated files.', ''],
         setup: ['Usage:', '  agent-run setup [org/repo]', '', 'Install the default config tree and selected profile.', ''],
@@ -328,15 +346,20 @@ function renderHelp(topic) {
         `agent-run ${agentRunVersion()}`,
         '',
         'Usage:',
-        '  agent-run <codex|claude|check|setup|generate|edit|update> [options]',
+        '  agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options]',
         '',
         'Commands:',
         '  codex [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [--network] [args...]',
         '                                           Run codex with generated private config',
         '  claude [--none] [--create] [--local] [--show] [--generate] [--yolo] [args...]',
         '                                           Run claude with generated private config',
+        '  gemini [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
+        '                                           Run gemini with generated private config',
+        '  grok [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
+        '                                           Run grok with generated private config',
         '  setup [org/repo]                      Install the default tree and selected profile',
         '  check [--all] [path]                  Validate generated profile output',
+        '  status                                Show native agent capabilities',
         '  generate [path]                       Create a sparse profile marker and render output',
         '  edit [path]                           Create or open local.md.njk',
         '  update [--all] [path]                 Regenerate existing profile output',
@@ -354,10 +377,11 @@ function renderHelp(topic) {
         '  --generate         Generate files without running the tool',
         '  --yolo             Run unattended without approval prompts:',
         '                     Codex with -a never -s danger-full-access,',
-        '                     Claude with --dangerously-skip-permissions',
+        '                     Claude with --dangerously-skip-permissions,',
+        '                     Gemini with --yolo, Grok with --always-approve',
         '',
-        'Codex wrapper options:',
-        '  --sandboxed        Run Codex with workspace-write sandbox (default)',
+        'Sandbox wrapper options:',
+        '  --sandboxed        Run Codex, Gemini, or Grok in its native workspace sandbox',
         '  --network          Enable network for the workspace-write sandbox',
         ''
     ].join('\n');
@@ -379,7 +403,7 @@ function normalizeCommandName(value) {
     if (base === 'agent-run') {
         return null;
     }
-    return ['codex', 'claude', 'check', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config'].includes(base)
+    return [...types_1.AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config'].includes(base)
         ? base
         : null;
 }

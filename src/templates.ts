@@ -33,12 +33,16 @@ export function buildRenderContext(
 		date,
 		checks: manifest.checks,
 		tools: manifest.tools,
+		mcpServers: manifest.mcpServers,
 		guardrails: manifest.guardrails
 	};
 	const reviewDir = resolveRuntimePath(configRoot, manifest.paths.reviewDir, env, baseContext);
 	const memoriesDir = resolveRuntimePath(configRoot, manifest.paths.memoriesDir, env, baseContext);
 	const projectMemoryDir = resolveRuntimePath(configRoot, manifest.paths.projectMemoryDir, env, baseContext);
 	const codexHomeDir = path.join(memoriesDir, 'codex-home');
+	const geminiRuntimeDir = path.join(liveDir, 'gemini');
+	const geminiHomeDir = path.join(geminiRuntimeDir, 'home');
+	const grokRuntimeDir = path.join(liveDir, 'grok');
 	const paths = {
 		profileDir,
 		liveDir,
@@ -56,6 +60,11 @@ export function buildRenderContext(
 		overridesDir: path.join(profileDir, 'overrides'),
 		codexSkillsDir: path.join(codexHomeDir, 'skills'),
 		claudeSkillsDir: path.join(liveDir, '.claude', 'skills'),
+		geminiRuntimeDir,
+		geminiHomeDir,
+		geminiSkillsDir: path.join(geminiHomeDir, '.agents', 'skills'),
+		grokRuntimeDir,
+		grokSkillsDir: path.join(grokRuntimeDir, 'skills'),
 		binDir: path.join(liveDir, 'bin')
 	};
 	return {

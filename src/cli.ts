@@ -5,6 +5,8 @@ import {
 	PACKAGE_VERSION,
 	VERBOSE_ENV
 } from './constants';
+import { getAgentAdapter } from './agents/registry';
+import { AGENT_IDS } from './agents/types';
 import {
 	CheckCommand,
 	CommandName,
@@ -15,6 +17,7 @@ import {
 	ParsedInvocation,
 	RunCommand,
 	SetupCommand,
+	StatusCommand,
 	ToolName,
 	UpdateCommand,
 	WrapperArgs
@@ -22,7 +25,7 @@ import {
 import { defaultConfigRoot } from './project';
 import { fail } from './utils';
 
-type HelpTopic = 'general' | 'check' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
+type HelpTopic = 'general' | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
 type GlobalOptions = {
 	args: string[];
 	configRootOverride: string | null;
@@ -50,7 +53,7 @@ function applyGlobalOptions(options: GlobalOptions): void {
 
 function extractCommand(args: string[]): CommandName {
 	if (args.length === 0) {
-		fail('usage: agent-run <codex|claude|check|setup|generate|edit|update> [options] (run with --help for details)');
+		fail('usage: agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options] (run with --help for details)');
 	}
 	if (isHelpFlag(args[0])) {
 		printHelp('general');
@@ -74,6 +77,8 @@ function parseCommand(command: CommandName, args: string[]): ParsedInvocation {
 	switch (command) {
 		case 'check':
 			return parseCheckCommand(args);
+		case 'status':
+			return parseStatusCommand(args);
 		case 'init':
 			return parseInitCommand(args);
 		case 'generate':
@@ -188,7 +193,11 @@ function applySandboxRunOption(command: ToolName, arg: string, options: WrapperA
 	if (!['--yolo', '--sandboxed', '--network'].includes(arg)) {
 		return false;
 	}
-	if (arg !== '--yolo' && command !== 'codex') {
+	const adapter = getAgentAdapter(command);
+	if (arg === '--sandboxed' && !adapter.wrapperOptions.sandboxed) {
+		fail(`${arg} is not supported for agent-run ${command}`);
+	}
+	if (arg === '--network' && !adapter.wrapperOptions.network) {
 		fail(`${arg} is only supported for agent-run codex`);
 	}
 	if (arg === '--network') {
@@ -201,6 +210,16 @@ function applySandboxRunOption(command: ToolName, arg: string, options: WrapperA
 	}
 	options.sandboxMode = mode;
 	return true;
+}
+
+function parseStatusCommand(inputArgs: string[]): StatusCommand {
+	for (const arg of inputArgs) {
+		if (isHelpFlag(arg)) {
+			printHelp('status');
+		}
+		fail(`unknown status option: ${arg}`);
+	}
+	return { command: 'status' };
 }
 
 function parseCheckCommand(inputArgs: string[]): CheckCommand {
@@ -331,6 +350,7 @@ function renderHelp(topic: HelpTopic): string {
 			'  --all       Check every repo under path',
 			''
 		],
+		status: ['Usage:', '  agent-run status', '', 'Show the native agent capability matrix.', ''],
 		init: ['Usage:', '  agent-run init [path]', '', 'Deprecated alias for `agent-run generate [path]`.', ''],
 		generate: ['Usage:', '  agent-run generate [path]', '', 'Create a minimal mapped profile marker and render generated files.', ''],
 		setup: ['Usage:', '  agent-run setup [org/repo]', '', 'Install the default config tree and selected profile.', ''],
@@ -361,15 +381,20 @@ function renderHelp(topic: HelpTopic): string {
 		`agent-run ${agentRunVersion()}`,
 		'',
 		'Usage:',
-		'  agent-run <codex|claude|check|setup|generate|edit|update> [options]',
+		'  agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options]',
 		'',
 		'Commands:',
 		'  codex [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [--network] [args...]',
 		'                                           Run codex with generated private config',
 		'  claude [--none] [--create] [--local] [--show] [--generate] [--yolo] [args...]',
 		'                                           Run claude with generated private config',
+		'  gemini [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
+		'                                           Run gemini with generated private config',
+		'  grok [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
+		'                                           Run grok with generated private config',
 		'  setup [org/repo]                      Install the default tree and selected profile',
 		'  check [--all] [path]                  Validate generated profile output',
+		'  status                                Show native agent capabilities',
 		'  generate [path]                       Create a sparse profile marker and render output',
 		'  edit [path]                           Create or open local.md.njk',
 		'  update [--all] [path]                 Regenerate existing profile output',
@@ -387,10 +412,11 @@ function renderHelp(topic: HelpTopic): string {
 		'  --generate         Generate files without running the tool',
 		'  --yolo             Run unattended without approval prompts:',
 		'                     Codex with -a never -s danger-full-access,',
-		'                     Claude with --dangerously-skip-permissions',
+		'                     Claude with --dangerously-skip-permissions,',
+		'                     Gemini with --yolo, Grok with --always-approve',
 		'',
-		'Codex wrapper options:',
-		'  --sandboxed        Run Codex with workspace-write sandbox (default)',
+		'Sandbox wrapper options:',
+		'  --sandboxed        Run Codex, Gemini, or Grok in its native workspace sandbox',
 		'  --network          Enable network for the workspace-write sandbox',
 		''
 	].join('\n');
@@ -413,7 +439,7 @@ function normalizeCommandName(value: string): CommandName | null {
 	if (base === 'agent-run') {
 		return null;
 	}
-	return ['codex', 'claude', 'check', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config'].includes(base)
+	return [...AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config'].includes(base)
 		? (base as CommandName)
 		: null;
 }

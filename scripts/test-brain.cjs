@@ -6,6 +6,7 @@ const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 const { stringify } = require('yaml');
 const { BrainStore } = require('../dist/brain/store');
+const { packageVersion } = require('../dist/version');
 const { initializeBrain } = require('../dist/brain/projects');
 const { listSkills, getSkill } = require('../dist/brain/skills');
 const { addTodo, updateTodo, listTodos, importTodos, getTodo } = require('../dist/brain/todos');
@@ -289,6 +290,148 @@ test('legacy review metadata is preserved and addressed reviews remain historica
 	assert.equal(store.search('Legacyreviewword').length, 0);
 	assert.equal(store.search('Legacyreviewword', { includeDeprecated: true })[0].content, text.trim());
 	assert.equal(fs.readFileSync(path.join(env.root, 'default/reviews/old.md'), 'utf8'), text);
+});
+
+test('review findings are numbered per severity, listed in order, and resolved without reusing numbers', (t) => {
+	const env = environment(t);
+	const project = env.project('reviewed');
+	const store = env.store(project.cwd);
+
+	const high = store.remember({ scope: 'project', type: 'review', severity: 'high', title: 'Config pins install path', content: 'Renderer embeds __dirname.', applies_to: ['src/renderer.ts'] });
+	const low = store.remember({ scope: 'project', type: 'review', severity: 'low', title: 'Dead export', content: 'execTool has no callers.' });
+	const critical = store.remember({ scope: 'project', type: 'review', severity: 'critical', title: 'Data loss', content: 'Deletes user settings.' });
+	const secondHigh = store.remember({ scope: 'project', type: 'review', severity: 'high', title: 'Second high', content: 'Another one.' });
+	assert.deepEqual([high.finding, low.finding, critical.finding, secondHigh.finding], ['H1', 'L1', 'C1', 'H2']);
+	assert.equal(high.state, 'open');
+
+	// Severity is required for reviews and rejected everywhere else.
+	assert.throws(() => store.remember({ scope: 'project', type: 'review', title: 'No severity', content: 'x' }), /require a severity/);
+	assert.throws(() => store.remember({ scope: 'project', type: 'observation', severity: 'high', title: 'No', content: 'x' }), /only to review findings/);
+
+	// Listing is ordered by severity then number, and defaults to open findings.
+	assert.deepEqual(store.reviews().map((item) => item.finding), ['C1', 'H1', 'H2', 'L1']);
+	assert.deepEqual(store.reviews({ severity: ['high'] }).map((item) => item.finding), ['H1', 'H2']);
+
+	// The finding label is searchable.
+	assert.deepEqual(store.search('H2').map((item) => item.finding), ['H2']);
+
+	const resolved = store.resolveReview(high.id, high.revision, 'fixed', 'Resolved by using a stable command name.');
+	assert.equal(resolved.state, 'fixed');
+	assert.equal(resolved.status, 'deprecated');
+	assert.equal(resolved.reason, 'Resolved by using a stable command name.');
+	assert.deepEqual(store.reviews().map((item) => item.finding), ['C1', 'H2', 'L1']);
+	assert.deepEqual(store.reviews({ state: ['fixed'] }).map((item) => item.finding), ['H1']);
+	assert.equal(store.context('anything').items.some((item) => item.id === high.id), false);
+
+	// A resolved number is never handed out again.
+	assert.equal(store.remember({ scope: 'project', type: 'review', severity: 'high', title: 'Third high', content: 'x' }).finding, 'H3');
+
+	// Stale revisions cannot resolve, and only findings can be resolved.
+	assert.throws(() => store.resolveReview(secondHigh.id, 'a'.repeat(64), 'fixed'), /read the current revision/);
+	const note = store.remember({ scope: 'project', type: 'observation', title: 'Not a finding', content: 'x' });
+	assert.throws(() => store.resolveReview(note.id, note.revision, 'fixed'), /Only review findings/);
+});
+
+test('review files written before severity existed keep parsing and stay out of the finding list', (t) => {
+	const env = environment(t);
+	const project = env.project('legacy');
+	const store = env.store(project.cwd);
+	const older = store.remember({ scope: 'project', type: 'review', severity: 'medium', title: 'Numbered', content: 'Has a label.' });
+
+	// Same shape remember() produced before finding, severity, and state were added.
+	const metadata = { id: '11111111-2222-3333-4444-555555555555', scope: 'project', type: 'review', title: 'Unnumbered review', authority: 'inferred', recall: 'relevant', tags: [], applies_to: [], status: 'active', created: '', updated: '' };
+	store.atomicWrite(path.join(project.directory, 'reviews', 'plain.md'), `---\n${stringify(metadata)}---\n\nUnnumberedreviewword.\n`);
+
+	assert.equal(store.allKnowledge().length > 0, true);
+	assert.equal(store.search('Unnumberedreviewword').length, 1);
+	assert.deepEqual(store.reviews().map((item) => item.finding), [older.finding]);
+	assert.equal(store.remember({ scope: 'project', type: 'review', severity: 'medium', title: 'Next', content: 'x' }).finding, 'M2');
+});
+
+test('chosen file names are honoured, collide safely, and never become the identity', (t) => {
+	const env = environment(t);
+	const project = env.project('named');
+	const store = env.store(project.cwd);
+
+	const first = store.remember({ scope: 'project', type: 'observation', title: 'Build flow', content: 'First.', filename: 'build-flow' });
+	assert.equal(first.source, path.join('projects', 'named', 'observations', 'build-flow.md'));
+
+	// A second item wanting the same name keeps its own file.
+	const second = store.remember({ scope: 'project', type: 'observation', title: 'Build flow again', content: 'Second.', filename: 'build-flow' });
+	assert.equal(second.source, path.join('projects', 'named', 'observations', `build-flow-${second.id}.md`));
+	assert.notEqual(first.id, second.id);
+	assert.equal(store.get(first.id).content, 'First.');
+
+	// Without a name the id is still used.
+	const unnamed = store.remember({ scope: 'project', type: 'observation', title: 'Unnamed', content: 'Third.' });
+	assert.equal(unnamed.source, path.join('projects', 'named', 'observations', `${unnamed.id}.md`));
+
+	// The name is storage only; it must not appear in the metadata.
+	assert.equal('filename' in store.get(first.id), false);
+	assert.equal(fs.readFileSync(path.join(env.root, first.source), 'utf8').includes('filename:'), false);
+
+	// Path separators and traversal are rejected by the schema, before safePath sees them.
+	for (const filename of ['../escape', 'nested/name', 'Upper', 'trailing-', '.hidden']) {
+		assert.throws(() => store.remember({ scope: 'project', type: 'observation', title: 'No', content: 'x', filename }), /lower-case words|Invalid/);
+	}
+
+	// Hand-renaming a file keeps the item reachable, because the id is the identity.
+	fs.renameSync(path.join(env.root, first.source), path.join(env.root, 'projects', 'named', 'observations', 'renamed-by-hand.md'));
+	assert.equal(store.get(first.id).source, path.join('projects', 'named', 'observations', 'renamed-by-hand.md'));
+});
+
+test('amend revises an item in place and refuses stale or deprecated writes', (t) => {
+	const env = environment(t);
+	const project = env.project('amended');
+	const store = env.store(project.cwd);
+	const item = store.remember({ scope: 'project', type: 'observation', title: 'Version drift', content: 'Original text.', filename: 'version-drift', tags: ['a'] });
+
+	const amended = store.amend(item.id, item.revision, { content: 'Corrected text.', tags: ['a', 'b'] });
+	assert.equal(amended.content, 'Corrected text.');
+	assert.deepEqual(amended.tags, ['a', 'b']);
+	assert.equal(amended.title, 'Version drift');
+	assert.equal(amended.id, item.id);
+	assert.equal(amended.source, item.source, 'the file name is preserved');
+	assert.equal(amended.created, item.created);
+	assert.notEqual(amended.updated, item.updated);
+
+	assert.throws(() => store.amend(item.id, item.revision, { content: 'Stale.' }), /read the current revision/);
+	assert.throws(() => store.amend(item.id, amended.revision, {}), /at least one field/);
+	assert.throws(() => store.amend(item.id, amended.revision, { scope: 'global' }), /Unrecognized key|Invalid/);
+
+	const gone = store.deprecate(item.id, amended.revision, 'superseded');
+	assert.throws(() => store.amend(item.id, gone.revision, { content: 'Too late.' }), /cannot be amended/);
+});
+
+test('the reported version comes from package.json with nothing hardcoded', (t) => {
+	const env = environment(t);
+	void env;
+	const declared = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version;
+	assert.equal(packageVersion(), declared);
+	const sources = fs.readFileSync(path.join(__dirname, '..', 'dist', 'constants.js'), 'utf8');
+	assert.equal(/PACKAGE_VERSION/.test(sources), false, 'no duplicated version constant');
+});
+
+test('completing or updating a task keeps every field the caller did not mention', (t) => {
+	const env = environment(t);
+	const project = env.project('tasks');
+	const store = env.store(project.cwd);
+	const task = addTodo(store, { scope: 'project', title: 'Ship the release', description: 'Long description worth keeping.', priority: 'critical', labels: ['release', 'urgent'], notes: 'Ask the maintainer first.', owner: 'bjorn' });
+
+	const progressed = updateTodo(store, task.id, task.revision, { status: 'doing' });
+	assert.equal(progressed.status, 'doing');
+	assert.equal(progressed.description, 'Long description worth keeping.');
+	assert.equal(progressed.priority, 'critical');
+	assert.deepEqual(progressed.labels, ['release', 'urgent']);
+	assert.equal(progressed.notes, 'Ask the maintainer first.');
+	assert.equal(progressed.owner, 'bjorn');
+
+	const done = updateTodo(store, task.id, progressed.revision, { status: 'done' });
+	assert.equal(done.status, 'done');
+	assert.equal(done.description, 'Long description worth keeping.');
+	assert.equal(done.priority, 'critical');
+	assert.deepEqual(done.labels, ['release', 'urgent']);
+	assert.equal(done.notes, 'Ask the maintainer first.');
 });
 
 test('remote task sync preserves local edits and reports conflicting changes', (t) => {

@@ -8,7 +8,6 @@ export const LIVE_DIR_NAME = 'live';
 export const CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
 export const CONFIG_DIR_ENV = 'AGENT_CONFIG_DIR';
 export const VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
-export const PACKAGE_VERSION = '0.99.30';
 export const UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 
 export const LOCAL_AI_FILE_NAMES = new Set([

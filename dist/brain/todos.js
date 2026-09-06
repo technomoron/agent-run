@@ -59,7 +59,18 @@ function addTodo(store, input) {
         return writeTodo(store, { ...value, id: (0, node_crypto_1.randomUUID)(), created: now, updated: now });
     });
 }
-exports.todoChanges = exports.todoInput.omit({ scope: true, source: true }).partial();
+// Spelled out rather than todoInput.omit(...).partial(): .partial() keeps .default(), so
+// updating one field would reset description, priority, labels, and notes to their defaults.
+exports.todoChanges = zod_1.z.object({
+    title: zod_1.z.string().trim().min(1).max(300).optional(),
+    description: zod_1.z.string().trim().max(200000).optional(),
+    status: zod_1.z.enum(['todo', 'doing', 'blocked', 'done', 'cancelled']).optional(),
+    priority: zod_1.z.enum(['low', 'medium', 'high', 'critical']).optional(),
+    owner: zod_1.z.string().optional(),
+    due: zod_1.z.iso.date().optional(),
+    labels: zod_1.z.array(zod_1.z.string()).optional(),
+    notes: zod_1.z.string().optional()
+}).strict();
 function updateTodo(store, id, revision, changes) {
     const parsed = exports.todoChanges.parse(changes);
     return store.writeLocked(() => {

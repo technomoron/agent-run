@@ -1,6 +1,20 @@
 CHANGES
 =======
 
+Version 0.99.32 (2026-09-06)
+----------------------------
+* Add severity, an assigned C1/H1/M1/L1 label, and an open/fixed/wontfix state
+  to review knowledge, with `review_list` and `resolve_review` for working
+  through findings in priority order.
+* Add `amend_knowledge` to revise an active item in place, keeping its id, file
+  name, and history.
+* Let `remember` choose a file name instead of the item id, with the id appended
+  when that name is taken.
+* Read the package version from `package.json` in one place instead of a second
+  copy in the source, so the version agent-brain reports cannot drift.
+* Fix task updates resetting every field the caller did not mention, which made
+  completing a task discard its description, priority, labels, and notes.
+
 Version 0.99.31 (2026-09-06)
 ----------------------------
 * Add agent-brain for shared project knowledge, skills, review context and

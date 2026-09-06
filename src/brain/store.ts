@@ -10,6 +10,10 @@ import { readBrainConfig, registeredBrainProject } from './config';
 
 export const scopeSchema = z.enum(['global', 'project', 'default']);
 export const typeSchema = z.enum(['rule', 'preference', 'convention', 'constraint', 'decision', 'spec', 'review', 'memory', 'observation']);
+export const severitySchema = z.enum(['critical', 'high', 'medium', 'low']);
+export const reviewStateSchema = z.enum(['open', 'fixed', 'wontfix']);
+const severityPrefix: Record<z.infer<typeof severitySchema>, string> = { critical: 'C', high: 'H', medium: 'M', low: 'L' };
+const severityOrder: Record<z.infer<typeof severitySchema>, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 export const knowledgeInput = z.object({
 	scope: scopeSchema,
 	type: typeSchema,
@@ -17,16 +21,31 @@ export const knowledgeInput = z.object({
 	content: z.string().trim().min(1).max(200000),
 	authority: z.enum(['user', 'inferred']).default('inferred'),
 	recall: z.enum(['always', 'relevant']).default('relevant'),
+	severity: severitySchema.optional(),
 	tags: z.array(z.string().max(100)).max(50).default([]),
-	applies_to: z.array(z.string().max(500)).max(50).default([])
+	applies_to: z.array(z.string().max(500)).max(50).default([]),
+	// Naming only. The id in the front matter stays the identity, so files can be renamed freely.
+	filename: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lower-case words separated by single dashes, with no extension').max(100).optional()
 }).strict();
-export const knowledgeMetadata = knowledgeInput.omit({ content: true }).extend({
+// finding and state stay optional so review files written before they existed keep parsing.
+export const knowledgeMetadata = knowledgeInput.omit({ content: true, filename: true }).extend({
 	id: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
 	status: z.enum(['active', 'deprecated']).default('active'),
+	finding: z.string().regex(/^[CHML][1-9][0-9]*$/).optional(),
+	state: reviewStateSchema.optional(),
 	created: z.string().default(''),
 	updated: z.string().default(''),
 	reason: z.string().optional(),
 	promoted_from: z.string().optional()
+}).strict();
+// Spelled out rather than derived from knowledgeInput: .partial() keeps .default(), so a
+// derived schema would silently reset every field the caller did not mention.
+export const knowledgeChanges = z.object({
+	title: z.string().trim().min(1).max(300).optional(),
+	content: z.string().trim().min(1).max(200000).optional(),
+	recall: z.enum(['always', 'relevant']).optional(),
+	tags: z.array(z.string().max(100)).max(50).optional(),
+	applies_to: z.array(z.string().max(500)).max(50).optional()
 }).strict();
 export type Knowledge = z.infer<typeof knowledgeMetadata> & { content: string; source: string; revision: string };
 export type Scope = z.infer<typeof scopeSchema>;
@@ -170,7 +189,7 @@ export class BrainStore {
 		try {
 			this.db.prepare('DELETE FROM knowledge WHERE environment = ?').run(environment);
 			const insert = this.db.prepare('INSERT INTO knowledge(source, environment, title, content, tags) VALUES (?, ?, ?, ?, ?)');
-			for (const item of items) insert.run(item.source, environment, item.title, item.content, item.tags.join(' '));
+			for (const item of items) insert.run(item.source, environment, item.title, item.content, [...item.tags, item.finding ?? ''].join(' ').trim());
 			this.db.exec('COMMIT');
 		} catch (error) { this.db.exec('ROLLBACK'); throw error; }
 		const terms = query.match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 50) ?? [];
@@ -206,13 +225,69 @@ export class BrainStore {
 			throw new Error('Inferred knowledge must remain an observation, memory, or review until explicitly confirmed.');
 		}
 		if (value.scope === 'global' && value.authority !== 'user') throw new Error('Global writes require explicit user authority.');
+		if (value.type === 'review' && !value.severity) throw new Error('Review findings require a severity: critical, high, medium, or low.');
+		if (value.type !== 'review' && value.severity) throw new Error('Severity applies only to review findings.');
 		return this.writeLocked(() => {
 			const now = new Date().toISOString();
-			const { content, ...metadata } = value;
-			const item = { ...metadata, id: randomUUID(), status: 'active' as const, created: now, updated: now };
-			const file = path.join(this.scopeDirectory(value.scope), knowledgeDirectories[value.type], `${item.id}.md`);
-			this.atomicWrite(file, `---\n${stringifyYaml(item)}---\n\n${content}\n`);
+			const { content, filename, ...metadata } = value;
+			const review = value.severity ? { finding: this.nextFinding(value.scope, value.severity), state: 'open' as const } : {};
+			const item = { ...metadata, ...review, id: randomUUID(), status: 'active' as const, created: now, updated: now };
+			const directory = path.join(this.scopeDirectory(value.scope), knowledgeDirectories[value.type]);
+			this.atomicWrite(this.availableFile(directory, filename, item.id), `---\n${stringifyYaml(item)}---\n\n${content}\n`);
 			return this.allKnowledge().find((entry) => entry.id === item.id)!;
+		});
+	}
+
+	/** Chosen name when one is given and free, otherwise the same name with the id appended. */
+	private availableFile(directory: string, filename: string | undefined, id: string): string {
+		if (!filename) return path.join(directory, `${id}.md`);
+		const preferred = path.join(directory, `${filename}.md`);
+		return fs.existsSync(preferred) ? path.join(directory, `${filename}-${id}.md`) : preferred;
+	}
+
+	/** Revise an item in place, keeping its id, filename, scope, type, authority, and history. */
+	amend(id: string, revision: string, changes: z.input<typeof knowledgeChanges>): Knowledge {
+		const parsed = knowledgeChanges.parse(changes);
+		if (Object.keys(parsed).length === 0) throw new Error('Supply at least one field to change.');
+		return this.writeLocked(() => {
+			const item = this.get(id);
+			if (item.revision !== revision) throw new Error('Knowledge changed; read the current revision before amending.');
+			if (item.status !== 'active') throw new Error('Deprecated knowledge cannot be amended.');
+			const { source, revision: _revision, content, ...metadata } = item;
+			const { content: nextContent, ...nextMetadata } = parsed;
+			this.atomicWrite(source, `---\n${stringifyYaml({ ...metadata, ...nextMetadata, updated: new Date().toISOString() })}---\n\n${nextContent ?? content}\n`);
+			return this.get(id);
+		});
+	}
+
+	/** Next unused finding label for a severity, counting resolved findings so numbers are never reused. */
+	private nextFinding(scope: Scope, severity: z.infer<typeof severitySchema>): string {
+		const prefix = severityPrefix[severity];
+		const used = this.allKnowledge()
+			.filter((item) => item.scope === scope && item.type === 'review' && item.finding?.startsWith(prefix))
+			.map((item) => Number.parseInt(item.finding!.slice(prefix.length), 10))
+			.filter((sequence) => Number.isSafeInteger(sequence));
+		return `${prefix}${Math.max(0, ...used) + 1}`;
+	}
+
+	/** Review findings in severity then sequence order. Open findings only unless states are given. */
+	reviews(options: { severity?: z.infer<typeof severitySchema>[]; state?: z.infer<typeof reviewStateSchema>[] } = {}): Knowledge[] {
+		const sequence = (item: Knowledge): number => Number.parseInt(item.finding!.slice(1), 10);
+		return this.allKnowledge()
+			.filter((item) => item.type === 'review' && item.finding && item.severity)
+			.filter((item) => !options.severity || options.severity.includes(item.severity!))
+			.filter((item) => (options.state ?? ['open']).includes(item.state ?? 'open'))
+			.sort((left, right) => severityOrder[left.severity!] - severityOrder[right.severity!] || sequence(left) - sequence(right));
+	}
+
+	resolveReview(id: string, revision: string, state: 'fixed' | 'wontfix', reason?: string): Knowledge {
+		return this.writeLocked(() => {
+			const item = this.get(id);
+			if (item.type !== 'review' || !item.finding) throw new Error('Only review findings can be resolved.');
+			if (item.revision !== revision) throw new Error('Knowledge changed; read the current revision before updating.');
+			const { source, revision: _revision, content, ...metadata } = item;
+			this.atomicWrite(source, `---\n${stringifyYaml({ ...metadata, state, status: 'deprecated', updated: new Date().toISOString(), ...(reason ? { reason } : {}) })}---\n\n${content}\n`);
+			return this.get(id);
 		});
 	}
 
@@ -233,8 +308,10 @@ export class BrainStore {
 			if (item.status !== 'active') throw new Error('Deprecated knowledge cannot be promoted.');
 			if (item.scope === scope) throw new Error('Knowledge already belongs to this scope.');
 			const { source: _source, revision: _revision, content, ...metadata } = item;
-			const promoted = { ...metadata, id: randomUUID(), scope, authority: 'user', promoted_from: id, updated: new Date().toISOString() };
-			this.atomicWrite(path.join(this.scopeDirectory(scope), knowledgeDirectories[item.type], `${promoted.id}.md`), `---\n${stringifyYaml(promoted)}---\n\n${content}\n`);
+			const renumbered = item.severity ? { finding: this.nextFinding(scope, item.severity) } : {};
+			const promoted = { ...metadata, ...renumbered, id: randomUUID(), scope, authority: 'user', promoted_from: id, updated: new Date().toISOString() };
+			const target = path.join(this.scopeDirectory(scope), knowledgeDirectories[item.type]);
+			this.atomicWrite(this.availableFile(target, path.basename(item.source, '.md'), promoted.id), `---\n${stringifyYaml(promoted)}---\n\n${content}\n`);
 			return this.get(promoted.id);
 		});
 	}

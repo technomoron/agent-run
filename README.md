@@ -641,7 +641,8 @@ install either. Global skills remain available without copying them into each
 project. The brain-memory skill explains these choices to native agents.
 
 Available MCP tools include `get_context`, `search_knowledge`, `get_knowledge`,
-`remember`, `promote`, `deprecate_knowledge`, and `review_context`.
+`remember`, `amend_knowledge`, `promote`, `deprecate_knowledge`, `review_context`,
+`review_list`, and `resolve_review`.
 Writes use atomic file replacement and a shared lock; concurrent writes either
 complete or report that the caller should retry. After a crashed writer, stop
 the service, verify the PID in `runtime/brain-write.lock` is no longer running,
@@ -651,9 +652,59 @@ and remove that lock before restarting.
 agent-brain remember --json '{"scope":"project","type":"observation","title":"Refresh handling","content":"Investigate concurrent refresh requests."}'
 agent-brain search "refresh"
 agent-brain get ITEM_ID
+agent-brain amend ITEM_ID --revision REVISION --json '{"content":"Corrected text."}'
 agent-brain deprecate ITEM_ID --revision REVISION "No longer applies"
 agent-brain promote ITEM_ID --scope global --revision REVISION --confirmed
 ```
+
+`amend_knowledge` revises an active item in place, keeping its id, file name, scope,
+type, authority, and history, and updating only the fields you pass. Use it to correct
+or extend knowledge instead of writing a near-duplicate. Scope, type, authority, and
+review severity are not amendable; if one of those is wrong, deprecate the item and
+write a corrected one.
+
+#### File names
+
+`remember` names each file after the item id. Pass `filename` to choose the name
+instead, as lower-case words separated by single dashes and no extension:
+
+```sh
+agent-brain remember --json '{"scope":"project","type":"observation","title":"Build flow","content":"...","filename":"build-flow"}'
+```
+
+If that name is taken, the item id is appended rather than overwriting anything. The
+name is storage only and is never written into the metadata: the `id` in the front
+matter is the identity, so files stay safe to rename by hand and the item is still found
+by id afterwards.
+
+#### Review findings
+
+Review knowledge is a numbered, prioritized list. `remember` requires a
+`severity` of `critical`, `high`, `medium`, or `low` when the type is `review`,
+and rejects `severity` for every other type. The store assigns the finding
+label itself: `C1`, `H1`, `M1`, `L1`, counting up per severity within the scope.
+Resolved numbers are never handed out again, so a label always refers to the
+same finding.
+
+Each finding also carries a `state` of `open`, `fixed`, or `wontfix`, separate
+from the `active` and `deprecated` status that controls recall. New findings
+start `open`.
+
+```sh
+agent-brain review list
+agent-brain review list --severity high --state open
+agent-brain review resolve ITEM_ID --revision REVISION --state fixed "Fixed by using a stable command name"
+```
+
+`review_list` returns findings in severity then number order, open ones only
+unless states are given, each with the revision needed to resolve it.
+`resolve_review` records the state and reason and takes the finding out of active
+recall, keeping its text and history. Mark a finding `wontfix` only when the user
+has said it is intentional.
+
+Finding labels are indexed, so `search_knowledge` for `H2` finds that finding.
+Review files written before these fields existed keep parsing; they simply carry
+no label and stay out of the finding list.
 
 Remembered deductions default to inferred authority and must remain observations,
 memories, or review records. Global writes require explicit user authority.

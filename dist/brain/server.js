@@ -13,7 +13,7 @@ const streamableHttp_js_1 = require("@modelcontextprotocol/sdk/server/streamable
 const types_js_1 = require("@modelcontextprotocol/sdk/types.js");
 const apicore_server_1 = require("@technomoron/apicore-server");
 const zod_1 = require("zod");
-const constants_1 = require("../constants");
+const version_1 = require("../version");
 const store_1 = require("./store");
 const skills_1 = require("./skills");
 const todos_1 = require("./todos");
@@ -22,7 +22,7 @@ const git_1 = require("./git");
 var config_1 = require("./config");
 Object.defineProperty(exports, "defaultSocketPath", { enumerable: true, get: function () { return config_1.defaultSocketPath; } });
 function createBrainServer(store) {
-    const server = new mcp_js_1.McpServer({ name: 'agent-brain', version: constants_1.PACKAGE_VERSION });
+    const server = new mcp_js_1.McpServer({ name: 'agent-brain', version: (0, version_1.packageVersion)() });
     function tool(name, description, shape, readOnly, handler) {
         const schema = zod_1.z.object(shape).strict();
         server.registerTool(name, { description, inputSchema: schema, annotations: { readOnlyHint: readOnly, destructiveHint: false, openWorldHint: false } }, async (input) => {
@@ -59,6 +59,9 @@ function createBrainServer(store) {
     }, true, ({ query, ...options }) => store.search(query, options));
     tool('get_knowledge', 'Read a complete knowledge item and its current revision.', { id }, true, ({ id }) => store.get(id));
     tool('remember', 'Persist durable knowledge when authorized by the user. Choose scope and a singular type; the server stores it in the matching directory (for example constraint in constraints/, preference in preferences/). Explicit user instructions have authority=user; deductions remain inferred observations. Global writes require explicit global intent. Use todo tools for tasks; skills and templates are separate files.', store_1.knowledgeInput.shape, false, (input) => store.remember(input));
+    tool('amend_knowledge', 'Revise an active item in place using its last-read revision, keeping its id, file name, scope, type, authority, and history. Use this to correct or extend existing knowledge instead of writing a near-duplicate. Scope, type, authority, and review severity cannot be changed this way.', {
+        id, revision, changes: store_1.knowledgeChanges
+    }, false, ({ id, revision, changes }) => store.amend(id, revision, changes));
     tool('promote', 'Copy active knowledge to another available scope with user authority. Requires explicit user approval; the original is preserved.', {
         id, scope: store_1.scopeSchema, revision, confirmed: zod_1.z.literal(true)
     }, false, ({ id, scope, revision }) => store.promote(id, scope, revision));
@@ -68,6 +71,15 @@ function createBrainServer(store) {
     tool('review_context', 'Retrieve constraints, decisions, prior review findings, and path-specific knowledge for a code review.', {
         task: zod_1.z.string().max(10000), files: zod_1.z.array(zod_1.z.string()).max(100).optional()
     }, true, ({ task, files }) => store.context(`review constraint decision ${task}`, files));
+    tool('review_list', 'List review findings in severity then number order. Open findings only unless states are given. Each finding carries its label, severity, state, and the revision needed to resolve it.', {
+        severity: zod_1.z.array(store_1.severitySchema).optional(), state: zod_1.z.array(store_1.reviewStateSchema).optional()
+    }, true, ({ severity, state }) => store.reviews({ severity, state }).map((item) => ({
+        finding: item.finding, severity: item.severity, state: item.state ?? 'open', title: item.title,
+        applies_to: item.applies_to, id: item.id, revision: item.revision
+    })));
+    tool('resolve_review', 'Close a review finding as fixed or wontfix, with a reason and the revision you last read. Use wontfix only when the user has said the finding is intentional.', {
+        id, revision, state: zod_1.z.enum(['fixed', 'wontfix']), reason: zod_1.z.string().max(2000).optional()
+    }, false, ({ id, revision, state, reason }) => store.resolveReview(id, revision, state, reason));
     tool('todo_list', 'List structured tasks in the active scopes.', { status: todos_1.todoInput.shape.status.optional() }, true, ({ status }) => (0, todos_1.listTodos)(store).filter((item) => !status || item.status === status));
     tool('todo_get', 'Read a task and its revision.', { id }, true, ({ id }) => (0, todos_1.getTodo)(store, id));
     tool('todo_add', 'Create a local task. Reimporting the same external task returns the existing task.', todos_1.todoInput.shape, false, (input) => (0, todos_1.addTodo)(store, input));

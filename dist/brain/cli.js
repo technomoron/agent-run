@@ -8,6 +8,7 @@ const constants_1 = require("../constants");
 const project_1 = require("../project");
 const config_1 = require("./config");
 const projects_1 = require("./projects");
+const zod_1 = require("zod");
 const store_1 = require("./store");
 const skills_1 = require("./skills");
 const todos_1 = require("./todos");
@@ -18,7 +19,7 @@ async function brainMain(argv, wrapperCommand) {
             configdir: { type: 'string' }, cwd: { type: 'string' }, socket: { type: 'string' },
             quick: { type: 'boolean' }, guided: { type: 'boolean' },
             pull: { type: 'boolean' },
-            json: { type: 'string' }, scope: { type: 'string' }, revision: { type: 'string' },
+            json: { type: 'string' }, scope: { type: 'string' }, revision: { type: 'string' }, state: { type: 'string' }, severity: { type: 'string' },
             confirmed: { type: 'boolean' }, message: { type: 'string' }, help: { type: 'boolean', short: 'h' }
         } });
     if (values.configdir)
@@ -33,9 +34,12 @@ async function brainMain(argv, wrapperCommand) {
         process.stdout.write([
             'agent-brain init | status | search <query> | context <task> | get <id>',
             'agent-brain remember --json <knowledge-object>',
+            'agent-brain amend <id> --revision <hash> --json <changes>',
             'agent-brain promote <id> --scope <scope> --revision <hash> --confirmed',
             'agent-brain deprecate <id> --revision <hash> [reason]',
             'agent-brain skills [name]',
+            'agent-brain review list [--severity <level>] [--state <state>]',
+            'agent-brain review resolve <id> --revision <hash> --state fixed|wontfix [reason]',
             'agent-brain todo list | get <id> | add --json <task-object>',
             'agent-brain todo update <id> --revision <hash> --json <changes>',
             'agent-brain todo complete <id> --revision <hash>',
@@ -118,12 +122,31 @@ async function brainMain(argv, wrapperCommand) {
                     throw new Error('Promotion requires --confirmed after explicit user approval');
                 print(store.promote(requireId(), store_1.scopeSchema.parse(values.scope), requireRevision()));
                 break;
+            case 'amend':
+                print(store.amend(requireId(), requireRevision(), store_1.knowledgeChanges.parse(json())));
+                break;
             case 'deprecate':
                 print(store.deprecate(requireId(), requireRevision(), positionals.slice(1).join(' ')));
                 break;
             case 'skills':
                 print(positionals[0] ? (0, skills_1.getSkill)(store, positionals[0]) : (0, skills_1.listSkills)(store));
                 break;
+            case 'review': {
+                const operation = positionals.shift() ?? 'list';
+                if (operation === 'list') {
+                    print(store.reviews({
+                        ...(values.severity ? { severity: [store_1.severitySchema.parse(values.severity)] } : {}),
+                        ...(values.state ? { state: [store_1.reviewStateSchema.parse(values.state)] } : {})
+                    }).map((item) => ({ finding: item.finding, severity: item.severity, state: item.state ?? 'open', title: item.title, id: item.id, revision: item.revision })));
+                }
+                else if (operation === 'resolve') {
+                    const state = zod_1.z.enum(['fixed', 'wontfix']).parse(values.state);
+                    print(store.resolveReview(requireId(), requireRevision(), state, positionals.slice(1).join(' ') || undefined));
+                }
+                else
+                    throw new Error('Usage: agent-brain review list | resolve <id> --revision <hash> --state fixed|wontfix');
+                break;
+            }
             case 'sync': {
                 const action = positionals[0];
                 if (!action) {

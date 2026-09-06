@@ -1,10 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-	CONFIG_ROOT_OVERRIDE_ENV,
-	PACKAGE_VERSION,
-	VERBOSE_ENV
-} from './constants';
+import { CONFIG_ROOT_OVERRIDE_ENV, VERBOSE_ENV } from './constants';
+import { packageVersion } from './version';
 import { getAgentAdapter } from './agents/registry';
 import { AGENT_IDS } from './agents/types';
 import {
@@ -332,7 +329,7 @@ function isVersionFlag(value: string | undefined): boolean {
 }
 
 function printVersion(): never {
-	process.stdout.write(`agent-run ${agentRunVersion()}\n`);
+	process.stdout.write(`agent-run ${packageVersion()}\n`);
 	process.exit(0);
 }
 
@@ -382,7 +379,7 @@ function renderHelp(topic: HelpTopic): string {
 		return help[topic].join('\n');
 	}
 	return [
-		`agent-run ${agentRunVersion()}`,
+		`agent-run ${packageVersion()}`,
 		'',
 		'Usage:',
 		'  agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options]',
@@ -427,15 +424,6 @@ function renderHelp(topic: HelpTopic): string {
 		'  --network          Enable network for the workspace-write sandbox',
 		''
 	].join('\n');
-}
-
-function agentRunVersion(): string {
-	try {
-		const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf8')) as { version?: unknown };
-		return typeof pkg.version === 'string' && pkg.version ? pkg.version : PACKAGE_VERSION;
-	} catch {
-		return PACKAGE_VERSION;
-	}
 }
 
 function normalizeCommandName(value: string): CommandName | null {

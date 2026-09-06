@@ -55,7 +55,18 @@ export function addTodo(store: BrainStore, input: z.input<typeof todoInput>): To
 	});
 }
 
-export const todoChanges = todoInput.omit({ scope: true, source: true }).partial();
+// Spelled out rather than todoInput.omit(...).partial(): .partial() keeps .default(), so
+// updating one field would reset description, priority, labels, and notes to their defaults.
+export const todoChanges = z.object({
+	title: z.string().trim().min(1).max(300).optional(),
+	description: z.string().trim().max(200000).optional(),
+	status: z.enum(['todo', 'doing', 'blocked', 'done', 'cancelled']).optional(),
+	priority: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+	owner: z.string().optional(),
+	due: z.iso.date().optional(),
+	labels: z.array(z.string()).optional(),
+	notes: z.string().optional()
+}).strict();
 export function updateTodo(store: BrainStore, id: string, revision: string, changes: z.input<typeof todoChanges>): Todo {
 	const parsed = todoChanges.parse(changes);
 	return store.writeLocked(() => {

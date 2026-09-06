@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.REQUIRED_GLOBAL_TEMPLATES = exports.GENERATED_GITIGNORE_ENTRIES = exports.BRAIN_GITIGNORE_ENTRIES = exports.LOCAL_AI_DIRECTORY_NAMES = exports.LOCAL_AI_FILE_NAMES = exports.UNEXPANDED_TEMPLATE_RE = exports.PACKAGE_VERSION = exports.VERBOSE_ENV = exports.CONFIG_DIR_ENV = exports.CONFIG_ROOT_OVERRIDE_ENV = exports.LIVE_DIR_NAME = exports.LOCAL_TEMPLATE_FILE_NAME = exports.MANIFEST_FILE_NAME = exports.CONFIG_ROOT_DEFAULTS_FILE_NAME = exports.IGNORE_FILE_NAME = exports.ENV_FILE_NAME = exports.IS_WINDOWS = void 0;
+exports.REQUIRED_GLOBAL_TEMPLATES = exports.GENERATED_GITIGNORE_ENTRIES = exports.BRAIN_GITIGNORE_ENTRIES = exports.LOCAL_AI_DIRECTORY_NAMES = exports.LOCAL_AI_FILE_NAMES = exports.UNEXPANDED_TEMPLATE_RE = exports.VERBOSE_ENV = exports.CONFIG_DIR_ENV = exports.CONFIG_ROOT_OVERRIDE_ENV = exports.LIVE_DIR_NAME = exports.LOCAL_TEMPLATE_FILE_NAME = exports.MANIFEST_FILE_NAME = exports.CONFIG_ROOT_DEFAULTS_FILE_NAME = exports.IGNORE_FILE_NAME = exports.ENV_FILE_NAME = exports.IS_WINDOWS = void 0;
 exports.IS_WINDOWS = process.platform === 'win32';
 exports.ENV_FILE_NAME = '.agent-run.env';
 exports.IGNORE_FILE_NAME = '.agent-run-ignore';
@@ -11,7 +11,6 @@ exports.LIVE_DIR_NAME = 'live';
 exports.CONFIG_ROOT_OVERRIDE_ENV = 'AGENT_RUN_CONFIG_ROOT_OVERRIDE';
 exports.CONFIG_DIR_ENV = 'AGENT_CONFIG_DIR';
 exports.VERBOSE_ENV = 'AGENT_RUN_VERBOSE';
-exports.PACKAGE_VERSION = '0.99.30';
 exports.UNEXPANDED_TEMPLATE_RE = /\{\{[^}]+\}\}|\{%[^%]+%\}/;
 exports.LOCAL_AI_FILE_NAMES = new Set([
     'AGENTS.md',

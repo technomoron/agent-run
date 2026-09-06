@@ -7,8 +7,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { JSONRPCMessageSchema, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { ApiServer } from '@technomoron/apicore-server';
 import { z } from 'zod';
-import { PACKAGE_VERSION } from '../constants';
-import { BrainStore, knowledgeInput, scopeSchema, typeSchema } from './store';
+import { packageVersion } from '../version';
+import { BrainStore, knowledgeChanges, knowledgeInput, reviewStateSchema, scopeSchema, severitySchema, typeSchema } from './store';
 import { getSkill, listSkills } from './skills';
 import { addTodo, getTodo, listTodos, todoChanges, todoInput, updateTodo } from './todos';
 import { syncConnector } from './connectors';
@@ -16,7 +16,7 @@ import { gitPreview, syncGit } from './git';
 export { defaultSocketPath } from './config';
 
 export function createBrainServer(store: BrainStore): McpServer {
-	const server = new McpServer({ name: 'agent-brain', version: PACKAGE_VERSION });
+	const server = new McpServer({ name: 'agent-brain', version: packageVersion() });
 	function tool<T extends z.ZodRawShape>(name: string, description: string, shape: T, readOnly: boolean, handler: (input: z.output<z.ZodObject<T>>) => unknown): void {
 		const schema: z.ZodType = z.object(shape).strict();
 		server.registerTool(name, { description, inputSchema: schema, annotations: { readOnlyHint: readOnly, destructiveHint: false, openWorldHint: false } }, async (input: unknown) => {
@@ -46,6 +46,9 @@ export function createBrainServer(store: BrainStore): McpServer {
 	}, true, ({ query, ...options }) => store.search(query, options));
 	tool('get_knowledge', 'Read a complete knowledge item and its current revision.', { id }, true, ({ id }) => store.get(id));
 	tool('remember', 'Persist durable knowledge when authorized by the user. Choose scope and a singular type; the server stores it in the matching directory (for example constraint in constraints/, preference in preferences/). Explicit user instructions have authority=user; deductions remain inferred observations. Global writes require explicit global intent. Use todo tools for tasks; skills and templates are separate files.', knowledgeInput.shape, false, (input) => store.remember(input));
+	tool('amend_knowledge', 'Revise an active item in place using its last-read revision, keeping its id, file name, scope, type, authority, and history. Use this to correct or extend existing knowledge instead of writing a near-duplicate. Scope, type, authority, and review severity cannot be changed this way.', {
+		id, revision, changes: knowledgeChanges
+	}, false, ({ id, revision, changes }) => store.amend(id, revision, changes));
 	tool('promote', 'Copy active knowledge to another available scope with user authority. Requires explicit user approval; the original is preserved.', {
 		id, scope: scopeSchema, revision, confirmed: z.literal(true)
 	}, false, ({ id, scope, revision }) => store.promote(id, scope, revision));
@@ -56,6 +59,15 @@ export function createBrainServer(store: BrainStore): McpServer {
 	tool('review_context', 'Retrieve constraints, decisions, prior review findings, and path-specific knowledge for a code review.', {
 		task: z.string().max(10000), files: z.array(z.string()).max(100).optional()
 	}, true, ({ task, files }) => store.context(`review constraint decision ${task}`, files));
+	tool('review_list', 'List review findings in severity then number order. Open findings only unless states are given. Each finding carries its label, severity, state, and the revision needed to resolve it.', {
+		severity: z.array(severitySchema).optional(), state: z.array(reviewStateSchema).optional()
+	}, true, ({ severity, state }) => store.reviews({ severity, state }).map((item) => ({
+		finding: item.finding, severity: item.severity, state: item.state ?? 'open', title: item.title,
+		applies_to: item.applies_to, id: item.id, revision: item.revision
+	})));
+	tool('resolve_review', 'Close a review finding as fixed or wontfix, with a reason and the revision you last read. Use wontfix only when the user has said the finding is intentional.', {
+		id, revision, state: z.enum(['fixed', 'wontfix']), reason: z.string().max(2000).optional()
+	}, false, ({ id, revision, state, reason }) => store.resolveReview(id, revision, state, reason));
 	tool('todo_list', 'List structured tasks in the active scopes.', { status: todoInput.shape.status.optional() }, true,
 		({ status }) => listTodos(store).filter((item) => !status || item.status === status));
 	tool('todo_get', 'Read a task and its revision.', { id }, true, ({ id }) => getTodo(store, id));

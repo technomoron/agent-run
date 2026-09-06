@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BrainStore = exports.knowledgeDirectories = exports.knowledgeMetadata = exports.knowledgeInput = exports.typeSchema = exports.scopeSchema = void 0;
+exports.BrainStore = exports.knowledgeDirectories = exports.knowledgeChanges = exports.knowledgeMetadata = exports.knowledgeInput = exports.reviewStateSchema = exports.severitySchema = exports.typeSchema = exports.scopeSchema = void 0;
 exports.readMarkdown = readMarkdown;
 const fs = require("node:fs");
 const path = require("node:path");
@@ -13,6 +13,10 @@ const utils_1 = require("../utils");
 const config_1 = require("./config");
 exports.scopeSchema = zod_1.z.enum(['global', 'project', 'default']);
 exports.typeSchema = zod_1.z.enum(['rule', 'preference', 'convention', 'constraint', 'decision', 'spec', 'review', 'memory', 'observation']);
+exports.severitySchema = zod_1.z.enum(['critical', 'high', 'medium', 'low']);
+exports.reviewStateSchema = zod_1.z.enum(['open', 'fixed', 'wontfix']);
+const severityPrefix = { critical: 'C', high: 'H', medium: 'M', low: 'L' };
+const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
 exports.knowledgeInput = zod_1.z.object({
     scope: exports.scopeSchema,
     type: exports.typeSchema,
@@ -20,16 +24,31 @@ exports.knowledgeInput = zod_1.z.object({
     content: zod_1.z.string().trim().min(1).max(200000),
     authority: zod_1.z.enum(['user', 'inferred']).default('inferred'),
     recall: zod_1.z.enum(['always', 'relevant']).default('relevant'),
+    severity: exports.severitySchema.optional(),
     tags: zod_1.z.array(zod_1.z.string().max(100)).max(50).default([]),
-    applies_to: zod_1.z.array(zod_1.z.string().max(500)).max(50).default([])
+    applies_to: zod_1.z.array(zod_1.z.string().max(500)).max(50).default([]),
+    // Naming only. The id in the front matter stays the identity, so files can be renamed freely.
+    filename: zod_1.z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lower-case words separated by single dashes, with no extension').max(100).optional()
 }).strict();
-exports.knowledgeMetadata = exports.knowledgeInput.omit({ content: true }).extend({
+// finding and state stay optional so review files written before they existed keep parsing.
+exports.knowledgeMetadata = exports.knowledgeInput.omit({ content: true, filename: true }).extend({
     id: zod_1.z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
     status: zod_1.z.enum(['active', 'deprecated']).default('active'),
+    finding: zod_1.z.string().regex(/^[CHML][1-9][0-9]*$/).optional(),
+    state: exports.reviewStateSchema.optional(),
     created: zod_1.z.string().default(''),
     updated: zod_1.z.string().default(''),
     reason: zod_1.z.string().optional(),
     promoted_from: zod_1.z.string().optional()
+}).strict();
+// Spelled out rather than derived from knowledgeInput: .partial() keeps .default(), so a
+// derived schema would silently reset every field the caller did not mention.
+exports.knowledgeChanges = zod_1.z.object({
+    title: zod_1.z.string().trim().min(1).max(300).optional(),
+    content: zod_1.z.string().trim().min(1).max(200000).optional(),
+    recall: zod_1.z.enum(['always', 'relevant']).optional(),
+    tags: zod_1.z.array(zod_1.z.string().max(100)).max(50).optional(),
+    applies_to: zod_1.z.array(zod_1.z.string().max(500)).max(50).optional()
 }).strict();
 exports.knowledgeDirectories = {
     rule: 'rules', preference: 'preferences', convention: 'conventions', constraint: 'constraints',
@@ -180,7 +199,7 @@ class BrainStore {
             this.db.prepare('DELETE FROM knowledge WHERE environment = ?').run(environment);
             const insert = this.db.prepare('INSERT INTO knowledge(source, environment, title, content, tags) VALUES (?, ?, ?, ?, ?)');
             for (const item of items)
-                insert.run(item.source, environment, item.title, item.content, item.tags.join(' '));
+                insert.run(item.source, environment, item.title, item.content, [...item.tags, item.finding ?? ''].join(' ').trim());
             this.db.exec('COMMIT');
         }
         catch (error) {
@@ -219,13 +238,72 @@ class BrainStore {
         }
         if (value.scope === 'global' && value.authority !== 'user')
             throw new Error('Global writes require explicit user authority.');
+        if (value.type === 'review' && !value.severity)
+            throw new Error('Review findings require a severity: critical, high, medium, or low.');
+        if (value.type !== 'review' && value.severity)
+            throw new Error('Severity applies only to review findings.');
         return this.writeLocked(() => {
             const now = new Date().toISOString();
-            const { content, ...metadata } = value;
-            const item = { ...metadata, id: (0, node_crypto_1.randomUUID)(), status: 'active', created: now, updated: now };
-            const file = path.join(this.scopeDirectory(value.scope), exports.knowledgeDirectories[value.type], `${item.id}.md`);
-            this.atomicWrite(file, `---\n${(0, yaml_1.stringify)(item)}---\n\n${content}\n`);
+            const { content, filename, ...metadata } = value;
+            const review = value.severity ? { finding: this.nextFinding(value.scope, value.severity), state: 'open' } : {};
+            const item = { ...metadata, ...review, id: (0, node_crypto_1.randomUUID)(), status: 'active', created: now, updated: now };
+            const directory = path.join(this.scopeDirectory(value.scope), exports.knowledgeDirectories[value.type]);
+            this.atomicWrite(this.availableFile(directory, filename, item.id), `---\n${(0, yaml_1.stringify)(item)}---\n\n${content}\n`);
             return this.allKnowledge().find((entry) => entry.id === item.id);
+        });
+    }
+    /** Chosen name when one is given and free, otherwise the same name with the id appended. */
+    availableFile(directory, filename, id) {
+        if (!filename)
+            return path.join(directory, `${id}.md`);
+        const preferred = path.join(directory, `${filename}.md`);
+        return fs.existsSync(preferred) ? path.join(directory, `${filename}-${id}.md`) : preferred;
+    }
+    /** Revise an item in place, keeping its id, filename, scope, type, authority, and history. */
+    amend(id, revision, changes) {
+        const parsed = exports.knowledgeChanges.parse(changes);
+        if (Object.keys(parsed).length === 0)
+            throw new Error('Supply at least one field to change.');
+        return this.writeLocked(() => {
+            const item = this.get(id);
+            if (item.revision !== revision)
+                throw new Error('Knowledge changed; read the current revision before amending.');
+            if (item.status !== 'active')
+                throw new Error('Deprecated knowledge cannot be amended.');
+            const { source, revision: _revision, content, ...metadata } = item;
+            const { content: nextContent, ...nextMetadata } = parsed;
+            this.atomicWrite(source, `---\n${(0, yaml_1.stringify)({ ...metadata, ...nextMetadata, updated: new Date().toISOString() })}---\n\n${nextContent ?? content}\n`);
+            return this.get(id);
+        });
+    }
+    /** Next unused finding label for a severity, counting resolved findings so numbers are never reused. */
+    nextFinding(scope, severity) {
+        const prefix = severityPrefix[severity];
+        const used = this.allKnowledge()
+            .filter((item) => item.scope === scope && item.type === 'review' && item.finding?.startsWith(prefix))
+            .map((item) => Number.parseInt(item.finding.slice(prefix.length), 10))
+            .filter((sequence) => Number.isSafeInteger(sequence));
+        return `${prefix}${Math.max(0, ...used) + 1}`;
+    }
+    /** Review findings in severity then sequence order. Open findings only unless states are given. */
+    reviews(options = {}) {
+        const sequence = (item) => Number.parseInt(item.finding.slice(1), 10);
+        return this.allKnowledge()
+            .filter((item) => item.type === 'review' && item.finding && item.severity)
+            .filter((item) => !options.severity || options.severity.includes(item.severity))
+            .filter((item) => (options.state ?? ['open']).includes(item.state ?? 'open'))
+            .sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity] || sequence(left) - sequence(right));
+    }
+    resolveReview(id, revision, state, reason) {
+        return this.writeLocked(() => {
+            const item = this.get(id);
+            if (item.type !== 'review' || !item.finding)
+                throw new Error('Only review findings can be resolved.');
+            if (item.revision !== revision)
+                throw new Error('Knowledge changed; read the current revision before updating.');
+            const { source, revision: _revision, content, ...metadata } = item;
+            this.atomicWrite(source, `---\n${(0, yaml_1.stringify)({ ...metadata, state, status: 'deprecated', updated: new Date().toISOString(), ...(reason ? { reason } : {}) })}---\n\n${content}\n`);
+            return this.get(id);
         });
     }
     deprecate(id, revision, reason) {
@@ -248,8 +326,10 @@ class BrainStore {
             if (item.scope === scope)
                 throw new Error('Knowledge already belongs to this scope.');
             const { source: _source, revision: _revision, content, ...metadata } = item;
-            const promoted = { ...metadata, id: (0, node_crypto_1.randomUUID)(), scope, authority: 'user', promoted_from: id, updated: new Date().toISOString() };
-            this.atomicWrite(path.join(this.scopeDirectory(scope), exports.knowledgeDirectories[item.type], `${promoted.id}.md`), `---\n${(0, yaml_1.stringify)(promoted)}---\n\n${content}\n`);
+            const renumbered = item.severity ? { finding: this.nextFinding(scope, item.severity) } : {};
+            const promoted = { ...metadata, ...renumbered, id: (0, node_crypto_1.randomUUID)(), scope, authority: 'user', promoted_from: id, updated: new Date().toISOString() };
+            const target = path.join(this.scopeDirectory(scope), exports.knowledgeDirectories[item.type]);
+            this.atomicWrite(this.availableFile(target, path.basename(item.source, '.md'), promoted.id), `---\n${(0, yaml_1.stringify)(promoted)}---\n\n${content}\n`);
             return this.get(promoted.id);
         });
     }

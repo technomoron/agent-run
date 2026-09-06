@@ -1,9 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseInvocation = parseInvocation;
-const fs = require("fs");
 const path = require("path");
 const constants_1 = require("./constants");
+const version_1 = require("./version");
 const registry_1 = require("./agents/registry");
 const types_1 = require("./agents/types");
 const project_1 = require("./project");
@@ -299,7 +299,7 @@ function isVersionFlag(value) {
     return value === '-V' || value === '--version';
 }
 function printVersion() {
-    process.stdout.write(`agent-run ${agentRunVersion()}\n`);
+    process.stdout.write(`agent-run ${(0, version_1.packageVersion)()}\n`);
     process.exit(0);
 }
 function printHelp(topic) {
@@ -347,7 +347,7 @@ function renderHelp(topic) {
         return help[topic].join('\n');
     }
     return [
-        `agent-run ${agentRunVersion()}`,
+        `agent-run ${(0, version_1.packageVersion)()}`,
         '',
         'Usage:',
         '  agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options]',
@@ -392,15 +392,6 @@ function renderHelp(topic) {
         '  --network          Enable network for the workspace-write sandbox',
         ''
     ].join('\n');
-}
-function agentRunVersion() {
-    try {
-        const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf8'));
-        return typeof pkg.version === 'string' && pkg.version ? pkg.version : constants_1.PACKAGE_VERSION;
-    }
-    catch {
-        return constants_1.PACKAGE_VERSION;
-    }
 }
 function normalizeCommandName(value) {
     if (!value) {

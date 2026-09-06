@@ -1,6 +1,40 @@
 CHANGES
 =======
 
+Version 0.99.33 (2026-09-06)
+----------------------------
+* Run the agent-brain MCP server as `agent-brain` from `PATH` and choose its
+  socket when the bridge starts, so generated agent configuration no longer
+  contains the path of whichever install rendered it. Re-render existing
+  profiles with `agent-run update`.
+* Let the git guard through for throwaway test repositories: `commit`, `tag`
+  and `push` run normally below a directory holding an `.agent-run-test-repo`
+  marker, so a project's own test suite works inside an agent session.
+* Match the git guard on the subcommand instead of any argument, so
+  `git log --grep push` or a branch named `commit` is no longer blocked.
+* Fix the Windows guard shims: strip a leading PATH entry only when it is the
+  guard directory, resolve the real command explicitly, and refuse recursive
+  resolution.
+* Archive closed review findings to a compact history file and add
+  `review_history` for recalling them without them appearing in normal
+  knowledge retrieval.
+* Keep brain retrieval working when a single knowledge or task file is
+  malformed, reporting the broken file instead of failing every read.
+* Rebuild the search index only when the underlying files change, so read-only
+  retrieval no longer writes on every call.
+* Run brain Git operations against the real git binary rather than the guard
+  shim, and stage `templates/` with `sync save`.
+* Render skills through a loader restricted to the skills directories, so a
+  skill template cannot include files elsewhere in the configuration root.
+* Omit disabled MCP servers from Codex and Grok configuration, as Claude and
+  Gemini already do.
+* Remove `AGENT_WRAPPER_FORCE_PERMISSIVE`, the undocumented environment
+  variable that disabled Claude's permission prompts.
+* Stop overwriting systemd units and helper scripts in the configuration root
+  on every run.
+* Remove `scripts/release-check.sh`. `pnpm release` now only creates and pushes
+  the tag, and `pnpm run release:preflight` is a clean build plus the tests.
+
 Version 0.99.32 (2026-09-06)
 ----------------------------
 * Add severity, an assigned C1/H1/M1/L1 label, and an open/fixed/wontfix state

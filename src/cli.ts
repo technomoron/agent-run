@@ -7,9 +7,6 @@ import { AGENT_IDS } from './agents/types';
 import {
 	CheckCommand,
 	CommandName,
-	EditCommand,
-	GenerateCommand,
-	InitCommand,
 	MigrateConfigCommand,
 	ParsedInvocation,
 	RunCommand,
@@ -81,13 +78,11 @@ function parseCommand(command: CommandName, args: string[]): ParsedInvocation {
 		case 'status':
 			return parseStatusCommand(args);
 		case 'init':
-			return parseInitCommand(args);
 		case 'generate':
-			return parseGenerateCommand(args);
+		case 'edit':
+			return { command, targetPath: parseSinglePath(args, command) };
 		case 'setup':
 			return parseSetupCommand(args);
-		case 'edit':
-			return parseEditCommand(args);
 		case 'update':
 			return parseUpdateCommand(args);
 		case 'migrate-config':
@@ -241,14 +236,6 @@ function parseCheckCommand(inputArgs: string[]): CheckCommand {
 	return { all, command: 'check', targetPath: path.resolve(targetPath) };
 }
 
-function parseInitCommand(inputArgs: string[]): InitCommand {
-	return { command: 'init', targetPath: parseSinglePath(inputArgs, 'init') };
-}
-
-function parseGenerateCommand(inputArgs: string[]): GenerateCommand {
-	return { command: 'generate', targetPath: parseSinglePath(inputArgs, 'generate') };
-}
-
 function parseSetupCommand(inputArgs: string[]): SetupCommand {
 	let profile: string | null = null;
 	for (const arg of inputArgs) {
@@ -266,12 +253,8 @@ function parseSetupCommand(inputArgs: string[]): SetupCommand {
 	return { command: 'setup', profile };
 }
 
-function parseEditCommand(inputArgs: string[]): EditCommand {
-	return { command: 'edit', targetPath: parseSinglePath(inputArgs, 'edit') };
-}
-
-function parseSinglePath(inputArgs: string[], command: 'generate' | 'init' | 'edit', defaultPath = process.cwd()): string {
-	let targetPath = defaultPath;
+function parseSinglePath(inputArgs: string[], command: 'generate' | 'init' | 'edit'): string {
+	let targetPath = process.cwd();
 	for (const arg of inputArgs) {
 		if (isHelpFlag(arg)) {
 			printHelp(command);

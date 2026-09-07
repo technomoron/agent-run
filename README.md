@@ -302,8 +302,9 @@ new ChatGPT login.
 
 Each profile has a durable `notes/memory/` directory outside the source repo.
 `README.md` is a short index; agents read only the linked files relevant to the
-current task. Agents may update project memory only when the user explicitly
-asks them to remember or update something for that project.
+current task. Agents may update project memory when the user explicitly requests it or
+authorizes a standing workflow, such as saving durable corrections and updating
+affected specs. This authorization does not permit Git or external-service writes.
 
 Codex's native `$CODEX_HOME/memories/` remains under ignored `live/` state. It
 is generated, machine-local recall data and is not copied into the tracked

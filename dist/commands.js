@@ -29,11 +29,9 @@ function dispatch(command) {
             runCheck(command);
             return;
         case 'status':
-            runStatus(command);
+            runStatus();
             return;
         case 'init':
-            runGenerate(command);
-            return;
         case 'generate':
             runGenerate(command);
             return;
@@ -104,7 +102,7 @@ function runTool(parsed) {
     }
     (0, spawn_agent_1.spawnAgent)(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
 }
-function runStatus(_parsed) {
+function runStatus() {
     const adapters = (0, registry_1.listAgentAdapters)();
     const columns = adapters.map((adapter) => adapter.displayName);
     const capabilityRows = [

@@ -29,16 +29,16 @@ function buildCanonicalInstructions(env, configRoot, manifest, context, trace) {
     return { sections: renderedSections };
 }
 function writeAgentsMd(env, configRoot, context, trace) {
-    return renderInstructionFile('AGENTS.md', env, configRoot, context, false, trace);
+    return renderInstructionFile('AGENTS.md', env, configRoot, context, trace);
 }
 function writeClaudeMd(env, configRoot, context, trace) {
-    return renderInstructionFile('CLAUDE.md', env, configRoot, context, true, trace);
+    return renderInstructionFile('CLAUDE.md', env, configRoot, context, trace);
 }
-function renderInstructionFile(templateName, env, configRoot, context, isClaude, trace) {
+function renderInstructionFile(templateName, env, configRoot, context, trace) {
     const templatePath = `global/tool-templates/${templateName}.njk`;
     const content = fs.existsSync(path.join(configRoot, templatePath))
         ? (0, templates_1.renderTemplateFile)(env, configRoot, templatePath, context, trace)
-        : env.renderString((0, defaults_1.defaultToolInstructionsTemplate)(isClaude), context);
+        : env.renderString((0, defaults_1.defaultToolInstructionsTemplate)(templateName === 'CLAUDE.md'), context);
     (0, templates_1.assertNoUnexpandedTemplateVars)(templateName, content);
     return content.replace(/\n*$/, '\n');
 }
@@ -49,6 +49,6 @@ function projectMemoryInstructions(context) {
         `Project memory is stored in ${context.paths.projectMemoryDir}.`,
         'Read README.md there before starting work when prior project context may matter, then read only the linked files relevant to the task.',
         'Do not store secrets, raw chat transcripts, or temporary task state there.',
-        'Update project memory only when the user explicitly asks you to remember or update something for this project.'
+        'Update project memory when the user explicitly requests it or has authorized a standing workflow that records it.'
     ].join('\n');
 }

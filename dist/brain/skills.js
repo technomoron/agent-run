@@ -36,9 +36,10 @@ function getSkills(store) {
                     throw new Error(`Missing global parent for skill ${parsed.name}`);
                 content = `${parent.content}\n\n${content}`;
             }
-            skills.set(parsed.name, { ...parsed, scope, content, source: path.relative(store.configRoot, file) });
+            const skill = { ...parsed, scope, content, source: path.relative(store.configRoot, file) };
+            skills.set(parsed.name, skill);
             if (scope === 'global')
-                globalSkills.set(parsed.name, skills.get(parsed.name));
+                globalSkills.set(parsed.name, skill);
         }
     }
     return [...skills.values()];

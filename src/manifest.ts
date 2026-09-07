@@ -153,10 +153,7 @@ function mergeSkills(
 	};
 }
 
-function asSkillObject(skills: AgentRunManifest['skills']): {
-	install: string[];
-	overrides: Record<string, string>;
-} {
+function asSkillObject(skills: AgentRunManifest['skills']): NormalizedManifest['skills'] {
 	if (Array.isArray(skills)) {
 		return { install: skills, overrides: {} };
 	}

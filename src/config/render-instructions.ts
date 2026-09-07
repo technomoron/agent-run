@@ -48,7 +48,7 @@ export function writeAgentsMd(
 	context: RenderContext,
 	trace?: RenderTrace
 ): string {
-	return renderInstructionFile('AGENTS.md', env, configRoot, context, false, trace);
+	return renderInstructionFile('AGENTS.md', env, configRoot, context, trace);
 }
 
 export function writeClaudeMd(
@@ -57,7 +57,7 @@ export function writeClaudeMd(
 	context: RenderContext,
 	trace?: RenderTrace
 ): string {
-	return renderInstructionFile('CLAUDE.md', env, configRoot, context, true, trace);
+	return renderInstructionFile('CLAUDE.md', env, configRoot, context, trace);
 }
 
 function renderInstructionFile(
@@ -65,13 +65,12 @@ function renderInstructionFile(
 	env: nunjucks.Environment,
 	configRoot: string,
 	context: RenderContext,
-	isClaude: boolean,
 	trace?: RenderTrace
 ): string {
 	const templatePath = `global/tool-templates/${templateName}.njk`;
 	const content = fs.existsSync(path.join(configRoot, templatePath))
 		? renderTemplateFile(env, configRoot, templatePath, context, trace)
-		: env.renderString(defaultToolInstructionsTemplate(isClaude), context);
+		: env.renderString(defaultToolInstructionsTemplate(templateName === 'CLAUDE.md'), context);
 	assertNoUnexpandedTemplateVars(templateName, content);
 	return content.replace(/\n*$/, '\n');
 }
@@ -83,6 +82,6 @@ function projectMemoryInstructions(context: RenderContext): string {
 		`Project memory is stored in ${context.paths.projectMemoryDir}.`,
 		'Read README.md there before starting work when prior project context may matter, then read only the linked files relevant to the task.',
 		'Do not store secrets, raw chat transcripts, or temporary task state there.',
-		'Update project memory only when the user explicitly asks you to remember or update something for this project.'
+		'Update project memory when the user explicitly requests it or has authorized a standing workflow that records it.'
 	].join('\n');
 }

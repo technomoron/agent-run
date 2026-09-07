@@ -205,7 +205,7 @@ function removeStaleGeneratedEntries(rendered: RenderedProfile): void {
 function removeStaleGeneratedSkills(
 	dir: string,
 	expectedNames: Set<string>,
-	preservedNames: ReadonlySet<string> = new Set<string>()
+	preservedNames: ReadonlySet<string>
 ): void {
 	if (!fs.existsSync(dir)) {
 		return;
@@ -342,7 +342,7 @@ function migrateLiveReviewFiles(context: RenderContext): void {
 		const sourcePath = path.join(legacyReviewDir, entry.name);
 		let targetPath = path.join(context.paths.reviewDir, entry.name);
 		if (fs.existsSync(targetPath)) {
-			if (filesHaveSameContent(sourcePath, targetPath)) {
+			if (fs.readFileSync(sourcePath).equals(fs.readFileSync(targetPath))) {
 				fs.rmSync(sourcePath);
 				continue;
 			}
@@ -350,12 +350,6 @@ function migrateLiveReviewFiles(context: RenderContext): void {
 		}
 		moveFile(sourcePath, targetPath);
 	}
-}
-
-function filesHaveSameContent(leftPath: string, rightPath: string): boolean {
-	const left = fs.readFileSync(leftPath);
-	const right = fs.readFileSync(rightPath);
-	return left.length === right.length && left.equals(right);
 }
 
 function nextAvailablePath(dir: string, filename: string): string {

@@ -37,7 +37,6 @@ import {
 	RenderTrace,
 	RunCommand,
 	SetupCommand,
-	StatusCommand,
 	ToolName,
 	UpdateCommand
 } from './model';
@@ -75,11 +74,9 @@ function dispatch(command: ParsedInvocation): void {
 			runCheck(command);
 			return;
 		case 'status':
-			runStatus(command);
+			runStatus();
 			return;
 		case 'init':
-			runGenerate(command);
-			return;
 		case 'generate':
 			runGenerate(command);
 			return;
@@ -154,7 +151,7 @@ function runTool(parsed: RunCommand): void {
 	spawnAgent(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
 }
 
-function runStatus(_parsed: StatusCommand): void {
+function runStatus(): void {
 	const adapters = listAgentAdapters();
 	const columns = adapters.map((adapter) => adapter.displayName);
 	const capabilityRows = [

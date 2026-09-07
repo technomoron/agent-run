@@ -1,6 +1,12 @@
 CHANGES
 =======
 
+Version 0.99.35 (2026-09-07)
+----------------------------
+* Recognize standing user authorization for project memory updates.
+* Simplify command dispatch, instruction rendering and skill handling without
+  changing their behavior.
+
 Version 0.99.34 (2026-09-07)
 ----------------------------
 * Keep the agent-brain socket under the configured root so the service and

@@ -57,13 +57,11 @@ function parseCommand(command, args) {
         case 'status':
             return parseStatusCommand(args);
         case 'init':
-            return parseInitCommand(args);
         case 'generate':
-            return parseGenerateCommand(args);
+        case 'edit':
+            return { command, targetPath: parseSinglePath(args, command) };
         case 'setup':
             return parseSetupCommand(args);
-        case 'edit':
-            return parseEditCommand(args);
         case 'update':
             return parseUpdateCommand(args);
         case 'migrate-config':
@@ -216,12 +214,6 @@ function parseCheckCommand(inputArgs) {
     }
     return { all, command: 'check', targetPath: path.resolve(targetPath) };
 }
-function parseInitCommand(inputArgs) {
-    return { command: 'init', targetPath: parseSinglePath(inputArgs, 'init') };
-}
-function parseGenerateCommand(inputArgs) {
-    return { command: 'generate', targetPath: parseSinglePath(inputArgs, 'generate') };
-}
 function parseSetupCommand(inputArgs) {
     let profile = null;
     for (const arg of inputArgs) {
@@ -238,11 +230,8 @@ function parseSetupCommand(inputArgs) {
     }
     return { command: 'setup', profile };
 }
-function parseEditCommand(inputArgs) {
-    return { command: 'edit', targetPath: parseSinglePath(inputArgs, 'edit') };
-}
-function parseSinglePath(inputArgs, command, defaultPath = process.cwd()) {
-    let targetPath = defaultPath;
+function parseSinglePath(inputArgs, command) {
+    let targetPath = process.cwd();
     for (const arg of inputArgs) {
         if (isHelpFlag(arg)) {
             printHelp(command);

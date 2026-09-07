@@ -1,6 +1,13 @@
 CHANGES
 =======
 
+Version 0.99.34 (2026-09-07)
+----------------------------
+* Keep the agent-brain socket under the configured root so the service and
+  MCP clients connect regardless of their environment. Restart the service
+  and agent sessions after upgrading.
+* Remove the runtime-directory environment variable from the service helper.
+
 Version 0.99.33 (2026-09-06)
 ----------------------------
 * Run the agent-brain MCP server as `agent-brain` from `PATH` and choose its

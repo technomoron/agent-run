@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { isSamePathOrDescendant } from '../utils';
 
 export function defaultSocketPath(configRoot: string): string {
-	return path.join(process.env.XDG_RUNTIME_DIR ?? path.join(configRoot, 'runtime'), 'agent-brain.sock');
+	return path.join(configRoot, 'runtime', 'agent-brain.sock');
 }
 
 export const brainConfigSchema = z.object({

@@ -17,7 +17,7 @@ for account in "$@"; do
 	loginctl enable-linger "$username"
 	systemctl start "user@$uid.service"
 	user_systemctl() {
-		runuser -u "$username" -- env "XDG_RUNTIME_DIR=/run/user/$uid" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" systemctl --user "$@"
+		runuser -u "$username" -- env "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" systemctl --user "$@"
 	}
 	user_systemctl daemon-reload
 	user_systemctl enable agent-brain.service

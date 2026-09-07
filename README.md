@@ -865,8 +865,9 @@ agent-brain serve
 ```
 
 The service hosts SDK Streamable HTTP at `/mcp` using apicore's Fastify instance.
-It listens on `$XDG_RUNTIME_DIR/agent-brain.sock`, or
-`~/.agent-run/runtime/agent-brain.sock` when that variable is absent. The socket
+It listens on `<config-root>/runtime/agent-brain.sock`, which defaults to
+`~/.agent-run/runtime/agent-brain.sock`. Both the service and clients use the
+configured root regardless of their environment. The socket
 directory must belong to the current user and have mode `0700`; the socket has
 mode `0600`. No TCP listener or application user database is created.
 
@@ -874,7 +875,9 @@ Generated native-agent configurations run `agent-brain mcp` through `PATH`, so
 `agent-brain` must be installed and available there. The bridge selects the socket
 when it starts; generated files do not depend on the installation or runtime
 directory used to render them. Re-render existing profiles with `agent-run update`
-to replace older commands that contain absolute installation paths.
+to replace older commands that contain absolute installation paths. After
+upgrading from a version that used a different socket location, restart the service and
+agent sessions so they use the socket under the configuration root.
 
 `agent-run mcp` also bridges native-agent stdio to this socket. Use `--socket PATH`
 for a particular service. The bridge verifies the socket's ownership and private
@@ -888,8 +891,9 @@ stopped. Starting a second service on an existing socket fails without replacing
 the first service's socket.
 
 For a user service, copy `ops/systemd/agent-brain.service` to
-`~/.config/systemd/user/`, adjust `ExecStart` if your executable is elsewhere, and
-run `systemctl --user daemon-reload` followed by
+`~/.config/systemd/user/` and adjust `ExecStart` if your executable is elsewhere.
+Add `--configdir PATH` to `ExecStart` if you use a custom configuration root.
+Run `systemctl --user daemon-reload` followed by
 `systemctl --user enable --now agent-brain`. Installation is explicit.
 
 The supplied service uses `serve --pull`. On startup this pulls the configuration

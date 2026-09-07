@@ -14,7 +14,7 @@ const yaml_1 = require("yaml");
 const zod_1 = require("zod");
 const utils_1 = require("../utils");
 function defaultSocketPath(configRoot) {
-    return path.join(process.env.XDG_RUNTIME_DIR ?? path.join(configRoot, 'runtime'), 'agent-brain.sock');
+    return path.join(configRoot, 'runtime', 'agent-brain.sock');
 }
 exports.brainConfigSchema = zod_1.z.object({
     enabled: zod_1.z.boolean().default(true),

@@ -15,7 +15,7 @@ const { syncConnector } = require('../dist/brain/connectors');
 const { gitPreview, syncGit } = require('../dist/brain/git');
 const { renderProfile } = require('../dist/renderer');
 const { resolveProfileResult } = require('../dist/project');
-const { serveApiCore } = require('../dist/brain/server');
+const { serveApiCore, defaultSocketPath } = require('../dist/brain/server');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 
@@ -343,10 +343,8 @@ test('generated MCP files stay identical across install locations and runtime en
 		const { renderProfile } = require(process.argv[1]);
 		process.stdout.write(JSON.stringify(renderProfile(process.argv[2], process.argv[3], true, null, undefined, JSON.parse(process.argv[4])).files));
 	`;
-	for (const runtimeDir of [undefined, path.join(env.directory, 'other-runtime')]) {
-		const childEnv = { ...process.env, NODE_PATH: path.resolve(__dirname, '../node_modules') };
-		if (runtimeDir === undefined) delete childEnv.XDG_RUNTIME_DIR;
-		else childEnv.XDG_RUNTIME_DIR = runtimeDir;
+	for (const inheritedEnv of [process.env, {}]) {
+		const childEnv = { ...inheritedEnv, NODE_PATH: path.resolve(__dirname, '../node_modules') };
 		const result = spawnSync(process.execPath, ['-e', script, path.join(copiedDist, 'renderer.js'), project.cwd, project.directory, JSON.stringify(options)], {
 			env: childEnv, encoding: 'utf8'
 		});
@@ -357,7 +355,7 @@ test('generated MCP files stay identical across install locations and runtime en
 
 async function client(t, env, extra = []) {
 	const transport = new StdioClientTransport({ command: process.execPath, args: [path.resolve(__dirname, '../dist/agent-run.js'), 'mcp', '--configdir', env.root, '--cwd', env.cwd, ...extra],
-		env: { ...process.env, XDG_RUNTIME_DIR: path.join(env.root, 'runtime') }, stderr: 'pipe' });
+		env: process.env, stderr: 'pipe' });
 	const client = new Client({ name: 'brain-integration-test', version: '1.0.0' });
 	env.cleanup(() => client.close());
 	await client.connect(transport);
@@ -436,7 +434,7 @@ test('missing service fails without starting a standalone brain server', (t) => 
 	const env = environment(t);
 	fs.rmSync(path.join(env.root, 'index'), { recursive: true });
 	const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/agent-run.js'), 'mcp', '--configdir', env.root, '--cwd', env.cwd], {
-		encoding: 'utf8', env: { ...process.env, XDG_RUNTIME_DIR: path.join(env.root, 'runtime') }
+		encoding: 'utf8', env: process.env
 	});
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /service is not running/);
@@ -844,30 +842,24 @@ test('legacy migration preserves brain memory and moves loose memory into the ca
 	assert.deepEqual(describeLegacyProfileLayout(profile.directory, env.root), []);
 });
 
-test('generated MCP command finds the executable on PATH and selects the socket at launch', { skip: process.platform === 'win32' }, async (t) => {
+test('generated MCP command uses the config root with missing or different runtime environments', { skip: process.platform === 'win32' }, async (t) => {
 	const env = environment(t);
-	const runtime = path.join(env.directory, 'launch-runtime');
-	const service = await serveApiCore(env.root, path.join(runtime, 'agent-brain.sock'));
+	const service = await serveApiCore(env.root, defaultSocketPath(env.root));
 	env.cleanup(() => service.close());
-	const original = process.env.XDG_RUNTIME_DIR;
-	let rendered;
-	try {
-		process.env.XDG_RUNTIME_DIR = path.join(env.directory, 'render-runtime');
-		rendered = renderProfile(env.cwd, path.join(env.root, 'default'), true, 'codex', undefined, { configRoot: env.root, profile: 'default' });
-	} finally {
-		if (original === undefined) delete process.env.XDG_RUNTIME_DIR;
-		else process.env.XDG_RUNTIME_DIR = original;
-	}
+	const rendered = renderProfile(env.cwd, path.join(env.root, 'default'), true, 'codex', undefined, { configRoot: env.root, profile: 'default' });
 	const mcp = rendered.context.mcpServers['agent-brain'];
 	const bin = path.join(env.directory, 'bin');
 	fs.mkdirSync(bin);
 	fs.symlinkSync(path.resolve(__dirname, '../dist/agent-brain.js'), path.join(bin, 'agent-brain'));
-	const connection = new Client({ name: 'rendered-command-test', version: '1.0.0' });
-	env.cleanup(() => connection.close());
-	await connection.connect(new StdioClientTransport({ command: mcp.command, args: mcp.args,
-		env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, XDG_RUNTIME_DIR: runtime }, stderr: 'pipe' }));
-	const status = await connection.callTool({ name: 'brain_status', arguments: {} });
-	assert.deepEqual(JSON.parse(status.content[0].text), { profile: null, scopes: ['global', 'default'] });
+	for (const inheritedEnv of [process.env, {}]) {
+		const childEnv = { ...inheritedEnv, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+		const connection = new Client({ name: 'rendered-command-test', version: '1.0.0' });
+		env.cleanup(() => connection.close());
+		await connection.connect(new StdioClientTransport({ command: mcp.command, args: mcp.args,
+			env: childEnv, stderr: 'pipe' }));
+		const status = await connection.callTool({ name: 'brain_status', arguments: {} });
+		assert.deepEqual(JSON.parse(status.content[0].text), { profile: null, scopes: ['global', 'default'] });
+	}
 });
 
 test('startup pull fast-forwards clean knowledge and preserves dirty or divergent history', (t) => {

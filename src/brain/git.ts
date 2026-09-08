@@ -35,13 +35,13 @@ function syncableFiles(store: BrainStore): string[] {
 	for (const root of roots) {
 		for (const folder of folders) files.push(...store.files(path.join(root, folder)));
 		files.push(...store.files(path.join(root, 'templates'), { includeAllFiles: true }));
-		for (const name of ['config.yaml', 'project.md', 'review-history.jsonl', 'review-counters.json']) {
+		for (const name of ['config.yaml', 'project.md', 'review-history.jsonl', 'review-counters.json', 'knowledge-history.jsonl']) {
 			const file = store.safePath(root, name);
 			if (fs.existsSync(file)) files.push(file);
 		}
 	}
 	if (fs.existsSync(path.join(store.configRoot, '.git'))) {
-		const removable = roots.flatMap((root) => ['templates', 'reviews'].map((folder) => path.relative(store.configRoot, path.join(root, folder))));
+		const removable = roots.flatMap((root) => ['templates', 'notes', ...Object.values(knowledgeDirectories)].map((folder) => path.relative(store.configRoot, path.join(root, folder))));
 		const deleted = git(store.configRoot, ['ls-files', '--deleted', '-z', '--', ...removable]).split('\0').filter(Boolean);
 		files.push(...deleted.map((file) => store.safePath(file)));
 	}

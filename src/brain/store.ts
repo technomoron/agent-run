@@ -453,7 +453,7 @@ export class BrainStore {
 	get(id: string): Knowledge {
 		const item = this.allKnowledge().find((entry) => entry.id === id);
 		this.assertReadable(id, this.knowledgeErrors);
-		if (!item) throw new Error(`Knowledge not found in the active scopes: ${id}${this.knowledgeErrors.length ? '. Some files are broken; list or search knowledge for their paths and errors' : ''}`);
+		if (!item) throw new Error(`Knowledge not found in the active scopes: ${id}. For consolidated records, look up this ID with knowledge_history${this.knowledgeErrors.length ? '. Some files are broken; list or search knowledge for their paths and errors' : ''}`);
 		return item;
 	}
 }

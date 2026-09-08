@@ -6,6 +6,7 @@ import { readBrainConfig, listBrainProjects } from './config';
 import { createBrainProject, initializeBrain, inspectProject } from './projects';
 import { z } from 'zod';
 import { BrainStore, knowledgeChanges, knowledgeInput, reviewStateSchema, scopeSchema, severitySchema } from './store';
+import { archiveInput, archiveKnowledge, historyOptions, inventoryOptions, knowledgeHistory, listKnowledge } from './consolidation';
 import { getSkill, listSkills } from './skills';
 import { addTodo, getTodo, listTodos, todoChanges, todoInput, updateTodo } from './todos';
 import { syncConnector } from './connectors';
@@ -32,6 +33,9 @@ export async function brainMain(argv: string[], wrapperCommand?: 'mcp' | 'create
 			'agent-brain amend <id> --revision <hash> --json <changes>',
 			'agent-brain promote <id> --scope <scope> --revision <hash> --confirmed',
 			'agent-brain deprecate <id> --revision <hash> [reason]',
+			'agent-brain list [--json <inventory-options>]',
+			'agent-brain history [--json <history-options>]',
+			'agent-brain archive --json <sources-and-replacements>',
 			'agent-brain skills [name]',
 			'agent-brain review list [--severity <level>] [--state <state>]',
 			'agent-brain review history [query] [--scope <scope>] [--state fixed|wontfix]',
@@ -93,6 +97,9 @@ export async function brainMain(argv: string[], wrapperCommand?: 'mcp' | 'create
 				report(store.promote(requireId(), scopeSchema.parse(values.scope), requireRevision())); break;
 			case 'amend': report(store.amend(requireId(), requireRevision(), knowledgeChanges.parse(json()))); break;
 			case 'deprecate': report(store.deprecate(requireId(), requireRevision(), positionals.slice(1).join(' '))); break;
+			case 'list': report(listKnowledge(store, inventoryOptions.parse(values.json ? json() : {}))); break;
+			case 'history': report(knowledgeHistory(store, historyOptions.parse(values.json ? json() : {}))); break;
+			case 'archive': report(archiveKnowledge(store, archiveInput.parse(json()))); break;
 			case 'skills': report(positionals[0] ? getSkill(store, positionals[0]) : listSkills(store)); break;
 			case 'review': {
 				const operation = positionals.shift() ?? 'list';

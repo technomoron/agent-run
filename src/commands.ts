@@ -23,7 +23,9 @@ import {
 	createDefaultLocalFile,
 	createProfileMarker,
 	ensureRootDefaultsFile,
-	isProfileConfigured
+	isProfileConfigured,
+	loadManifest,
+	normalizeManifest
 } from './manifest';
 import {
 	CheckCommand,
@@ -64,6 +66,9 @@ export function main(invokedTool: string, argv: string[]): void {
 
 function dispatch(command: ParsedInvocation): void {
 	switch (command.command) {
+		case 'compress':
+			void runCompress(command).catch((error: unknown) => { process.stderr.write(`agent-run: ${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
+			return;
 		case 'mcp':
 		case 'create':
 		case 'project':
@@ -95,6 +100,38 @@ function dispatch(command: ParsedInvocation): void {
 		default:
 			runTool(command);
 	}
+}
+
+async function runCompress(command: Extract<ParsedInvocation, { command: 'compress' }>): Promise<void> {
+	const { BrainStore } = await import('./brain/store');
+	const { readBrainConfig } = await import('./brain/config');
+	const { getSkills } = await import('./brain/skills');
+	const { consolidationSkill } = await import('./brain/consolidation-skill');
+	const projectRoot = findProjectRoot(process.cwd());
+	const configRoot = defaultConfigRoot(projectRoot);
+	if (!readBrainConfig(configRoot)?.enabled) throw new Error('Compression requires agent-brain. Run agent-brain init with this configuration directory first.');
+	if (isIgnoredDir(projectRoot)) throw new Error('Compression is unavailable in an ignored directory.');
+	const store = new BrainStore(configRoot, process.cwd());
+	let agent: ToolName;
+	let prompt: string;
+	try {
+		const scope = command.scope ?? (store.profile ? 'project' : 'default');
+		store.scopeDirectory(scope);
+		const profile = store.profile ?? 'default';
+		const manifest = normalizeManifest(loadManifest(configRoot, path.join(configRoot, profile), profile), profile);
+		agent = command.agent ?? manifest.agent.default;
+		const skill = getSkills(store).find((item) => item.name === 'brain-consolidate') ?? consolidationSkill;
+		prompt = [
+			`Run brain knowledge consolidation in ${scope} scope only for the current environment.`,
+			command.dryRun ? 'Dry run: inspect and propose changes only; do not write, archive, or delete knowledge.' : 'Apply the consolidation, including verified archival of replaced records. This request authorizes the knowledge changes in this scope.',
+			'Do not commit, push, or change repository code. Follow the brain-consolidate skill below. Stop and report missing required brain capabilities instead of editing storage files directly.',
+			skill.content
+		].join('\n\n');
+	} finally { store.close(); }
+	// Use the normal adapters, configuration and permission modes. The prompt is one argv value.
+	runTool({ command: agent, args: agent === 'gemini' ? ['-i', prompt] : [prompt], wrapperArgs: {
+		none: false, create: false, local: false, show: false, generate: false, sandboxMode: null, codexNetwork: false
+	} });
 }
 
 function runTool(parsed: RunCommand): void {

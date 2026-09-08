@@ -5,6 +5,7 @@ export function defaultManifest(profile: string): AgentRunManifest {
 		profile,
 		kind: 'code',
 		agent: {
+			default: 'codex',
 			base: 'global/agents/code.md.njk',
 			includes: ['{{ profile }}/local.md.njk']
 		},

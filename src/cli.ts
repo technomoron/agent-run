@@ -19,7 +19,7 @@ import {
 import { defaultConfigRoot } from './project';
 import { fail } from './utils';
 
-type HelpTopic = 'general' | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
+type HelpTopic = 'general' | 'compress' | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
 type GlobalOptions = {
 	args: string[];
 	configRootOverride: string | null;
@@ -47,7 +47,7 @@ function applyGlobalOptions(options: GlobalOptions): void {
 
 function extractCommand(args: string[]): CommandName {
 	if (args.length === 0) {
-		fail('usage: agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options] (run with --help for details)');
+		fail('usage: agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update> [options] (run with --help for details)');
 	}
 	if (isHelpFlag(args[0])) {
 		printHelp('general');
@@ -73,6 +73,8 @@ function parseCommand(command: CommandName, args: string[]): ParsedInvocation {
 		case 'create':
 		case 'project':
 			return { command, args };
+		case 'compress':
+			return parseCompressCommand(args);
 		case 'check':
 			return parseCheckCommand(args);
 		case 'status':
@@ -90,6 +92,26 @@ function parseCommand(command: CommandName, args: string[]): ParsedInvocation {
 		default:
 			return parseRunCommand(command, args);
 	}
+}
+
+function parseCompressCommand(args: string[]): Extract<ParsedInvocation, { command: 'compress' }> {
+	const result: Extract<ParsedInvocation, { command: 'compress' }> = { command: 'compress', dryRun: false };
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i]!;
+		if (isHelpFlag(arg)) printHelp('compress');
+		if (arg === '--dry-run') { result.dryRun = true; continue; }
+		const option = arg.split('=')[0];
+		if (option !== '--agent' && option !== '--scope') fail(`unknown compress option: ${arg}`);
+		const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : args[++i];
+		if (option === '--agent') {
+			if (!AGENT_IDS.includes(value as ToolName)) fail('--agent must be codex, claude, gemini, or grok');
+			result.agent = value as ToolName;
+		} else {
+			if (!['global', 'project', 'default'].includes(value ?? '')) fail('--scope must be global, project, or default');
+			result.scope = value as 'global' | 'project' | 'default';
+		}
+	}
+	return result;
 }
 
 function extractGlobalOptions(argv: string[]): GlobalOptions {
@@ -323,6 +345,7 @@ function printHelp(topic: HelpTopic): never {
 
 function renderHelp(topic: HelpTopic): string {
 	const help: Record<Exclude<HelpTopic, 'general'>, string[]> = {
+		compress: ['Usage:', '  agent-run compress [--agent codex|claude|gemini|grok] [--scope project|default|global] [--dry-run]', '', 'Launch the configured agent to consolidate brain knowledge. Defaults to the active local scope.', 'Agent selection: --agent, merged agent.default in agent-run manifests, then codex.', ''],
 		check: [
 			'Usage:',
 			'  agent-run check [--all] [path]',
@@ -365,7 +388,7 @@ function renderHelp(topic: HelpTopic): string {
 		`agent-run ${packageVersion()}`,
 		'',
 		'Usage:',
-		'  agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options]',
+		'  agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update> [options]',
 		'',
 		'Commands:',
 		'  codex [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [--network] [args...]',
@@ -376,6 +399,7 @@ function renderHelp(topic: HelpTopic): string {
 		'                                           Run gemini with generated private config',
 		'  grok [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
 		'                                           Run grok with generated private config',
+		'  compress [--agent NAME] [--scope SCOPE] [--dry-run]  Consolidate brain knowledge',
 		'  setup [org/repo]                      Install the default tree and selected profile',
 		'  check [--all] [path]                  Validate generated profile output',
 		'  status                                Show native agent capabilities',
@@ -417,7 +441,7 @@ function normalizeCommandName(value: string): CommandName | null {
 	if (base === 'agent-run') {
 		return null;
 	}
-	return [...AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project'].includes(base)
+	return [...AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project', 'compress'].includes(base)
 		? (base as CommandName)
 		: null;
 }

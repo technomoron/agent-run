@@ -673,7 +673,8 @@ install either. Global skills remain available without copying them into each
 project. The brain-memory skill explains these choices to native agents.
 
 Available MCP tools include `get_context`, `search_knowledge`, `get_knowledge`,
-`remember`, `amend_knowledge`, `promote`, `deprecate_knowledge`, `review_context`,
+`remember`, `amend_knowledge`, `list_knowledge`, `archive_knowledge`,
+`knowledge_history`, `promote`, `deprecate_knowledge`, `review_context`,
 `review_list`, `resolve_review`, `review_history`, and `review_archive`.
 Writes use atomic file replacement and a shared lock; concurrent writes either
 complete or report that the caller should retry. After a crashed writer, stop
@@ -694,6 +695,100 @@ type, authority, and history, and updating only the fields you pass. Use it to c
 or extend knowledge instead of writing a near-duplicate. Scope, type, authority, and
 review severity are not amendable; if one of those is wrong, deprecate the item and
 write a corrected one.
+
+#### Knowledge consolidation
+
+Run the consolidation skill from the current project's directory:
+
+```sh
+agent-run compress
+agent-run compress --dry-run
+agent-run compress --agent claude
+agent-run compress --scope global
+```
+
+This opens the selected agent with the consolidation task and its normal generated
+configuration and permission settings. It uses project scope when configured,
+otherwise default scope. Global knowledge changes require `--scope global`.
+`--dry-run` asks the agent to inspect and propose changes without modifying knowledge.
+Agent-brain must be initialized and its service available.
+
+Choose the user default in `<config-root>/agent-run.defaults.jsonc`:
+
+```jsonc
+{
+  "agent": {
+    "default": "codex"
+  }
+}
+```
+
+The same field in a profile's `agent-run.jsonc` overrides the user default;
+`--agent` overrides both. Supported values are `codex`, `claude`, `gemini`, and
+`grok`. Older manifests without this field use Codex, and initialization preserves
+existing configuration and customized skills. Explicit commands such as
+`agent-run claude` continue to select that agent directly.
+
+The `brain-consolidate` skill removes repetition, combines focused topic records,
+and extracts appropriately classified knowledge from memory. It preserves
+requirements, exceptions, authority, sources and useful history. Historical plans
+and inferred observations do not become confirmed requirements through compression.
+Unresolved contradictions remain visible. Reviews and tasks have separate workflows.
+
+Clear, authoritative corrections in supplied comments or memory are reconciled
+into the affected spec sections, preserving unrelated requirements and source
+references. A newer timestamp or code comment alone does not establish authority.
+Sections explicitly marked immutable or locked are preserved verbatim unless the
+user explicitly authorizes changing them. Conflicts with locked sections are
+reported while independent updates can proceed. These are skill instructions;
+the storage API does not enforce section-level locks.
+
+The command uses an installed skill override when present, otherwise the bundled
+skill; `agent-brain init` installs missing built-in skills without replacing existing ones.
+
+`list_knowledge` provides a complete paginated inventory of metadata and content
+character counts, with `scope`, `types`, `includeDeprecated`, `offset`, and `limit`
+(default 50, maximum 100). It also reports `contextBudget`. Fetch complete records
+with `get_knowledge` before editing; search and context results are not inventories.
+
+After writing and verifying replacements with `remember` or `amend_knowledge`,
+`archive_knowledge` accepts a request such as:
+
+```json
+{
+  "sources": [{
+    "id": "old-id",
+    "revision": "<last-read SHA-256>",
+    "replacements": [{"id": "surviving-id", "revision": "<verified SHA-256>"}]
+  }],
+  "reason": "Combined duplicate requirements; verified all exceptions survive."
+}
+```
+
+Each source can point to multiple replacements when extracting different categories.
+The tool checks all sources and replacements before writing, requires matching scope
+and authority, preserves recall coverage, and excludes reviews. The agent verifies
+semantic coverage; the tool cannot prove that a summary preserves every fact.
+Exact original files and replacement IDs/revisions go into one
+`knowledge-history.jsonl` per scope before source files are removed. If deletion
+fails, originals remain in history and an identical request can finish deletion
+while the supplied revisions still match. History and removed knowledge paths
+participate in authorized brain Git sync; compression itself never commits or pushes.
+
+Use `knowledge_history` with an old `id` to retrieve the original file text and
+replacement references. Without `id`, it returns compact metadata; optional
+`scope`, `query`, `offset`, and `limit` support browsing. Follow replacement IDs
+through history if those records were later consolidated. Archived originals stay
+out of normal retrieval. This reduces active files and context text, while retaining
+archive bytes on disk.
+
+The corresponding CLI commands accept the same JSON options:
+
+```sh
+agent-brain list --json '{"scope":"project","offset":0,"limit":50}'
+agent-brain history --json '{"id":"old-id"}'
+agent-brain archive --json '<sources-and-replacements-object>'
+```
 
 #### File names
 
@@ -769,8 +864,8 @@ including template. Nunjucks variables remain available. Symlinks are rejected,
 and each file is limited to 1 MiB. Move snippets and skill overrides stored
 elsewhere into these directories before rendering or loading those skills.
 
-The installed `brain-memory`, `brain-review`, and `todo-manager` skills describe
-retrieval, persistence, review learning, and task workflows. Review records use
+The installed `brain-memory`, `brain-consolidate`, `brain-review`, and `todo-manager`
+skills describe retrieval, persistence, consolidation, review learning, and task workflows. Review records use
 the knowledge tools and remain inferred unless confirmed by the user.
 
 ### Tasks and connectors

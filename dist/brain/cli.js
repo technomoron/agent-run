@@ -10,6 +10,7 @@ const config_1 = require("./config");
 const projects_1 = require("./projects");
 const zod_1 = require("zod");
 const store_1 = require("./store");
+const consolidation_1 = require("./consolidation");
 const skills_1 = require("./skills");
 const todos_1 = require("./todos");
 const connectors_1 = require("./connectors");
@@ -37,6 +38,9 @@ async function brainMain(argv, wrapperCommand) {
             'agent-brain amend <id> --revision <hash> --json <changes>',
             'agent-brain promote <id> --scope <scope> --revision <hash> --confirmed',
             'agent-brain deprecate <id> --revision <hash> [reason]',
+            'agent-brain list [--json <inventory-options>]',
+            'agent-brain history [--json <history-options>]',
+            'agent-brain archive --json <sources-and-replacements>',
             'agent-brain skills [name]',
             'agent-brain review list [--severity <level>] [--state <state>]',
             'agent-brain review history [query] [--scope <scope>] [--state fixed|wontfix]',
@@ -130,6 +134,15 @@ async function brainMain(argv, wrapperCommand) {
                 break;
             case 'deprecate':
                 report(store.deprecate(requireId(), requireRevision(), positionals.slice(1).join(' ')));
+                break;
+            case 'list':
+                report((0, consolidation_1.listKnowledge)(store, consolidation_1.inventoryOptions.parse(values.json ? json() : {})));
+                break;
+            case 'history':
+                report((0, consolidation_1.knowledgeHistory)(store, consolidation_1.historyOptions.parse(values.json ? json() : {})));
+                break;
+            case 'archive':
+                report((0, consolidation_1.archiveKnowledge)(store, consolidation_1.archiveInput.parse(json())));
                 break;
             case 'skills':
                 report(positionals[0] ? (0, skills_1.getSkill)(store, positionals[0]) : (0, skills_1.listSkills)(store));

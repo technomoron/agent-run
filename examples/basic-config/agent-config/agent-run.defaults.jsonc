@@ -2,6 +2,7 @@
   // Shared defaults; profile manifests contain only differences.
   "kind": "code",
   "agent": {
+    "default": "codex",
     "base": "global/agents/code.md.njk",
     "includes": [
       "{{ profile }}/local.md.njk"

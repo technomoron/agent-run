@@ -1,7 +1,7 @@
 import type { AgentId, AgentRuntime } from './agents/types';
 
 export type ToolName = AgentId;
-export type CommandName = ToolName | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config' | 'mcp' | 'create' | 'project';
+export type CommandName = ToolName | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config' | 'mcp' | 'create' | 'project' | 'compress';
 export type SandboxMode = 'danger' | 'sandboxed';
 
 export type WrapperArgs = {
@@ -64,6 +64,7 @@ export type MigrateConfigCommand = {
 
 export type ParsedInvocation =
 	| { command: 'mcp' | 'create' | 'project'; args: string[] }
+	| { command: 'compress'; agent?: ToolName; scope?: 'global' | 'project' | 'default'; dryRun: boolean }
 	| RunCommand
 	| CheckCommand
 	| StatusCommand
@@ -85,6 +86,7 @@ export type AgentRunManifest = {
 	profile?: string;
 	kind?: 'code' | 'writing' | string;
 	agent?: {
+		default?: ToolName;
 		base?: string;
 		includes?: string[];
 	};
@@ -146,6 +148,7 @@ export type NormalizedManifest = {
 	profile: string;
 	kind: string;
 	agent: {
+		default: ToolName;
 		base: string;
 		includes: string[];
 	};

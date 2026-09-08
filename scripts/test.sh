@@ -1304,6 +1304,59 @@ assert.deepEqual(parseInvocation('agent-run', ['generate', '/tmp/project']), {
 assert.equal(defaultConfigRoot(), path.join(process.env.HOME, '.agent-run'));
 EOF
 
+# Compression uses the normal launch path and preserves the selected scope and agent.
+COMPRESS_CONFIG="$TMP_DIR/compress-config"
+cp -R "$EXAMPLE/agent-config" "$COMPRESS_CONFIG"
+node "$ROOT/dist/agent-brain.js" init --configdir "$COMPRESS_CONFIG" --cwd "$PROJECT" >"$TMP_DIR/compress-init.out"
+node "$BIN" compress --help >"$TMP_DIR/compress-help.out"
+assert_contains "$TMP_DIR/compress-help.out" "--dry-run"
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/compress-codex.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" compress)
+assert_contains "$TMP_DIR/compress-codex.out" "Run brain knowledge consolidation in project scope only"
+assert_contains "$TMP_DIR/compress-codex.out" "Apply the consolidation"
+assert_contains "$TMP_DIR/compress-codex.out" "workspace-write"
+# Exercise inherited user defaults without changing the packaged source or other tests.
+node - "$COMPRESS_CONFIG" <<'EOF'
+const fs = require('node:fs');
+const path = require('node:path');
+const {parse} = require('jsonc-parser');
+const file = path.join(process.argv[2], 'agent-run.defaults.jsonc');
+const config = parse(fs.readFileSync(file, 'utf8'));
+config.agent.default = 'claude';
+fs.writeFileSync(file, JSON.stringify(config));
+EOF
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/compress-claude.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" compress --scope=global --dry-run)
+assert_contains "$TMP_DIR/compress-claude.out" "--append-system-prompt-file"
+assert_contains "$TMP_DIR/compress-claude.out" "Run brain knowledge consolidation in global scope only"
+assert_contains "$TMP_DIR/compress-claude.out" "Dry run: inspect and propose changes only"
+assert_not_contains "$TMP_DIR/compress-claude.out" "Apply the consolidation"
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/compress-override.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" compress --agent codex --dry-run)
+assert_contains "$TMP_DIR/compress-override.out" "workspace-write"
+node - "$COMPRESS_CONFIG" <<'EOF'
+const fs = require('node:fs');
+const path = require('node:path');
+const {parse} = require('jsonc-parser');
+const file = path.join(process.argv[2], 'starter/basic-project/agent-run.jsonc');
+const config = parse(fs.readFileSync(file, 'utf8'));
+config.agent = {...config.agent, default: 'grok'};
+fs.writeFileSync(file, JSON.stringify(config));
+EOF
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/compress-profile.out" AGENT_RUN_ENV_CAPTURE="$TMP_DIR/compress-profile-env.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" compress --dry-run)
+assert_contains "$TMP_DIR/compress-profile-env.out" "GROK_HOME="
+(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/compress-gemini.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" compress --agent gemini --dry-run)
+assert_contains "$TMP_DIR/compress-gemini.out" "-i"
+assert_contains "$TMP_DIR/compress-gemini.out" "Dry run: inspect and propose changes only"
+mkdir -p "$TMP_DIR/compress-outside"
+(cd "$TMP_DIR/compress-outside" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/compress-default.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" compress --dry-run)
+assert_contains "$TMP_DIR/compress-default.out" "Run brain knowledge consolidation in default scope only"
+if (cd "$PROJECT" && node "$BIN" --configdir "$COMPRESS_CONFIG" compress --scope default >"$TMP_DIR/compress-invalid.out" 2>&1); then
+	fail "compression accepted unavailable scope"
+fi
+assert_contains "$TMP_DIR/compress-invalid.out" "not available"
+if node "$BIN" compress --agent 'codex;echo unwanted' >"$TMP_DIR/compress-agent.out" 2>&1; then
+	fail "compression accepted an invalid agent"
+fi
+assert_contains "$TMP_DIR/compress-agent.out" "--agent must be"
+
 node --test "$ROOT/scripts/test-brain.cjs" "$ROOT/scripts/test-windows-guards.cjs"
 
 echo "All tests passed"

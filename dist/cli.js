@@ -27,7 +27,7 @@ function applyGlobalOptions(options) {
 }
 function extractCommand(args) {
     if (args.length === 0) {
-        (0, utils_1.fail)('usage: agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options] (run with --help for details)');
+        (0, utils_1.fail)('usage: agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update> [options] (run with --help for details)');
     }
     if (isHelpFlag(args[0])) {
         printHelp('general');
@@ -52,6 +52,8 @@ function parseCommand(command, args) {
         case 'create':
         case 'project':
             return { command, args };
+        case 'compress':
+            return parseCompressCommand(args);
         case 'check':
             return parseCheckCommand(args);
         case 'status':
@@ -69,6 +71,33 @@ function parseCommand(command, args) {
         default:
             return parseRunCommand(command, args);
     }
+}
+function parseCompressCommand(args) {
+    const result = { command: 'compress', dryRun: false };
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (isHelpFlag(arg))
+            printHelp('compress');
+        if (arg === '--dry-run') {
+            result.dryRun = true;
+            continue;
+        }
+        const option = arg.split('=')[0];
+        if (option !== '--agent' && option !== '--scope')
+            (0, utils_1.fail)(`unknown compress option: ${arg}`);
+        const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : args[++i];
+        if (option === '--agent') {
+            if (!types_1.AGENT_IDS.includes(value))
+                (0, utils_1.fail)('--agent must be codex, claude, gemini, or grok');
+            result.agent = value;
+        }
+        else {
+            if (!['global', 'project', 'default'].includes(value ?? ''))
+                (0, utils_1.fail)('--scope must be global, project, or default');
+            result.scope = value;
+        }
+    }
+    return result;
 }
 function extractGlobalOptions(argv) {
     const options = {
@@ -297,6 +326,7 @@ function printHelp(topic) {
 }
 function renderHelp(topic) {
     const help = {
+        compress: ['Usage:', '  agent-run compress [--agent codex|claude|gemini|grok] [--scope project|default|global] [--dry-run]', '', 'Launch the configured agent to consolidate brain knowledge. Defaults to the active local scope.', 'Agent selection: --agent, merged agent.default in agent-run manifests, then codex.', ''],
         check: [
             'Usage:',
             '  agent-run check [--all] [path]',
@@ -339,7 +369,7 @@ function renderHelp(topic) {
         `agent-run ${(0, version_1.packageVersion)()}`,
         '',
         'Usage:',
-        '  agent-run <codex|claude|gemini|grok|check|status|setup|generate|edit|update> [options]',
+        '  agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update> [options]',
         '',
         'Commands:',
         '  codex [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [--network] [args...]',
@@ -350,6 +380,7 @@ function renderHelp(topic) {
         '                                           Run gemini with generated private config',
         '  grok [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
         '                                           Run grok with generated private config',
+        '  compress [--agent NAME] [--scope SCOPE] [--dry-run]  Consolidate brain knowledge',
         '  setup [org/repo]                      Install the default tree and selected profile',
         '  check [--all] [path]                  Validate generated profile output',
         '  status                                Show native agent capabilities',
@@ -390,7 +421,7 @@ function normalizeCommandName(value) {
     if (base === 'agent-run') {
         return null;
     }
-    return [...types_1.AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project'].includes(base)
+    return [...types_1.AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project', 'compress'].includes(base)
         ? base
         : null;
 }

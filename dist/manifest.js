@@ -7,6 +7,7 @@ exports.createDefaultLocalFile = createDefaultLocalFile;
 exports.convertLegacyProfileIfNeeded = convertLegacyProfileIfNeeded;
 exports.loadManifest = loadManifest;
 exports.normalizeManifest = normalizeManifest;
+const types_1 = require("./agents/types");
 const fs = require("fs");
 const path = require("path");
 const jsonc_parser_1 = require("jsonc-parser");
@@ -139,6 +140,9 @@ function asSkillObject(skills) {
     };
 }
 function normalizeManifest(manifest, profile) {
+    const defaultAgent = manifest.agent?.default ?? 'codex';
+    if (!types_1.AGENT_IDS.includes(defaultAgent))
+        throw new Error('agent.default must be codex, claude, gemini, or grok');
     const fallback = (0, defaults_1.defaultManifest)(profile);
     const skills = asSkillObject(manifest.skills ?? fallback.skills);
     const fallbackPaths = fallback.paths ?? {};
@@ -147,6 +151,7 @@ function normalizeManifest(manifest, profile) {
         profile: manifest.profile ?? profile,
         kind: manifest.kind ?? fallback.kind ?? 'code',
         agent: {
+            default: defaultAgent,
             base: manifest.agent?.base ?? fallback.agent?.base ?? 'global/agents/code.md.njk',
             includes: manifest.agent?.includes ?? [`{{ profile }}/${constants_1.LOCAL_TEMPLATE_FILE_NAME}`]
         },

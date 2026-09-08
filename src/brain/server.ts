@@ -9,6 +9,7 @@ import { ApiServer } from '@technomoron/apicore-server';
 import { z } from 'zod';
 import { packageVersion } from '../version';
 import { BrainStore, knowledgeChanges, knowledgeInput, reviewStateSchema, scopeSchema, severitySchema, typeSchema } from './store';
+import { archiveInput, archiveKnowledge, historyOptions, inventoryOptions, knowledgeHistory, listKnowledge } from './consolidation';
 import { getSkill, listSkills } from './skills';
 import { addTodo, getTodo, listTodos, todoChanges, todoInput, updateTodo } from './todos';
 import { syncConnector } from './connectors';
@@ -46,6 +47,9 @@ export function createBrainServer(store: BrainStore): McpServer {
 		query: z.string().max(10000), scopes: z.array(scopeSchema).optional(), types: z.array(typeSchema).optional(),
 		includeDeprecated: z.boolean().optional(), limit: z.number().int().min(1).max(100).optional()
 	}, false, ({ query, ...options }) => store.search(query, options));
+	tool('list_knowledge', 'Inventory knowledge metadata with scope/type filters and pagination. Includes the context budget; read full records before consolidation.', inventoryOptions.shape, true, (input) => listKnowledge(store, input));
+	tool('knowledge_history', 'Look up archived knowledge and replacement IDs. Pass an old id to retrieve its exact original file text. Excluded from normal retrieval.', historyOptions.shape, true, (input) => knowledgeHistory(store, input));
+	tool('archive_knowledge', 'After authorized consolidation and verified coverage, archive exact source files and replacement references before removing the files. Same scope and authority only; revisions are required for sources and replacements. Identical retries finish interrupted deletion.', archiveInput.shape, false, (input) => archiveKnowledge(store, input));
 	tool('get_knowledge', 'Read a complete knowledge item and its current revision.', { id }, true, ({ id }) => store.get(id));
 	tool('remember', 'Persist durable knowledge when authorized by the user. Choose scope and a singular type; the server stores it in the matching directory (for example constraint in constraints/, preference in preferences/). Explicit user instructions have authority=user; deductions remain inferred observations. Global writes require explicit global intent. Use todo tools for tasks; skills and templates are separate files.', knowledgeInput.shape, false, (input) => store.remember(input));
 	tool('amend_knowledge', 'Revise an active item in place using its last-read revision, keeping its id, file name, scope, type, authority, and history. Use this to correct or extend existing knowledge instead of writing a near-duplicate. Scope, type, authority, and review severity cannot be changed this way.', {

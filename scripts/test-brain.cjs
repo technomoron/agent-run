@@ -993,3 +993,168 @@ test('MCP recalls paginated closure history while normal retrieval stays clear',
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(JSON.parse(result.stdout).items[0].finding, 'H1');
 });
+
+test('consolidation inventories all records and archives exact originals with durable replacement references', (t) => {
+	const { listKnowledge, archiveKnowledge, knowledgeHistory } = require('../dist/brain/consolidation');
+	const env = environment(t);
+	const project = env.project('consolidation');
+	const store = env.store(project.cwd);
+	const write = (title) => store.remember({ scope: 'project', type: 'constraint', authority: 'user', title, content: `Requirement ${title}`, recall: 'always', applies_to: ['src/**'] });
+	const first = write('First');
+	const second = write('Second');
+	const destination = write('Combined');
+	const original = fs.readFileSync(path.join(env.root, first.source), 'utf8');
+	const ref = ({ id, revision }) => ({ id, revision });
+	const request = { sources: [first, second].map((item) => ({ ...ref(item), replacements: [ref(destination)] })), reason: 'Verified both requirements in the combined record' };
+	assert.equal(listKnowledge(store, { scope: 'project', limit: 1 }).total, 3);
+	assert.equal(listKnowledge(store, { scope: 'project', offset: 1, limit: 1 }).items.length, 1);
+	assert.equal('content' in listKnowledge(store).items[0], false);
+	syncGit(store, 'init');
+	for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@example.com']]) assert.equal(spawnSync('git', ['-C', env.root, 'config', key, value]).status, 0);
+	syncGit(store, 'save', 'Initial consolidation data');
+	assert.equal(archiveKnowledge(store, request).archived.length, 2);
+	assert.deepEqual(listKnowledge(store, { scope: 'project' }).items.map((item) => item.id), [destination.id]);
+	assert.equal(store.search('First', { includeDeprecated: true }).length, 0);
+	assert.throws(() => store.get(first.id), /knowledge_history/);
+	assert.equal(knowledgeHistory(store).total, 2);
+	assert.equal('text' in knowledgeHistory(store).items[0], false);
+	assert.equal(knowledgeHistory(store, { id: first.id }).items[0].text, original);
+	assert.deepEqual(knowledgeHistory(store, { id: first.id }).items[0].replacements, [ref(destination)]);
+	assert.equal(knowledgeHistory(env.store(env.cwd), { id: first.id }).total, 0);
+	assert.equal(archiveKnowledge(store, request).archived.length, 2);
+	assert.equal(knowledgeHistory(store).total, 2);
+	assert.ok(gitPreview(store).files.includes(first.source));
+	syncGit(store, 'save', 'Consolidate knowledge');
+	assert.notEqual(spawnSync('git', ['-C', env.root, 'cat-file', '-e', `HEAD:${first.source}`]).status, 0);
+	assert.equal(spawnSync('git', ['-C', env.root, 'cat-file', '-e', 'HEAD:projects/consolidation/knowledge-history.jsonl']).status, 0);
+});
+
+test('consolidation refuses stale, incompatible and broken records before deleting any sources', (t) => {
+	const { archiveKnowledge } = require('../dist/brain/consolidation');
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const write = (extra = {}) => store.remember({ scope: 'default', type: 'memory', authority: 'user', title: 'Original', content: 'Keep this.', ...extra });
+	const source = write({ recall: 'always', applies_to: ['src/**'] });
+	let target = write();
+	const ref = ({ id, revision }) => ({ id, revision });
+	const request = (src = source, dest = target) => ({ sources: [{ ...ref(src), replacements: [ref(dest)] }], reason: 'Consolidation' });
+	assert.throws(() => archiveKnowledge(store, request()), /always recall/);
+	target = store.amend(target.id, target.revision, { recall: 'always' });
+	assert.throws(() => archiveKnowledge(store, request()), /applies_to/);
+	target = store.amend(target.id, target.revision, { applies_to: ['src/**'] });
+	assert.throws(() => archiveKnowledge(store, request({ ...source, revision: '0'.repeat(64) })), /changed/);
+	assert.throws(() => archiveKnowledge(store, request(source, { ...target, revision: '0'.repeat(64) })), /changed/);
+	assert.throws(() => archiveKnowledge(store, request(source, source)), /also be a replacement/);
+	assert.throws(() => archiveKnowledge(store, request(source, write({ authority: 'inferred' }))), /authority/);
+	assert.throws(() => archiveKnowledge(store, request(source, write({ scope: 'global' }))), /scope/);
+	assert.throws(() => archiveKnowledge(store, request(source, write({ type: 'review', severity: 'low' }))), /non-review/);
+	const closed = write();
+	const deprecated = store.deprecate(closed.id, closed.revision);
+	assert.throws(() => archiveKnowledge(store, request(source, deprecated)), /active non-review/);
+	const mixed = request();
+	mixed.sources.push({ id: 'absent', revision: source.revision, replacements: [ref(target)] });
+	assert.throws(() => archiveKnowledge(store, mixed), /not found/);
+	assert.equal(store.get(source.id).revision, source.revision);
+	assert.equal(fs.existsSync(path.join(env.root, 'default/knowledge-history.jsonl')), false);
+	store.atomicWrite(path.join(env.root, 'default/knowledge-history.jsonl'), 'broken\n');
+	assert.throws(() => archiveKnowledge(store, request()), /JSON/);
+	assert.equal(store.get(source.id).revision, source.revision);
+});
+
+test('consolidation preserves originals on archive failure and retries interrupted deletion', (t) => {
+	const { archiveKnowledge, knowledgeHistory } = require('../dist/brain/consolidation');
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const write = (title) => store.remember({ scope: 'default', type: 'memory', title, content: title });
+	const sources = [write('First'), write('Second')];
+	const target = write('Combined');
+	const ref = ({ id, revision }) => ({ id, revision });
+	const request = { sources: sources.map((item) => ({ ...ref(item), replacements: [ref(target)] })), reason: 'Combined' };
+	const atomicWrite = store.atomicWrite;
+	store.atomicWrite = () => { throw new Error('Archive write failed'); };
+	assert.throws(() => archiveKnowledge(store, request), /Archive write failed/);
+	store.atomicWrite = atomicWrite;
+	assert.equal(store.allKnowledge().length, 3);
+	const unlink = fs.unlinkSync;
+	fs.unlinkSync = (file) => { if (file === path.join(env.root, sources[1].source)) throw new Error('Deletion failed'); return unlink(file); };
+	try { assert.throws(() => archiveKnowledge(store, request), /Deletion failed/); }
+	finally { fs.unlinkSync = unlink; }
+	assert.equal(knowledgeHistory(store).total, 2);
+	assert.equal(fs.existsSync(path.join(env.root, sources[0].source)), false);
+	assert.equal(fs.existsSync(path.join(env.root, sources[1].source)), true);
+	archiveKnowledge(store, request);
+	assert.equal(knowledgeHistory(store).total, 2);
+	assert.deepEqual(store.allKnowledge().map((item) => item.id), [target.id]);
+});
+
+test('consolidation skill upgrades preserve customization and match the packaged starter', (t) => {
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const skill = getSkill(store, 'brain-consolidate');
+	const starter = path.resolve(__dirname, '../examples/basic-config/agent-config/global/skills/brain-consolidate/SKILL.md');
+	assert.equal(fs.readFileSync(starter, 'utf8'), fs.readFileSync(path.join(env.root, skill.source), 'utf8'));
+	fs.appendFileSync(path.join(env.root, skill.source), '\nLocal customization.\n');
+	initializeBrain(env.root, env.cwd);
+	assert.match(getSkill(store, 'brain-consolidate').content, /Local customization/);
+	fs.unlinkSync(path.join(env.root, skill.source));
+	initializeBrain(env.root, env.cwd);
+	assert.equal(getSkill(store, 'brain-consolidate').content, skill.content);
+});
+
+test('MCP and CLI expose inventory, archival and original knowledge lookup', { skip: process.platform === 'win32' }, async (t) => {
+	const env = environment(t);
+	const service = await serveApiCore(env.root, path.join(env.root, 'runtime', 'agent-brain.sock'));
+	env.cleanup(() => service.close());
+	const mcp = await client(t, env);
+	const call = async (name, args) => { const result = await mcp.callTool({ name, arguments: args }); assert.ok(!result.isError, result.content[0].text); return JSON.parse(result.content[0].text); };
+	const old = await call('remember', { scope: 'default', type: 'memory', title: 'Old', content: 'Old content' });
+	const replacement = await call('remember', { scope: 'default', type: 'observation', title: 'Extracted', content: 'Extracted facts' });
+	assert.equal((await call('list_knowledge', { limit: 1 })).total, 2);
+	await call('archive_knowledge', { sources: [{ id: old.id, revision: old.revision, replacements: [{ id: replacement.id, revision: replacement.revision }] }], reason: 'Extracted code facts' });
+	assert.match((await call('knowledge_history', { id: old.id })).items[0].text, /Old content/);
+	assert.equal((await call('list_knowledge', {})).total, 1);
+	for (const [command, input, count] of [['list', { scope: 'default' }, 1], ['history', { id: old.id }, 1]]) {
+		const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/agent-brain.js'), command, '--json', JSON.stringify(input), '--configdir', env.root, '--cwd', env.cwd], { encoding: 'utf8' });
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(JSON.parse(result.stdout).total, count);
+	}
+});
+
+test('consolidation inventory paginates beyond search limits and reports broken files', (t) => {
+	const { listKnowledge } = require('../dist/brain/consolidation');
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	for (let i = 0; i < 105; i++) store.atomicWrite(path.join(env.root, 'default/memory', `note-${i}.md`), `# Note ${i}\n\nFact ${i}\n`);
+	store.atomicWrite(path.join(env.root, 'default/memory/broken.md'), '---\nid: invalid\nscope: default\ntype: bogus\n---\nBroken\n');
+	const seen = [];
+	for (let offset = 0; offset < 105; offset += 50) {
+		const page = listKnowledge(store, { scope: 'default', offset });
+		assert.equal(page.total, 105);
+		assert.equal(page.contextBudget, store.budget);
+		assert.equal(store.knowledgeErrors.length, 1);
+		seen.push(...page.items.map((item) => item.id));
+	}
+	assert.equal(new Set(seen).size, 105);
+	assert.equal(listKnowledge(store, { offset: 105 }).items.length, 0);
+});
+
+test('consolidation extracts user memory into typed destinations and rejects symlinked history', { skip: process.platform === 'win32' }, (t) => {
+	const { archiveKnowledge, knowledgeHistory } = require('../dist/brain/consolidation');
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const write = (type, content) => store.remember({ scope: 'default', type, authority: 'user', title: type, content });
+	const source = write('memory', 'Confirmed requirement: preserve data. Historical reason: a prior migration lost data.');
+	const targets = [write('constraint', 'Preserve data.'), write('memory', 'A prior migration lost data.')];
+	const request = { sources: [{ id: source.id, revision: source.revision, replacements: targets.map(({id, revision}) => ({id, revision})) }], reason: 'Separated the confirmed requirement and historical reason.' };
+	const outside = path.join(env.directory, 'outside-history');
+	fs.writeFileSync(outside, '');
+	const history = path.join(env.root, 'default/knowledge-history.jsonl');
+	fs.symlinkSync(outside, history);
+	assert.throws(() => archiveKnowledge(store, request), /Symlinks/);
+	assert.equal(store.get(source.id).revision, source.revision);
+	assert.equal(fs.readFileSync(outside, 'utf8'), '');
+	fs.unlinkSync(history);
+	archiveKnowledge(store, request);
+	assert.deepEqual(knowledgeHistory(store, { id: source.id }).items[0].replacements.map((item) => item.id), targets.map((item) => item.id));
+	assert.deepEqual(store.allKnowledge().map((item) => item.type).sort(), ['constraint', 'memory']);
+});

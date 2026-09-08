@@ -19,6 +19,9 @@ function main(invokedTool, argv) {
 }
 function dispatch(command) {
     switch (command.command) {
+        case 'compress':
+            void runCompress(command).catch((error) => { process.stderr.write(`agent-run: ${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
+            return;
         case 'mcp':
         case 'create':
         case 'project':
@@ -50,6 +53,42 @@ function dispatch(command) {
         default:
             runTool(command);
     }
+}
+async function runCompress(command) {
+    const { BrainStore } = await Promise.resolve().then(() => require('./brain/store'));
+    const { readBrainConfig } = await Promise.resolve().then(() => require('./brain/config'));
+    const { getSkills } = await Promise.resolve().then(() => require('./brain/skills'));
+    const { consolidationSkill } = await Promise.resolve().then(() => require('./brain/consolidation-skill'));
+    const projectRoot = (0, project_1.findProjectRoot)(process.cwd());
+    const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
+    if (!readBrainConfig(configRoot)?.enabled)
+        throw new Error('Compression requires agent-brain. Run agent-brain init with this configuration directory first.');
+    if ((0, project_1.isIgnoredDir)(projectRoot))
+        throw new Error('Compression is unavailable in an ignored directory.');
+    const store = new BrainStore(configRoot, process.cwd());
+    let agent;
+    let prompt;
+    try {
+        const scope = command.scope ?? (store.profile ? 'project' : 'default');
+        store.scopeDirectory(scope);
+        const profile = store.profile ?? 'default';
+        const manifest = (0, manifest_1.normalizeManifest)((0, manifest_1.loadManifest)(configRoot, path.join(configRoot, profile), profile), profile);
+        agent = command.agent ?? manifest.agent.default;
+        const skill = getSkills(store).find((item) => item.name === 'brain-consolidate') ?? consolidationSkill;
+        prompt = [
+            `Run brain knowledge consolidation in ${scope} scope only for the current environment.`,
+            command.dryRun ? 'Dry run: inspect and propose changes only; do not write, archive, or delete knowledge.' : 'Apply the consolidation, including verified archival of replaced records. This request authorizes the knowledge changes in this scope.',
+            'Do not commit, push, or change repository code. Follow the brain-consolidate skill below. Stop and report missing required brain capabilities instead of editing storage files directly.',
+            skill.content
+        ].join('\n\n');
+    }
+    finally {
+        store.close();
+    }
+    // Use the normal adapters, configuration and permission modes. The prompt is one argv value.
+    runTool({ command: agent, args: agent === 'gemini' ? ['-i', prompt] : [prompt], wrapperArgs: {
+            none: false, create: false, local: false, show: false, generate: false, sandboxMode: null, codexNetwork: false
+        } });
 }
 function runTool(parsed) {
     const { args, command, wrapperArgs } = parsed;

@@ -1,6 +1,16 @@
 CHANGES
 =======
 
+Version 0.99.36 (2026-09-08)
+----------------------------
+* Add agent-run compress to shorten and consolidate brain knowledge, with
+  scope selection, dry runs and a configurable default agent.
+* Reconcile confirmed changes from memory into specifications while preserving
+  sections explicitly marked immutable.
+* Add paginated knowledge inventory and archive replaced files into shared
+  history with original text, revision checks and replacement references.
+* Include knowledge archives and removed source files in brain Git sync.
+
 Version 0.99.35 (2026-09-07)
 ----------------------------
 * Recognize standing user authorization for project memory updates.

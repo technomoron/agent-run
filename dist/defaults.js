@@ -16,6 +16,7 @@ function defaultManifest(profile) {
         profile,
         kind: 'code',
         agent: {
+            default: 'codex',
             base: 'global/agents/code.md.njk',
             includes: ['{{ profile }}/local.md.njk']
         },

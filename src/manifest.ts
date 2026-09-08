@@ -1,3 +1,4 @@
+import { AGENT_IDS } from './agents/types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parse as parseJsonc, ParseError, printParseErrorCode } from 'jsonc-parser';
@@ -164,6 +165,8 @@ function asSkillObject(skills: AgentRunManifest['skills']): NormalizedManifest['
 }
 
 export function normalizeManifest(manifest: AgentRunManifest, profile: string): NormalizedManifest {
+	const defaultAgent = manifest.agent?.default ?? 'codex';
+	if (!AGENT_IDS.includes(defaultAgent)) throw new Error('agent.default must be codex, claude, gemini, or grok');
 	const fallback = defaultManifest(profile);
 	const skills = asSkillObject(manifest.skills ?? fallback.skills);
 	const fallbackPaths = fallback.paths ?? {};
@@ -172,6 +175,7 @@ export function normalizeManifest(manifest: AgentRunManifest, profile: string): 
 		profile: manifest.profile ?? profile,
 		kind: manifest.kind ?? fallback.kind ?? 'code',
 		agent: {
+			default: defaultAgent,
 			base: manifest.agent?.base ?? fallback.agent?.base ?? 'global/agents/code.md.njk',
 			includes: manifest.agent?.includes ?? [`{{ profile }}/${LOCAL_TEMPLATE_FILE_NAME}`]
 		},

@@ -15,6 +15,7 @@ const apicore_server_1 = require("@technomoron/apicore-server");
 const zod_1 = require("zod");
 const version_1 = require("../version");
 const store_1 = require("./store");
+const consolidation_1 = require("./consolidation");
 const skills_1 = require("./skills");
 const todos_1 = require("./todos");
 const connectors_1 = require("./connectors");
@@ -59,6 +60,9 @@ function createBrainServer(store) {
         query: zod_1.z.string().max(10000), scopes: zod_1.z.array(store_1.scopeSchema).optional(), types: zod_1.z.array(store_1.typeSchema).optional(),
         includeDeprecated: zod_1.z.boolean().optional(), limit: zod_1.z.number().int().min(1).max(100).optional()
     }, false, ({ query, ...options }) => store.search(query, options));
+    tool('list_knowledge', 'Inventory knowledge metadata with scope/type filters and pagination. Includes the context budget; read full records before consolidation.', consolidation_1.inventoryOptions.shape, true, (input) => (0, consolidation_1.listKnowledge)(store, input));
+    tool('knowledge_history', 'Look up archived knowledge and replacement IDs. Pass an old id to retrieve its exact original file text. Excluded from normal retrieval.', consolidation_1.historyOptions.shape, true, (input) => (0, consolidation_1.knowledgeHistory)(store, input));
+    tool('archive_knowledge', 'After authorized consolidation and verified coverage, archive exact source files and replacement references before removing the files. Same scope and authority only; revisions are required for sources and replacements. Identical retries finish interrupted deletion.', consolidation_1.archiveInput.shape, false, (input) => (0, consolidation_1.archiveKnowledge)(store, input));
     tool('get_knowledge', 'Read a complete knowledge item and its current revision.', { id }, true, ({ id }) => store.get(id));
     tool('remember', 'Persist durable knowledge when authorized by the user. Choose scope and a singular type; the server stores it in the matching directory (for example constraint in constraints/, preference in preferences/). Explicit user instructions have authority=user; deductions remain inferred observations. Global writes require explicit global intent. Use todo tools for tasks; skills and templates are separate files.', store_1.knowledgeInput.shape, false, (input) => store.remember(input));
     tool('amend_knowledge', 'Revise an active item in place using its last-read revision, keeping its id, file name, scope, type, authority, and history. Use this to correct or extend existing knowledge instead of writing a near-duplicate. Scope, type, authority, and review severity cannot be changed this way.', {

@@ -50,7 +50,8 @@ async function brainMain(argv, wrapperCommand) {
             'agent-brain todo update <id> --revision <hash> --json <changes>',
             'agent-brain todo complete <id> --revision <hash>',
             'agent-brain todo import|sync <connector> --scope <scope>',
-            'agent-brain sync [init|save|pull|push --confirmed] [--message <commit-message>]',
+            'agent-brain pull | push | save | sync [--message <commit-message>]',
+            'agent-brain sync status | init',
             'agent-brain serve [--pull] [--socket <path>] | mcp [--socket <path>]',
             'agent-run create <name> [--quick | --guided]',
             'agent-run project list | info | bootstrap',
@@ -169,17 +170,23 @@ async function brainMain(argv, wrapperCommand) {
                     throw new Error('Usage: agent-brain review list | resolve <id> --revision <hash> --state fixed|wontfix');
                 break;
             }
+            case 'pull':
+            case 'push':
+            case 'save':
             case 'sync': {
-                const action = positionals[0];
-                if (!action) {
+                const action = command === 'sync' ? positionals.shift() ?? 'sync' : command;
+                if (positionals.length)
+                    throw new Error('Unexpected arguments; use agent-brain --help');
+                if (action === 'status') {
                     report((0, git_1.gitPreview)(store));
                     break;
                 }
-                if (!['init', 'save', 'pull', 'push'].includes(action))
+                if (!['init', 'save', 'pull', 'push', 'sync'].includes(action))
                     throw new Error('Unknown sync action');
-                if (!values.confirmed)
-                    throw new Error('Review agent-brain sync output and obtain authorization before using --confirmed');
-                report((0, git_1.syncGit)(store, action, values.message));
+                const result = (0, git_1.syncGit)(store, action, values.message);
+                process.stdout.write(`${result.steps.join('\n')}\n`);
+                if (result.files.length)
+                    process.stdout.write(`Other local changes remain. Use agent-brain sync status to inspect them.\n`);
                 break;
             }
             case 'todo': {

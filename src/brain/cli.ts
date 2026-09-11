@@ -10,7 +10,7 @@ import { archiveInput, archiveKnowledge, historyOptions, inventoryOptions, knowl
 import { getSkill, listSkills } from './skills';
 import { addTodo, getTodo, listTodos, todoChanges, todoInput, updateTodo } from './todos';
 import { syncConnector } from './connectors';
-import { gitPreview, pullOnStart, syncGit } from './git';
+import { gitPreview, pullOnStart, syncGit, SyncAction } from './git';
 
 export async function brainMain(argv: string[], wrapperCommand?: 'mcp' | 'create' | 'project'): Promise<void> {
 	const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, strict: true, options: {
@@ -45,7 +45,8 @@ export async function brainMain(argv: string[], wrapperCommand?: 'mcp' | 'create
 			'agent-brain todo update <id> --revision <hash> --json <changes>',
 			'agent-brain todo complete <id> --revision <hash>',
 			'agent-brain todo import|sync <connector> --scope <scope>',
-			'agent-brain sync [init|save|pull|push --confirmed] [--message <commit-message>]',
+			'agent-brain pull | push | save | sync [--message <commit-message>]',
+			'agent-brain sync status | init',
 			'agent-brain serve [--pull] [--socket <path>] | mcp [--socket <path>]',
 			'agent-run create <name> [--quick | --guided]',
 			'agent-run project list | info | bootstrap',
@@ -118,12 +119,17 @@ export async function brainMain(argv: string[], wrapperCommand?: 'mcp' | 'create
 				} else throw new Error('Usage: agent-brain review list | resolve <id> --revision <hash> --state fixed|wontfix');
 				break;
 			}
+			case 'pull':
+			case 'push':
+			case 'save':
 			case 'sync': {
-				const action = positionals[0];
-				if (!action) { report(gitPreview(store)); break; }
-				if (!['init', 'save', 'pull', 'push'].includes(action)) throw new Error('Unknown sync action');
-				if (!values.confirmed) throw new Error('Review agent-brain sync output and obtain authorization before using --confirmed');
-				report(syncGit(store, action as 'init' | 'save' | 'pull' | 'push', values.message));
+				const action = command === 'sync' ? positionals.shift() ?? 'sync' : command;
+				if (positionals.length) throw new Error('Unexpected arguments; use agent-brain --help');
+				if (action === 'status') { report(gitPreview(store)); break; }
+				if (!['init', 'save', 'pull', 'push', 'sync'].includes(action)) throw new Error('Unknown sync action');
+				const result = syncGit(store, action as SyncAction, values.message);
+				process.stdout.write(`${result.steps.join('\n')}\n`);
+				if (result.files.length) process.stdout.write(`Other local changes remain. Use agent-brain sync status to inspect them.\n`);
 				break;
 			}
 			case 'todo': {

@@ -1365,6 +1365,37 @@ if node "$BIN" compress --agent 'codex;echo unwanted' >"$TMP_DIR/compress-agent.
 fi
 assert_contains "$TMP_DIR/compress-agent.out" "--agent must be"
 
+# Brain Git commands use a local remote and need neither confirmation nor a message.
+BRAIN_SYNC_ROOT="$TMP_DIR/brain-sync-config"
+BRAIN_SYNC_REMOTE="$TMP_DIR/brain-sync-remote.git"
+BRAIN_BIN="$ROOT/dist/agent-brain.js"
+node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" init >/dev/null
+node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" sync init >/dev/null
+git init --bare --initial-branch=main "$BRAIN_SYNC_REMOTE" >/dev/null
+git -C "$BRAIN_SYNC_ROOT" config user.name "Test User"
+git -C "$BRAIN_SYNC_ROOT" config user.email "test@example.test"
+git -C "$BRAIN_SYNC_ROOT" config commit.gpgsign false
+git -C "$BRAIN_SYNC_ROOT" config core.hooksPath "$TMP_DIR/no-hooks"
+git -C "$BRAIN_SYNC_ROOT" remote add origin "$BRAIN_SYNC_REMOTE"
+git -C "$BRAIN_SYNC_ROOT" config branch.main.remote origin
+git -C "$BRAIN_SYNC_ROOT" config branch.main.merge refs/heads/main
+node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" save >"$TMP_DIR/brain-save.out"
+assert_contains "$TMP_DIR/brain-save.out" "Saved"
+assert_contains "$TMP_DIR/brain-save.out" "Push completed"
+node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" sync status >"$TMP_DIR/brain-status.out"
+assert_contains "$TMP_DIR/brain-status.out" '"status"'
+node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" sync >"$TMP_DIR/brain-sync.out"
+assert_contains "$TMP_DIR/brain-sync.out" "No local brain changes"
+assert_contains "$TMP_DIR/brain-sync.out" "Pulled remote changes"
+assert_contains "$TMP_DIR/brain-sync.out" "Push completed"
+node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" pull >/dev/null
+node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" push >/dev/null
+node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" sync --confirmed push >/dev/null
+if node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" save unexpected >"$TMP_DIR/brain-extra.out" 2>&1; then
+	fail "brain save accepted unexpected arguments"
+fi
+assert_contains "$TMP_DIR/brain-extra.out" "Unexpected arguments"
+
 node --test "$ROOT/scripts/test-brain.cjs" "$ROOT/scripts/test-windows-guards.cjs"
 
 echo "All tests passed"

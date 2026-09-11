@@ -42,6 +42,22 @@ function environment(t) {
 	return { directory, root, cwd, project, store, cleanup: (fn) => cleanups.push(fn) };
 }
 
+function connectRemote(env) {
+	const remote = path.join(env.directory, 'remote.git');
+	for (const args of [
+		['init', '--bare', '--initial-branch=main', remote],
+		['-C', env.root, 'remote', 'add', 'origin', remote],
+		['-C', env.root, 'config', 'branch.main.remote', 'origin'],
+		['-C', env.root, 'config', 'branch.main.merge', 'refs/heads/main'],
+		['-C', env.root, 'config', 'commit.gpgsign', 'false'],
+		['-C', env.root, 'config', 'core.hooksPath', path.join(env.directory, 'no-hooks')]
+	]) {
+		const result = spawnSync('git', args, { encoding: 'utf8', env: { ...process.env, PATH: process.env.AGENT_RUN_REAL_PATH ?? process.env.PATH } });
+		assert.equal(result.status, 0, result.stderr);
+	}
+	return remote;
+}
+
 test('global plus project/default scopes, authority, promotion, revisions, and rebuildable FTS', (t) => {
 	const env = environment(t);
 	const first = env.project('first');
@@ -120,6 +136,7 @@ test('brain Git operations use the original PATH instead of session guards', { s
 		process.env.AGENT_RUN_REAL_PATH = realPath;
 		assert.equal(spawnSync('git', ['--version']).status, 42);
 		syncGit(store, 'init');
+		connectRemote(env);
 		for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@example.com']]) {
 			const result = spawnSync('git', ['-C', env.root, 'config', key, value], { env: { ...process.env, PATH: realPath }, encoding: 'utf8' });
 			assert.equal(result.status, 0, result.stderr);
@@ -735,7 +752,7 @@ test('Git save preview excludes runtime state, credentials, and native configura
 	assert.ok(preview.files.includes(knowledge.source));
 	assert.ok(preview.files.every((file) => !/secrets|runtime|index|live|brain\.jsonc/.test(file)));
 	assert.equal(syncGit(store, 'init').state, 'dirty');
-	assert.throws(() => syncGit(store, 'save'), /commit message/);
+	assert.throws(() => syncGit(store, 'save', '  '), /must not be empty/);
 });
 
 test('registered subdirectories use the most specific root and stale write locks fail clearly', (t) => {
@@ -770,6 +787,7 @@ test('Git saves and pushes only eligible files, and refuses an unrelated staged 
 		return result.stdout.trim();
 	};
 	syncGit(store, 'init');
+	connectRemote(env);
 	git(env.root, ['config', 'user.name', 'Test User']);
 	git(env.root, ['config', 'user.email', 'test@example.test']);
 	git(env.root, ['config', 'commit.gpgsign', 'false']);
@@ -780,11 +798,6 @@ test('Git saves and pushes only eligible files, and refuses an unrelated staged 
 	assert.ok(templates.every((file) => tracked.includes(file)));
 	assert.doesNotMatch(tracked, /secrets|knowledge.sqlite|brain.jsonc|runtime/);
 	const remote = path.join(env.directory, 'remote.git');
-	fs.mkdirSync(remote);
-	git(remote, ['init', '--bare', '--initial-branch=main']);
-	git(env.root, ['remote', 'add', 'origin', remote]);
-	git(env.root, ['config', 'branch.main.remote', 'origin']);
-	git(env.root, ['config', 'branch.main.merge', 'refs/heads/main']);
 	syncGit(store, 'push');
 	assert.equal(git(remote, ['rev-parse', 'main']), git(env.root, ['rev-parse', 'HEAD']));
 	const checkout = path.join(env.directory, 'template-checkout');
@@ -801,6 +814,78 @@ test('Git saves and pushes only eligible files, and refuses an unrelated staged 
 	fs.writeFileSync(path.join(env.root, 'unrelated.txt'), 'Unrelated user work');
 	git(env.root, ['add', 'unrelated.txt']);
 	assert.throws(() => syncGit(store, 'save', 'Another save'), /already has staged changes/);
+});
+
+test('sync combines changes and stops before pushing on conflict or remote failure', (t) => {
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	const git = (cwd, args) => {
+		const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+		assert.equal(result.status, 0, result.stderr);
+		return result.stdout.trim();
+	};
+	syncGit(store, 'init');
+	const remote = connectRemote(env);
+	git(env.root, ['config', 'user.name', 'Test']);
+	git(env.root, ['config', 'user.email', 'test@example.test']);
+	store.atomicWrite('default/templates/shared.txt', 'Initial text\n');
+	const saved = syncGit(store, 'save');
+	assert.match(saved.steps[0], /Saved \d+ files in commit .*Update brain knowledge/);
+	assert.equal(git(remote, ['rev-parse', 'main']), git(env.root, ['rev-parse', 'HEAD']));
+	const before = git(env.root, ['rev-parse', 'HEAD']);
+	assert.match(syncGit(store, 'save').steps[0], /No local brain changes/);
+	assert.equal(git(env.root, ['rev-parse', 'HEAD']), before);
+	const checkout = path.join(env.directory, 'other');
+	git(env.directory, ['clone', remote, checkout]);
+	git(checkout, ['config', 'user.name', 'Test']);
+	git(checkout, ['config', 'user.email', 'test@example.test']);
+	git(checkout, ['config', 'commit.gpgsign', 'false']);
+	git(checkout, ['config', 'core.hooksPath', path.join(env.directory, 'no-hooks')]);
+	fs.writeFileSync(path.join(checkout, 'default/templates/remote.txt'), 'Remote addition\n');
+	git(checkout, ['add', '.']);
+	git(checkout, ['commit', '-m', 'Remote addition']);
+	git(checkout, ['push']);
+	store.atomicWrite('default/templates/local.txt', 'Local addition\n');
+	const synced = syncGit(store, 'sync', 'Save local addition');
+	assert.equal(synced.steps.length, 3);
+	assert.equal(git(env.root, ['log', '-1', '--format=%s']), 'Save local addition');
+	assert.equal(fs.readFileSync(path.join(env.root, 'default/templates/remote.txt'), 'utf8'), 'Remote addition\n');
+	assert.equal(git(remote, ['rev-parse', 'main']), git(env.root, ['rev-parse', 'HEAD']));
+	git(checkout, ['pull', '--ff-only']);
+	fs.writeFileSync(path.join(checkout, 'default/templates/shared.txt'), 'Remote edit\n');
+	git(checkout, ['add', '.']);
+	git(checkout, ['commit', '-m', 'Remote edit']);
+	git(checkout, ['push']);
+	const remoteHead = git(remote, ['rev-parse', 'main']);
+	store.atomicWrite('default/templates/shared.txt', 'Local edit\n');
+	assert.throws(() => syncGit(store, 'sync'), /Saved 1 file[\s\S]*Pull stopped with conflicts/);
+	assert.equal(git(remote, ['rev-parse', 'main']), remoteHead);
+	git(env.root, ['rebase', '--abort']);
+	assert.equal(fs.readFileSync(path.join(env.root, 'default/templates/shared.txt'), 'utf8'), 'Local edit\n');
+	git(env.root, ['remote', 'set-url', 'origin', path.join(env.directory, 'missing.git')]);
+	store.atomicWrite('default/templates/offline.txt', 'Keep locally\n');
+	assert.throws(() => syncGit(store, 'save'), /Saved 1 file[\s\S]*git push failed/);
+	assert.equal(git(env.root, ['show', 'HEAD:default/templates/offline.txt']), 'Keep locally');
+	assert.equal(git(env.root, ['diff', 'HEAD', '--name-only']), '');
+});
+
+test('MCP sync accepts save without confirmation or a message', { skip: process.platform === 'win32' }, async (t) => {
+	const env = environment(t);
+	const store = env.store(env.cwd);
+	syncGit(store, 'init');
+	connectRemote(env);
+	for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@example.test']]) {
+		assert.equal(spawnSync('git', ['-C', env.root, 'config', key, value]).status, 0);
+	}
+	const service = await serveApiCore(env.root, defaultSocketPath(env.root));
+	env.cleanup(() => service.close());
+	const mcp = await client(t, env);
+	const result = await mcp.callTool({ name: 'sync', arguments: { action: 'save' } });
+	assert.ok(!result.isError, result.content[0].text);
+	assert.match(JSON.parse(result.content[0].text).steps.at(-1), /Push completed/);
+	const synced = await mcp.callTool({ name: 'sync', arguments: { action: 'sync' } });
+	assert.ok(!synced.isError, synced.content[0].text);
+	assert.equal(JSON.parse(synced.content[0].text).steps.length, 3);
 });
 
 test('Trello imports normalize completed and archived cards without persisting credentials', async (t) => {
@@ -942,6 +1027,7 @@ test('review archive migrates closed files, recovers interrupted deletion, and s
 	const item = store.remember({ scope: 'project', type: 'review', severity: 'medium', title: 'Old fix', content: 'Full old details.' });
 	const deferred = store.remember({ scope: 'project', type: 'review', severity: 'low', title: 'Deferred', content: 'Still relevant.' });
 	syncGit(store, 'init');
+	connectRemote(env);
 	for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@example.com']]) assert.equal(spawnSync('git', ['-C', env.root, 'config', key, value]).status, 0);
 	syncGit(store, 'save', 'Initial reviews');
 	const { source, revision, content, ...metadata } = item;
@@ -1012,6 +1098,7 @@ test('consolidation inventories all records and archives exact originals with du
 	assert.equal(listKnowledge(store, { scope: 'project', offset: 1, limit: 1 }).items.length, 1);
 	assert.equal('content' in listKnowledge(store).items[0], false);
 	syncGit(store, 'init');
+	connectRemote(env);
 	for (const [key, value] of [['user.name', 'Test'], ['user.email', 'test@example.com']]) assert.equal(spawnSync('git', ['-C', env.root, 'config', key, value]).status, 0);
 	syncGit(store, 'save', 'Initial consolidation data');
 	assert.equal(archiveKnowledge(store, request).archived.length, 2);

@@ -1,6 +1,14 @@
 CHANGES
 =======
 
+Version 0.99.38 (2026-09-11)
+----------------------------
+* Add agent-brain pull, push, and save commands without --confirmed. Save
+  generates a commit message and pushes the saved changes.
+* Make agent-brain sync commit, pull, and push; move the preview to sync status.
+* Report completed sync steps and preserve useful progress details on failure.
+* Allow prompt-driven MCP sync without a supplied message or confirmation field.
+
 Version 0.99.37 (2026-09-11)
 ----------------------------
 * Skip brain lookups for ordinary questions unless saved knowledge is needed,

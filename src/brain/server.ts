@@ -33,8 +33,8 @@ export function createBrainServer(store: BrainStore): McpServer {
 	const revision = z.string().regex(/^[a-f0-9]{64}$/);
 	tool('brain_status', 'Show the active project and available scopes.', {}, true, () => ({ profile: store.profile, scopes: store.scopes.map((entry) => entry.scope) }));
 	tool('sync_status', 'Preview Git state and the canonical files eligible for saving. Runtime files, indexes, credentials, and native agent state are excluded.', {}, true, () => gitPreview(store));
-	server.registerTool('sync', { description: 'Initialize, save, pull, or push the configuration Git repository. Review sync_status first. Requires explicit user authorization; saving also requires the approved commit message.',
-		inputSchema: { action: z.enum(['init', 'save', 'pull', 'push']), confirmed: z.literal(true), message: z.string().min(1).max(1000).optional() },
+	server.registerTool('sync', { description: 'Synchronize the configuration Git repository when the user requests it. save commits and pushes; sync commits, pulls with rebase, then pushes; pull and push only transfer existing commits. Commit messages are generated unless supplied. Use sync_status to inspect eligible files.',
+		inputSchema: { action: z.enum(['init', 'save', 'pull', 'push', 'sync']), confirmed: z.literal(true).optional(), message: z.string().min(1).max(1000).optional() },
 		annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
 	}, async ({ action, message }) => {
 		try { return { content: [{ type: 'text' as const, text: JSON.stringify(syncGit(store, action, message)) }] }; }

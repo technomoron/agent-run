@@ -939,15 +939,25 @@ a local task does not close a GitHub issue or modify a Trello card.
 ### Git portability
 
 ```sh
-agent-brain sync
-agent-brain sync init --confirmed
-agent-brain sync save --confirmed --message "Your approved commit message"
-agent-brain sync pull --confirmed
-agent-brain sync push --confirmed
+agent-brain sync status   # Preview Git status and eligible files
+agent-brain sync init     # Initialize the configuration Git repository
+agent-brain save          # Commit local brain changes and push
+agent-brain pull          # Pull remote changes with rebase
+agent-brain push          # Push existing commits
+agent-brain sync          # Commit local changes, pull, then push
 ```
 
-The command without an action previews Git status and eligible files. Saving
-includes Markdown knowledge, skills, tasks, project metadata, and `.gitignore`.
+Commands need no `--confirmed` flag. Saving generates a commit message from the
+number of changed files; use `--message "Your message"` to override it. Output
+reports completed steps, including a local commit if a later pull or push fails.
+Existing `agent-brain sync save|pull|push` forms remain supported. Bare
+`agent-brain sync` now performs synchronization; use `sync status` for a preview.
+
+From an agent prompt, ask to "save brain changes" or "sync brain". The MCP `sync`
+tool accepts the same actions and an optional message, without a confirmation
+parameter. Agents still need a user request or standing authorization to sync.
+
+Saving includes Markdown knowledge, skills, tasks, project metadata, and `.gitignore`.
 It also includes all regular files under each scope's `templates/` directory,
 including nested Nunjucks templates and supporting files. Template additions,
 edits, and deletions are synced; symlinks are rejected.
@@ -961,8 +971,10 @@ profile markers and shared templates, then update source roots in `config.yaml`
 to match that machine.
 
 The configuration directory must itself be the repository root. Pull uses rebase
-and reports conflicted files; resolve conflicts before syncing again. Each action
-requires explicit authorization. There are no automatic commits, pulls, or pushes.
+and reports conflicted files; resolve the rebase before syncing again. Sync stops
+on failure without pushing. Commands apply across all scopes in the configuration
+repository, not just the current code project. Background commits and pushes are
+not performed; the service can optionally pull at startup as described below.
 
 ### Persistent service under apicore-server
 

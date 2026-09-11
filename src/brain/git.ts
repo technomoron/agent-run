@@ -50,34 +50,49 @@ function syncableFiles(store: BrainStore): string[] {
 	return [...new Set(files.map((file) => path.relative(store.configRoot, file)))].sort();
 }
 
-export function syncGit(store: BrainStore, action: 'init' | 'save' | 'pull' | 'push', message?: string): ReturnType<typeof gitStatus> {
+export type SyncAction = 'init' | 'save' | 'pull' | 'push' | 'sync';
+
+export function syncGit(store: BrainStore, action: SyncAction, message?: string): ReturnType<typeof gitStatus> & { steps: string[] } {
 	return store.writeLocked(() => {
-		if (action === 'init') {
-			if (!fs.existsSync(path.join(store.configRoot, '.git'))) git(store.configRoot, ['init', '--initial-branch=main']);
-			return gitStatus(store);
-		}
-		requireRepository(store);
-		const status = gitStatus(store);
-		if (status.state === 'conflicted') throw new Error(`Resolve Git conflicts before syncing: ${status.conflicts.join(', ')}`);
-		if (action === 'save') {
-			if (!message?.trim()) throw new Error('Supply a commit message after reviewing the files to save.');
-			if (git(store.configRoot, ['diff', '--cached', '--name-only'])) throw new Error('The Git index already has staged changes. Commit or unstage them before saving brain knowledge.');
-			const files = syncableFiles(store);
-			if (!files.length) return status;
-			git(store.configRoot, ['add', '--', ...files]);
-			if (git(store.configRoot, ['diff', '--cached', '--name-only'])) git(store.configRoot, ['commit', '-m', message]);
-		} else if (action === 'pull') {
-			if (git(store.configRoot, ['diff', '--name-only']) || git(store.configRoot, ['diff', '--cached', '--name-only'])) throw new Error('Save or resolve local tracked configuration changes before pulling.');
-			try { git(store.configRoot, ['pull', '--rebase']); }
-			catch (error) {
-				const after = gitStatus(store);
-				if (after.state === 'conflicted') return after;
-				throw error;
+		const steps: string[] = [];
+		try {
+			if (action === 'init') {
+				if (!fs.existsSync(path.join(store.configRoot, '.git'))) git(store.configRoot, ['init', '--initial-branch=main']);
+				return { ...gitStatus(store), steps: ['Configuration Git repository initialized.'] };
 			}
-		} else {
-			git(store.configRoot, ['push']);
+			requireRepository(store);
+			const status = gitStatus(store);
+			if (status.state === 'conflicted') throw new Error(`Resolve Git conflicts before syncing: ${status.conflicts.join(', ')}`);
+			if (action === 'save' || action === 'sync') {
+				if (message !== undefined && !message.trim()) throw new Error('The commit message must not be empty.');
+				if (git(store.configRoot, ['diff', '--cached', '--name-only'])) throw new Error('The Git index already has staged changes. Commit or unstage them before saving brain knowledge.');
+				const files = syncableFiles(store);
+				if (files.length) git(store.configRoot, ['add', '--', ...files]);
+				const changed = git(store.configRoot, ['diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean);
+				if (changed.length) {
+					const commitMessage = message ?? `Update brain knowledge (${changed.length} ${changed.length === 1 ? 'file' : 'files'})`;
+					git(store.configRoot, ['commit', '-m', commitMessage]);
+					steps.push(`Saved ${changed.length} ${changed.length === 1 ? 'file' : 'files'} in commit ${git(store.configRoot, ['rev-parse', '--short', 'HEAD'])}: ${commitMessage}`);
+				} else steps.push('No local brain changes to save.');
+			}
+			if (action === 'pull' || action === 'sync') {
+				if (git(store.configRoot, ['diff', '--name-only']) || git(store.configRoot, ['diff', '--cached', '--name-only'])) throw new Error('Save or resolve local tracked configuration changes before pulling.');
+				try { git(store.configRoot, ['-c', 'merge.autoStash=false', '-c', 'rebase.autoStash=false', 'pull', '--rebase']); }
+				catch (error) {
+					const after = gitStatus(store);
+					if (after.state === 'conflicted') throw new Error(`Pull stopped with conflicts: ${after.conflicts.join(', ')}. Resolve the rebase before syncing again.`);
+					throw new Error(`Pull failed: ${error instanceof Error ? error.message : String(error)}`);
+				}
+				steps.push('Pulled remote changes.');
+			}
+			if (action === 'push' || action === 'save' || action === 'sync') {
+				git(store.configRoot, ['push']);
+				steps.push('Push completed; remote is up to date.');
+			}
+			return { ...gitStatus(store), steps };
+		} catch (error) {
+			throw new Error([...steps, error instanceof Error ? error.message : String(error)].join('\n'));
 		}
-		return gitStatus(store);
 	});
 }
 

@@ -42,8 +42,8 @@ function createBrainServer(store) {
     const revision = zod_1.z.string().regex(/^[a-f0-9]{64}$/);
     tool('brain_status', 'Show the active project and available scopes.', {}, true, () => ({ profile: store.profile, scopes: store.scopes.map((entry) => entry.scope) }));
     tool('sync_status', 'Preview Git state and the canonical files eligible for saving. Runtime files, indexes, credentials, and native agent state are excluded.', {}, true, () => (0, git_1.gitPreview)(store));
-    server.registerTool('sync', { description: 'Initialize, save, pull, or push the configuration Git repository. Review sync_status first. Requires explicit user authorization; saving also requires the approved commit message.',
-        inputSchema: { action: zod_1.z.enum(['init', 'save', 'pull', 'push']), confirmed: zod_1.z.literal(true), message: zod_1.z.string().min(1).max(1000).optional() },
+    server.registerTool('sync', { description: 'Synchronize the configuration Git repository when the user requests it. save commits and pushes; sync commits, pulls with rebase, then pushes; pull and push only transfer existing commits. Commit messages are generated unless supplied. Use sync_status to inspect eligible files.',
+        inputSchema: { action: zod_1.z.enum(['init', 'save', 'pull', 'push', 'sync']), confirmed: zod_1.z.literal(true).optional(), message: zod_1.z.string().min(1).max(1000).optional() },
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
     }, async ({ action, message }) => {
         try {

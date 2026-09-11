@@ -1,6 +1,15 @@
 CHANGES
 =======
 
+Version 0.99.37 (2026-09-11)
+----------------------------
+* Skip brain lookups for ordinary questions unless saved knowledge is needed,
+  and reuse context and skills already loaded in the conversation.
+* Require a task-tracking request or explicit workflow authorization before
+  creating saved todos from work requests.
+* Refresh generated instructions with agent-run update after upgrading;
+  customized templates and installed skills remain preserved.
+
 Version 0.99.36 (2026-09-08)
 ----------------------------
 * Add agent-run compress to shorten and consolidate brain knowledge, with

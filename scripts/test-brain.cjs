@@ -472,6 +472,8 @@ test('initialization creates scope directories and preserves existing knowledge 
 	const store = env.store(project.cwd);
 	const item = store.remember({ scope: 'project', type: 'constraint', authority: 'user', title: 'Keep data', content: 'Preserve existing files.' });
 	const skill = path.join(env.root, 'global/skills/brain-memory/SKILL.md');
+	assert.match(fs.readFileSync(skill, 'utf8'), /For ordinary questions, explanations, and conversation, answer directly without brain lookups/);
+	assert.match(fs.readFileSync(path.join(env.root, 'global/skills/todo-manager/SKILL.md'), 'utf8'), /A request to do work does not by itself authorize creating a saved task/);
 	fs.appendFileSync(skill, '\nUser customization.\n');
 	const existingSkill = fs.readFileSync(skill, 'utf8');
 	initializeBrain(env.root, project.cwd);

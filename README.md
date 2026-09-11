@@ -514,6 +514,19 @@ service runs under `@technomoron/apicore-server` on a private Unix socket.
 Node 24 or newer is required; SQLite and FTS come from Node, with no database
 package to compile.
 
+Ordinary questions, explanations, and conversation do not need brain lookups
+unless the answer depends on saved project knowledge. Before substantial
+implementation or project changes, agents retrieve relevant constraints and
+applicable skills, reusing context already loaded in the conversation. Skill
+listing is only needed to discover a skill. Asking an agent to do work does not
+by itself authorize creating a saved todo; task tracking needs a user request or
+an explicitly authorized task-tracking workflow.
+
+After upgrading, run `agent-run update` to refresh generated instructions.
+Existing custom templates and installed skills are preserved. If they require
+brain calls before every action or automatic task creation, narrow those rules
+in their source files; updating does not rewrite customized instructions.
+
 ### Start using it
 
 ```sh

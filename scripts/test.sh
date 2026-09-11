@@ -1308,6 +1308,14 @@ EOF
 COMPRESS_CONFIG="$TMP_DIR/compress-config"
 cp -R "$EXAMPLE/agent-config" "$COMPRESS_CONFIG"
 node "$ROOT/dist/agent-brain.js" init --configdir "$COMPRESS_CONFIG" --cwd "$PROJECT" >"$TMP_DIR/compress-init.out"
+# Updating existing profiles refreshes brain guidance for both instruction formats.
+node "$BIN" --configdir "$COMPRESS_CONFIG" update "$PROJECT" >"$TMP_DIR/brain-update.out"
+for instructions in "$COMPRESS_CONFIG/starter/basic-project/live/memories/codex-home/AGENTS.md" "$COMPRESS_CONFIG/starter/basic-project/live/CLAUDE.md"; do
+	assert_contains "$instructions" "For ordinary questions, explanations, and conversation, answer directly without brain lookups"
+	assert_contains "$instructions" "Reuse context and skills already loaded in the conversation"
+	assert_contains "$instructions" "A request to do work does not by itself authorize creating a saved task"
+	assert_not_contains "$instructions" "then list_skills and load applicable skills"
+done
 node "$BIN" compress --help >"$TMP_DIR/compress-help.out"
 assert_contains "$TMP_DIR/compress-help.out" "--dry-run"
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/compress-codex.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" compress)

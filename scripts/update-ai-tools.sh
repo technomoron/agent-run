@@ -51,22 +51,19 @@ if [ "${1:-}" = --agent-brain ]; then
 	exit 0
 fi
 
-"$NPM_BIN" install -g --force "${packages[@]}"
+"$NPM_BIN" install -g --force "${packages[@]}" --allow-scripts=@anthropic-ai/claude-code,@xai-official/grok,esbuild
 ensure_brain
 
 # corepack and pnpm both own the pnpm/pnpx shims; install pnpm last so npm's
 # current pnpm package remains the command users execute.
 "$NPM_BIN" install -g --force pnpm@latest --allow-scripts=pnpm
 
+# This updater deliberately manages root-owned tooling. pnpm rejects inherited
+# sudo identity even in a root shell; clear it only for these configuration writes.
 install -d -o root -g root -m 0755 /usr/local/share/pnpm/global /usr/local/share/pnpm/store /usr/local/bin
-"$PNPM_BIN" config set --global global-dir /usr/local/share/pnpm/global
-"$PNPM_BIN" config set --global global-bin-dir /usr/local/bin
-"$PNPM_BIN" config set --global store-dir /usr/local/share/pnpm/store
-
-CLAUDE_INSTALL="$("$NPM_BIN" root -g)/@anthropic-ai/claude-code/install.cjs"
-if [ -f "$CLAUDE_INSTALL" ]; then
-	"$NODE_BIN" "$CLAUDE_INSTALL"
-fi
+env -u SUDO_USER "$PNPM_BIN" config set --global global-dir /usr/local/share/pnpm/global
+env -u SUDO_USER "$PNPM_BIN" config set --global global-bin-dir /usr/local/bin
+env -u SUDO_USER "$PNPM_BIN" config set --global store-dir /usr/local/share/pnpm/store
 
 if [ -n "$AI_TOOLS_APT_PACKAGES" ] && command -v "$APT_GET_BIN" >/dev/null 2>&1; then
 	read -r -a apt_packages <<<"$AI_TOOLS_APT_PACKAGES"

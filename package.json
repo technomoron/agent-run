@@ -1,6 +1,6 @@
 {
   "name": "@technomoron/agent-run",
-  "version": "0.99.38",
+  "version": "0.99.39",
   "packageManager": "pnpm@10.34.5",
   "bin": {
     "agent-run": "dist/agent-run.js",

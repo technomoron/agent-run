@@ -1,6 +1,13 @@
 CHANGES
 =======
 
+Version 0.99.39 (2026-09-11)
+----------------------------
+* Fix the AI tools updater failing under sudo or a root shell with inherited
+  SUDO_USER when configuring root-owned pnpm paths.
+* Allow Claude, Grok, and esbuild install hooks during global npm updates,
+  and remove the duplicate manual Claude install step.
+
 Version 0.99.38 (2026-09-11)
 ----------------------------
 * Add agent-brain pull, push, and save commands without --confirmed. Save

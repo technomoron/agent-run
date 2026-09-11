@@ -1396,6 +1396,6 @@ if node "$BRAIN_BIN" --configdir "$BRAIN_SYNC_ROOT" save unexpected >"$TMP_DIR/b
 fi
 assert_contains "$TMP_DIR/brain-extra.out" "Unexpected arguments"
 
-node --test "$ROOT/scripts/test-brain.cjs" "$ROOT/scripts/test-windows-guards.cjs"
+node --test "$ROOT/scripts/test-brain.cjs" "$ROOT/scripts/test-windows-guards.cjs" "$ROOT/scripts/test-updater.cjs"
 
 echo "All tests passed"

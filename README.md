@@ -1070,6 +1070,12 @@ npm, pnpm, corepack, fallow, ripgrep, pm2, tsx, typescript,
 @xai-official/grok, and @technomoron/agent-run
 ```
 
+The updater clears inherited `SUDO_USER` for its root-owned pnpm configuration
+writes, so it works both under sudo and from a root shell. It explicitly allows
+the Claude, Grok, esbuild, and pnpm install hooks. Optional native build hooks
+such as keytar and node-pty remain subject to npm's script policy; the updater
+does not enable native compilation or require a working node-gyp installation.
+
 The optional apt package list still defaults to `gh` and can be changed with
 `AI_TOOLS_APT_PACKAGES`.
 

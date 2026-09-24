@@ -1,6 +1,17 @@
 CHANGES
 =======
 
+Version 0.99.40 (2026-09-24)
+----------------------------
+* Add native Windows agent-brain service and MCP bridging over per-user named
+  pipes, with owner/ACL checks and a hidden sign-in scheduled task installer.
+* Fix recursive Windows command guard resolution after argument scanning and
+  normalize CRLF when checking generated profiles.
+* Preserve the complete generated compression prompt through Windows npm shims
+  and exercise the integration fixtures with native Windows paths.
+* Load Gemini profile settings from its private user home on Windows, retaining
+  shared preferences without requiring administrator-owned system settings.
+
 Version 0.99.39 (2026-09-11)
 ----------------------------
 * Fix the AI tools updater failing under sudo or a root shell with inherited

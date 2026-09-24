@@ -334,9 +334,13 @@ Gemini runs from the real project directory with a private
 `GEMINI_CLI_HOME`. Its generated system settings configure `AGENTS.md` as the
 context filename and add the private runtime plus project memory as context
 directories. Generated skills use Gemini's `.agents/skills` alias. Existing
-Gemini user settings, login credentials, commands, and user skills are linked
-into the private home when present; generated system settings remain the
-highest-priority project layer.
+Gemini login credentials, commands, and user skills are linked into the private
+home when present. On Windows, shared user preferences and generated settings
+are merged into the private home's `.gemini/settings.json`; shared settings
+remain untouched. This avoids Gemini's administrator-only system-settings ACL
+requirement. On other platforms, user settings are linked and generated system
+settings remain the highest-priority project layer. Gemini's normal folder-trust
+and sign-in requirements still apply.
 
 Grok runs from the real project directory with `GROK_HOME` set to
 `live/grok/`. Grok natively reads the generated home-level `AGENTS.md`,
@@ -510,7 +514,8 @@ command stages moves but never commits them.
 
 `agent-brain` gives the native agents the same project knowledge, skills, and
 tasks through MCP. It uses the official Node MCP SDK. The persistent
-service runs under `@technomoron/apicore-server` on a private Unix socket.
+service runs under `@technomoron/apicore-server` on a private Unix socket or a
+Windows named pipe restricted to the current user, SYSTEM, and administrators.
 Node 24 or newer is required; SQLite and FTS come from Node, with no database
 package to compile.
 
@@ -978,8 +983,8 @@ not performed; the service can optionally pull at startup as described below.
 
 ### Persistent service under apicore-server
 
-All native agents connect to the same long-lived service for the Unix user.
-Start it on Linux or macOS:
+All native agents connect to the same long-lived service for the current user.
+Start it on Linux, macOS, or Windows:
 
 ```sh
 agent-brain serve
@@ -1005,7 +1010,27 @@ for a particular service. The bridge verifies the socket's ownership and private
 permissions. A missing or unreachable socket is an error; start the service
 before connecting. There is no standalone stdio server or TCP fallback. Apicore
 supports Unix sockets directly, so localhost binding is unnecessary. The brain
-service currently requires Linux or macOS.
+service supports Linux, macOS, and native Windows.
+
+On Windows the default endpoint is `\\.\pipe\agent-brain-<hash>`, derived from
+the user's home and configuration root. No TCP port is opened. Windows
+PowerShell applies a private pipe ACL before requests are accepted; each bridge
+checks the pipe owner and ACL before connecting. `--socket` can select another
+local named pipe. Windows removes the pipe automatically when its server exits.
+
+To start it automatically at Windows sign-in, initialize the desired config root
+and run the packaged installer in PowerShell:
+
+```powershell
+agent-brain init --configdir "$env:USERPROFILE\.agent-run"
+$prefix = npm.cmd prefix -g
+& "$prefix\node_modules\@technomoron\agent-run\scripts\install-windows-brain.ps1" -ConfigRoot "$env:USERPROFILE\.agent-run"
+```
+
+The `Agent Brain` scheduled task runs hidden as the signed-in user, without
+elevation, and retries failures. Its log is `<config-root>/runtime/service.log`.
+After upgrading the package, restart it with `Stop-ScheduledTask` followed by
+`Start-ScheduledTask` for task name `Agent Brain`.
 
 After a crash, remove a stale socket only after checking that its service is
 stopped. Starting a second service on an existing socket fails without replacing

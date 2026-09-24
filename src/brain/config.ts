@@ -1,11 +1,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
+import { createHash } from 'node:crypto';
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import { isSamePathOrDescendant } from '../utils';
 
 export function defaultSocketPath(configRoot: string): string {
+	if (process.platform === 'win32') {
+		const identity = `${os.homedir().toLowerCase()}\0${path.resolve(configRoot).toLowerCase()}`;
+		return `\\\\.\\pipe\\agent-brain-${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
+	}
 	return path.join(configRoot, 'runtime', 'agent-brain.sock');
 }
 

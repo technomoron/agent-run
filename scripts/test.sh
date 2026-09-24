@@ -10,6 +10,10 @@ fail() {
 	exit 1
 }
 
+native_path() {
+	if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
+}
+
 assert_file() {
 	[ -f "$1" ] || fail "missing file: $1"
 }
@@ -29,7 +33,7 @@ assert_dir() {
 assert_contains() {
 	local file="$1"
 	local expected="$2"
-	grep -Fq -- "$expected" "$file" || fail "expected '$expected' in $file"
+	grep -Fq -- "$expected" "$file" || { cat "$file" >&2; fail "expected '$expected' in $file"; }
 }
 
 assert_not_contains() {
@@ -253,7 +257,11 @@ assert_contains "$TMP_DIR/codex-version.out" "codex-cli fake"
 
 SKELETON_INIT="$TMP_DIR/copied-agent-config"
 (cd "$PROJECT" && node "$BIN" --configdir="$SKELETON_INIT" setup starter/basic-project >"$TMP_DIR/setup.out")
-assert_contains "$TMP_DIR/setup.out" "OK installed default config tree at $SKELETON_INIT"
+EXPECTED_SKELETON_INIT="$SKELETON_INIT"
+if command -v cygpath >/dev/null 2>&1; then
+	EXPECTED_SKELETON_INIT="$(cygpath -w "$SKELETON_INIT")"
+fi
+assert_contains "$TMP_DIR/setup.out" "OK installed default config tree at $EXPECTED_SKELETON_INIT"
 assert_file "$SKELETON_INIT/.gitignore"
 assert_file "$SKELETON_INIT/agent-run.defaults.jsonc"
 assert_file "$SKELETON_INIT/global/agents/code.md.njk"
@@ -298,7 +306,11 @@ mkdir -p "$GIT_MIGRATION_PROFILE/memory" "$GIT_MIGRATION_PROJECT"
 printf '{}\n' >"$GIT_MIGRATION_PROFILE/agent-run.jsonc"
 printf 'tracked decision\n' >"$GIT_MIGRATION_PROFILE/memory/decisions.md"
 printf '{"name":"git-memory-project","private":true}\n' >"$GIT_MIGRATION_PROJECT/package.json"
-printf 'AGENT_CONFIG_DIR=%s\nAGENT_RUN_PROFILE=acme/git-memory\n' "$GIT_MIGRATION_ROOT" >"$GIT_MIGRATION_PROJECT/.agent-run.env"
+GIT_MIGRATION_CONFIG_PATH="$GIT_MIGRATION_ROOT"
+if command -v cygpath >/dev/null 2>&1; then
+	GIT_MIGRATION_CONFIG_PATH="$(cygpath -m "$GIT_MIGRATION_ROOT")"
+fi
+printf 'AGENT_CONFIG_DIR=%s\nAGENT_RUN_PROFILE=acme/git-memory\n' "$GIT_MIGRATION_CONFIG_PATH" >"$GIT_MIGRATION_PROJECT/.agent-run.env"
 git -C "$TMP_DIR" init -b main "$GIT_MIGRATION_ROOT" >/dev/null
 : >"$GIT_MIGRATION_ROOT/.agent-run-test-repo"
 git -C "$GIT_MIGRATION_ROOT" config user.email test@example.com
@@ -508,15 +520,15 @@ assert_contains "$LIVE_DIR/CLAUDE.md" "Starter CLAUDE for starter/basic-project"
 assert_contains "$LIVE_DIR/CLAUDE.md" "globalMemoryDir: \`$EXPECTED_MEMORY_DIR\`"
 assert_contains "$LIVE_DIR/CLAUDE.md" "projectMemoryDir: \`$EXPECTED_PROJECT_MEMORY_DIR\`"
 assert_contains "$CODEX_CONFIG_FILE" "Starter profile Codex override"
-assert_not_contains "$CODEX_CONFIG_FILE" "$EXPECTED_MEMORY_DIR"
-assert_contains "$CODEX_CONFIG_FILE" "$EXPECTED_PROJECT_MEMORY_DIR"
-assert_not_contains "$CODEX_CONFIG_FILE" "\"$EXPECTED_AGENT_DIR\","
+assert_not_contains "$CODEX_CONFIG_FILE" "${EXPECTED_MEMORY_DIR//\\/\\\\}"
+assert_contains "$CODEX_CONFIG_FILE" "${EXPECTED_PROJECT_MEMORY_DIR//\\/\\\\}"
+assert_not_contains "$CODEX_CONFIG_FILE" "\"${EXPECTED_AGENT_DIR//\\/\\\\}\","
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"STARTER_OVERRIDE": "true"'
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"AGENT_GLOBAL_MEMORY_DIR":'
-assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "$EXPECTED_MEMORY_DIR"
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "${EXPECTED_MEMORY_DIR//\\/\\\\}"
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" '"AGENT_PROJECT_MEMORY_DIR":'
-assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "$EXPECTED_PROJECT_MEMORY_DIR"
-assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "\"AGENT_PROFILE_DIR\": \"$EXPECTED_AGENT_DIR\""
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "${EXPECTED_PROJECT_MEMORY_DIR//\\/\\\\}"
+assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "\"AGENT_PROFILE_DIR\": \"${EXPECTED_AGENT_DIR//\\/\\\\}\""
 assert_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm test)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(pnpm run cleanbuild)"
 assert_not_contains "$LIVE_DIR/.claude/agent-run-settings.json" "Bash(git *)"
@@ -684,7 +696,7 @@ assert_line_count "$TMP_DIR/claude-args.out" "--add-dir" 1
 assert_contains "$TMP_DIR/claude-args.out" "$EXPECTED_PROJECT_MEMORY_DIR"
 assert_not_contains "$TMP_DIR/claude-args.out" "$EXPECTED_MEMORY_DIR"
 assert_not_contains "$TMP_DIR/claude-args.out" "--dangerously-skip-permissions"
-assert_contains "$TMP_DIR/claude-env.out" "CLAUDE_CONFIG_DIR=$USER_CLAUDE_CONFIG"
+assert_contains "$TMP_DIR/claude-env.out" "CLAUDE_CONFIG_DIR=$(native_path "$USER_CLAUDE_CONFIG")"
 assert_contains "$TMP_DIR/claude-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
 
 (cd "$PROJECT" && AGENT_WRAPPER_FORCE_PERMISSIVE=1 AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-legacy-permissions-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check)
@@ -730,8 +742,12 @@ assert_contains "$TMP_DIR/gemini-args.out" "-p"
 assert_contains "$TMP_DIR/gemini-args.out" "fix the failing tests"
 assert_not_contains "$TMP_DIR/gemini-args.out" "--yolo"
 assert_contains "$TMP_DIR/gemini-env.out" "GEMINI_CLI_HOME=$EXPECTED_GEMINI_HOME_DIR"
-assert_contains "$TMP_DIR/gemini-env.out" "GEMINI_CLI_SYSTEM_SETTINGS_PATH=$EXPECTED_GEMINI_SETTINGS_FILE"
-assert_contains "$TMP_DIR/gemini-env.out" "PWD=$EXPECTED_PROJECT"
+if command -v cygpath >/dev/null 2>&1; then
+	assert_contains "$TMP_DIR/gemini-env.out" "GEMINI_CLI_SYSTEM_SETTINGS_PATH=<unset>"
+else
+	assert_contains "$TMP_DIR/gemini-env.out" "GEMINI_CLI_SYSTEM_SETTINGS_PATH=$EXPECTED_GEMINI_SETTINGS_FILE"
+fi
+assert_contains "$TMP_DIR/gemini-env.out" "PWD=$(native_path "$PROJECT")"
 assert_contains "$TMP_DIR/gemini-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
 
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/gemini-yolo-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" gemini --yolo -p hello)
@@ -752,7 +768,7 @@ assert_contains "$TMP_DIR/grok-args.out" "-p"
 assert_contains "$TMP_DIR/grok-args.out" "fix the failing tests"
 assert_not_contains "$TMP_DIR/grok-args.out" "--always-approve"
 assert_contains "$TMP_DIR/grok-env.out" "GROK_HOME=$EXPECTED_GROK_RUNTIME_DIR"
-assert_contains "$TMP_DIR/grok-env.out" "PWD=$EXPECTED_PROJECT"
+assert_contains "$TMP_DIR/grok-env.out" "PWD=$(native_path "$PROJECT")"
 assert_contains "$TMP_DIR/grok-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
 
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/grok-yolo-args.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" grok --yolo -p hello)
@@ -796,7 +812,11 @@ set -e
 [ "$git_status" -eq 42 ] || fail "expected git push shim to exit 42, got $git_status"
 [ "$pnpm_status" -eq 42 ] || fail "expected pnpm publish shim to exit 42, got $pnpm_status"
 [ "$gh_status" -eq 42 ] || fail "expected gh release shim to exit 42, got $gh_status"
-assert_contains "$TMP_DIR/git.out" "blocked git push"
+if command -v cygpath >/dev/null 2>&1; then
+	assert_contains "$TMP_DIR/git.out" "blocked git write"
+else
+	assert_contains "$TMP_DIR/git.out" "blocked git push"
+fi
 assert_contains "$TMP_DIR/pnpm.out" "blocked pnpm publish"
 assert_contains "$TMP_DIR/gh.out" "blocked gh release create"
 
@@ -819,7 +839,11 @@ set -e
 [ "$test_repo_commit_status" -eq 0 ] || fail "expected a commit in a marked test repository to run, got $test_repo_commit_status"
 [ "$test_repo_tag_status" -eq 0 ] || fail "expected a tag in a marked test repository to run, got $test_repo_tag_status"
 [ "$unmarked_commit_status" -eq 42 ] || fail "expected a commit outside a marked test repository to stay blocked, got $unmarked_commit_status"
-assert_contains "$TMP_DIR/git-unmarked.out" "blocked git commit"
+if command -v cygpath >/dev/null 2>&1; then
+	assert_contains "$TMP_DIR/git-unmarked.out" "blocked git write"
+else
+	assert_contains "$TMP_DIR/git-unmarked.out" "blocked git commit"
+fi
 
 if [ -x "$LIVE_DIR/bin/pnpm" ]; then
 	FAKE_REAL_GUARD_BIN="$TMP_DIR/fake-real-guard-bin"
@@ -1019,9 +1043,15 @@ node "$BIN" check --all "$DEEP_SCAN_ROOT" >"$TMP_DIR/deep-scan.out" 2>&1
 deep_scan_status=$?
 set -e
 [ "$deep_scan_status" -ne 0 ] || fail "expected the unconfigured deep repository scan to fail"
-assert_contains "$TMP_DIR/deep-scan.out" "$DEEP_SCAN_REPO"
+EXPECTED_DEEP_SCAN_REPO="$DEEP_SCAN_REPO"
+EXPECTED_IGNORED_SCAN_REPO="$IGNORED_SCAN_REPO"
+if command -v cygpath >/dev/null 2>&1; then
+	EXPECTED_DEEP_SCAN_REPO="$(cygpath -w "$DEEP_SCAN_REPO")"
+	EXPECTED_IGNORED_SCAN_REPO="$(cygpath -w "$IGNORED_SCAN_REPO")"
+fi
+assert_contains "$TMP_DIR/deep-scan.out" "$EXPECTED_DEEP_SCAN_REPO"
 assert_contains "$TMP_DIR/deep-scan.out" "local AI file in project"
-assert_not_contains "$TMP_DIR/deep-scan.out" "$IGNORED_SCAN_REPO"
+assert_not_contains "$TMP_DIR/deep-scan.out" "$EXPECTED_IGNORED_SCAN_REPO"
 
 printf '\nstale\n' >>"$CODEX_AGENTS_FILE"
 set +e
@@ -1126,7 +1156,7 @@ cat >"$LEGACY_PROJECT/package.json" <<'JSON'
 {"name":"legacy-parser-project","private":true}
 JSON
 cat >"$LEGACY_PROJECT/.agent-run.env" <<ENV
-AGENT_CONFIG_DIR=$LEGACY_CONFIG_ROOT
+AGENT_CONFIG_DIR=$(native_path "$LEGACY_CONFIG_ROOT")
 AGENT_RUN_PROFILE=starter/legacy-parser
 ENV
 cat >"$LEGACY_PROFILE_DIR/agent-run.jsonc" <<'JSON'
@@ -1165,7 +1195,7 @@ cp -R "$EXAMPLE/agent-config" "$QUOTED_CONFIG_ROOT"
 mkdir -p "$QUOTED_PROJECT"
 printf '{"name":"quoted-project","private":true}\n' >"$QUOTED_PROJECT/package.json"
 cat >"$QUOTED_PROJECT/.agent-run.env" <<ENV
-AGENT_CONFIG_DIR=$QUOTED_CONFIG_ROOT
+AGENT_CONFIG_DIR=$(native_path "$QUOTED_CONFIG_ROOT")
 AGENT_RUN_PROFILE=starter/basic-project
 ENV
 node "$BIN" update "$QUOTED_PROJECT" >/dev/null
@@ -1174,11 +1204,12 @@ QUOTED_CODEX_CONFIG="$QUOTED_CONFIG_ROOT/starter/basic-project/live/memories/cod
 EXPECTED_QUOTED_PROJECT="$QUOTED_PROJECT" node - "$QUOTED_SETTINGS" "$QUOTED_CODEX_CONFIG" <<'NODE'
 const fs = require('node:fs');
 const settings = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-if (settings.env.AGENT_RUN_PROJECT_ROOT !== process.env.EXPECTED_QUOTED_PROJECT) {
+const expectedProject = require('node:path').resolve(process.env.EXPECTED_QUOTED_PROJECT);
+if (settings.env.AGENT_RUN_PROJECT_ROOT !== expectedProject) {
 	throw new Error('Claude settings did not preserve the quoted project path');
 }
 const config = fs.readFileSync(process.argv[3], 'utf8');
-if (!config.includes(JSON.stringify(process.env.EXPECTED_QUOTED_PROJECT))) {
+if (!config.includes(JSON.stringify(expectedProject))) {
 	throw new Error('Codex config did not safely quote the project path');
 }
 NODE
@@ -1198,7 +1229,14 @@ cat >"$FAKE_EDITOR" <<'SH'
 printf '%s\n' "$@" >"$AGENT_RUN_EDITOR_CAPTURE"
 SH
 chmod +x "$FAKE_EDITOR"
-(cd "$EDITOR_PROJECT" && VISUAL="\"$FAKE_EDITOR\" --wait; touch $EDITOR_PROJECT/EDITOR_PWNED" AGENT_RUN_EDITOR_CAPTURE="$TMP_DIR/editor-args.out" node "$BIN" edit)
+if command -v cygpath >/dev/null 2>&1; then
+	cat >"$FAKE_EDITOR.cmd" <<'BAT'
+@echo off
+bash "%~dp0editor app" %*
+BAT
+	FAKE_EDITOR="$FAKE_EDITOR.cmd"
+fi
+(cd "$EDITOR_PROJECT" && VISUAL="\"$(native_path "$FAKE_EDITOR")\" --wait; touch $(native_path "$EDITOR_PROJECT")/EDITOR_PWNED" AGENT_RUN_EDITOR_CAPTURE="$TMP_DIR/editor-args.out" node "$BIN" edit)
 assert_no_file "$EDITOR_PROJECT/EDITOR_PWNED"
 assert_contains "$TMP_DIR/editor-args.out" "--wait"
 assert_contains "$TMP_DIR/editor-args.out" "touch"
@@ -1243,8 +1281,8 @@ assert.deepEqual(parseInvocation('agent-run', ['codex', '--', '--danger']), {
 	}
 });
 
-assert.equal(findProjectRoot(process.env.TEST_WORKSPACE_CHILD), process.env.TEST_WORKSPACE_ROOT);
-assert.equal(findProjectRoot(process.env.TEST_WORKTREE_CHILD), process.env.TEST_WORKTREE_ROOT);
+assert.equal(findProjectRoot(process.env.TEST_WORKSPACE_CHILD), path.resolve(process.env.TEST_WORKSPACE_ROOT));
+assert.equal(findProjectRoot(process.env.TEST_WORKTREE_CHILD), path.resolve(process.env.TEST_WORKTREE_ROOT));
 assert.equal(resolveProfile(process.env.TEST_WORKTREE_ROOT), 'example/worktree-profile');
 assert.equal(resolveProfile(path.join('/work', 'plain-owner', 'plain-project')), 'plain-owner/plain-project');
 
@@ -1321,6 +1359,7 @@ assert_contains "$TMP_DIR/compress-help.out" "--dry-run"
 (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/compress-codex.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" compress)
 assert_contains "$TMP_DIR/compress-codex.out" "Run brain knowledge consolidation in project scope only"
 assert_contains "$TMP_DIR/compress-codex.out" "Apply the consolidation"
+assert_contains "$TMP_DIR/compress-codex.out" "This workflow does not authorize Git or remote writes."
 assert_contains "$TMP_DIR/compress-codex.out" "workspace-write"
 # Exercise inherited user defaults without changing the packaged source or other tests.
 node - "$COMPRESS_CONFIG" <<'EOF'

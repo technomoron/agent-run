@@ -9,11 +9,17 @@ exports.registeredBrainProfile = registeredBrainProfile;
 exports.registeredBrainProject = registeredBrainProject;
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
+const node_crypto_1 = require("node:crypto");
 const jsonc_parser_1 = require("jsonc-parser");
 const yaml_1 = require("yaml");
 const zod_1 = require("zod");
 const utils_1 = require("../utils");
 function defaultSocketPath(configRoot) {
+    if (process.platform === 'win32') {
+        const identity = `${os.homedir().toLowerCase()}\0${path.resolve(configRoot).toLowerCase()}`;
+        return `\\\\.\\pipe\\agent-brain-${(0, node_crypto_1.createHash)('sha256').update(identity).digest('hex').slice(0, 32)}`;
+    }
     return path.join(configRoot, 'runtime', 'agent-brain.sock');
 }
 exports.brainConfigSchema = zod_1.z.object({

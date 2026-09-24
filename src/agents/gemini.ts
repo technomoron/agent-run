@@ -1,5 +1,6 @@
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs';
 import { renderGeminiMcp } from '../config/render-mcp';
 import { parseJsonObject, renderProfileConfig } from '../config/render-settings';
 import { renderSkillFiles } from '../config/render-skills';
@@ -76,7 +77,7 @@ export const geminiAdapter: AgentAdapter = {
 		const sharedGeminiDir = path.join(os.homedir(), '.gemini');
 		const privateGeminiDir = path.join(runtime.context.paths.geminiHomeDir, '.gemini');
 		for (const name of [
-			'settings.json',
+			...(process.platform === 'win32' ? [] : ['settings.json']),
 			'oauth_creds.json',
 			'google_accounts.json',
 			'trustedFolders.json',
@@ -88,6 +89,19 @@ export const geminiAdapter: AgentAdapter = {
 			'commands'
 		]) {
 			linkSharedEntry(path.join(sharedGeminiDir, name), path.join(privateGeminiDir, name), `Gemini ${name}`);
+		}
+		if (process.platform === 'win32') {
+			// Gemini now requires administrator-owned system settings on Windows.
+			// Keep the profile in its private user home, without modifying shared settings.
+			const settings = path.join(privateGeminiDir, 'settings.json');
+			const read = (file: string): Record<string, unknown> => fs.existsSync(file)
+				? parseJsonObject(fs.readFileSync(file, 'utf8'), 'Gemini user settings') : {};
+			const merged = mergeSettings(mergeSettings(read(path.join(sharedGeminiDir, 'settings.json')), read(settings)), read(runtime.configFiles[0]!));
+			fs.mkdirSync(privateGeminiDir, { recursive: true });
+			// Atomic replacement also detaches an older shared-settings symlink.
+			const temporary = `${settings}.${process.pid}.tmp`;
+			fs.writeFileSync(temporary, `${JSON.stringify(merged, null, 2)}\n`, { flag: 'wx' });
+			fs.renameSync(temporary, settings);
 		}
 	},
 	spawn(runtime, options) {
@@ -105,7 +119,7 @@ export const geminiAdapter: AgentAdapter = {
 			env: {
 				...buildAgentEnvironment(runtime.context),
 				GEMINI_CLI_HOME: runtime.context.paths.geminiHomeDir,
-				GEMINI_CLI_SYSTEM_SETTINGS_PATH: runtime.configFiles[0],
+				...(process.platform === 'win32' ? {} : { GEMINI_CLI_SYSTEM_SETTINGS_PATH: runtime.configFiles[0] }),
 				GEMINI_CLI_TRUSTED_FOLDERS_PATH: sharedTrustedFolders
 			},
 			onExit: withPostflight(runtime, options.wrapperArgs)
@@ -118,6 +132,16 @@ export const geminiAdapter: AgentAdapter = {
 		return wrapperArgs.sandboxMode === 'sandboxed' ? ['--sandbox'] : [];
 	}
 };
+
+function mergeSettings(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
+	const result = { ...base };
+	for (const [key, value] of Object.entries(override)) {
+		if (['__proto__', 'constructor', 'prototype'].includes(key)) continue;
+		result[key] = value && typeof value === 'object' && !Array.isArray(value)
+			? mergeSettings(asObject(base[key]), value as Record<string, unknown>) : value;
+	}
+	return result;
+}
 
 function asObject(value: unknown): Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value)

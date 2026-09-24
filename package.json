@@ -1,6 +1,6 @@
 {
   "name": "@technomoron/agent-run",
-  "version": "0.99.39",
+  "version": "0.99.40",
   "packageManager": "pnpm@10.34.5",
   "bin": {
     "agent-run": "dist/agent-run.js",
@@ -17,6 +17,10 @@
     "scripts/install-systemd-jobs.sh",
     "scripts/update-ai-tools.sh",
     "scripts/ensure-agent-brain.sh",
+    "scripts/brain-pipe-security.ps1",
+    "scripts/install-windows-brain.ps1",
+    "scripts/run-windows-brain.ps1",
+    "scripts/run-hidden.vbs",
     "README.md",
     "LICENSE",
     "CHANGES"

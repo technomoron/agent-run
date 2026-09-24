@@ -229,7 +229,7 @@ function checkRenderedFiles(rendered, findings) {
             continue;
         }
         const actual = fs.readFileSync(file.path, 'utf8').replace(/\r\n/g, '\n');
-        if (actual !== file.content) {
+        if (actual !== file.content.replace(/\r\n/g, '\n')) {
             findings.push({ message: `generated file is out of date: ${file.path}`, severity: 'ERROR' });
         }
     }

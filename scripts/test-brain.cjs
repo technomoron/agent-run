@@ -292,6 +292,31 @@ test('broken todo files are listed and reject updates while healthy tasks remain
 	assert.deepEqual(store.todoErrors, []);
 });
 
+test('Windows Gemini uses private user settings and preserves shared preferences', { skip: process.platform !== 'win32' }, (t) => {
+	const env = environment(t);
+	const home = path.join(env.directory, 'home');
+	fs.mkdirSync(path.join(home, '.gemini'), { recursive: true });
+	const shared = path.join(home, '.gemini', 'settings.json');
+	fs.writeFileSync(shared, JSON.stringify({ ui: { theme: 'custom' }, security: { auth: { selectedType: 'oauth-personal' } } }));
+	const original = fs.readFileSync(shared, 'utf8');
+	t.mock.method(os, 'homedir', () => home);
+	const { geminiAdapter } = require('../dist/agents/gemini');
+	const project = env.project('gemini-user-settings');
+	const rendered = renderProfile(project.cwd, project.directory, true, 'gemini', undefined, { configRoot: env.root, profile: 'projects/gemini-user-settings' });
+	const runtime = rendered.runtimes.gemini;
+	for (const file of runtime.files) { fs.mkdirSync(path.dirname(file.path), { recursive: true }); fs.writeFileSync(file.path, file.content); }
+	geminiAdapter.prepare(runtime);
+	const privateFile = path.join(runtime.context.paths.geminiHomeDir, '.gemini/settings.json');
+	const privateSettings = JSON.parse(fs.readFileSync(privateFile, 'utf8'));
+	assert.equal(privateSettings.ui.theme, 'custom');
+	assert.equal(privateSettings.security.auth.selectedType, 'oauth-personal');
+	assert.equal(privateSettings.mcpServers['agent-brain'].command, 'agent-brain');
+	assert.equal(fs.readFileSync(shared, 'utf8'), original);
+	assert.equal(fs.lstatSync(privateFile).isSymbolicLink(), false);
+	const spec = geminiAdapter.spawn(runtime, { binary: 'gemini', wrapperArgs: {}, passthroughArgs: [] });
+	assert.equal(spec.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH, process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH);
+});
+
 test('disabled MCP servers are omitted by every native renderer', (t) => {
 	const env = environment(t);
 	const project = env.project('disabled-mcp');
@@ -379,7 +404,7 @@ async function client(t, env, extra = []) {
 	return client;
 }
 
-test('MCP and CLI report broken files alongside valid results and recover after repair', { skip: process.platform === 'win32' }, async (t) => {
+test('MCP and CLI report broken files alongside valid results and recover after repair', async (t) => {
 	const env = environment(t);
 	const store = env.store(env.cwd);
 	const good = store.remember({ scope: 'default', type: 'memory', title: 'Healthy', content: 'survivingword' });
@@ -387,7 +412,7 @@ test('MCP and CLI report broken files alongside valid results and recover after 
 	const file = path.join(env.root, bad.source);
 	const original = fs.readFileSync(file, 'utf8');
 	fs.writeFileSync(file, original.replace('scope: default', 'scope: invalid'));
-	const service = await serveApiCore(env.root, path.join(env.root, 'runtime', 'agent-brain.sock'));
+	const service = await serveApiCore(env.root, defaultSocketPath(env.root));
 	env.cleanup(() => service.close());
 	const connection = await client(t, env);
 	const call = (name, args) => connection.callTool({ name, arguments: args });
@@ -409,9 +434,9 @@ test('MCP and CLI report broken files alongside valid results and recover after 
 	assert.ok(Array.isArray(JSON.parse((await call('search_knowledge', { query: 'survivingword' })).content[0].text)));
 });
 
-test('default MCP bridge initializes, writes, and retrieves knowledge through the apicore service', { skip: process.platform === 'win32' }, async (t) => {
+test('default MCP bridge initializes, writes, and retrieves knowledge through the apicore service', async (t) => {
 	const env = environment(t);
-	const service = await serveApiCore(env.root, path.join(env.root, 'runtime', 'agent-brain.sock'));
+	const service = await serveApiCore(env.root, defaultSocketPath(env.root));
 	env.cleanup(() => service.close());
 	const connection = await client(t, env);
 	const tools = await connection.listTools();
@@ -424,16 +449,20 @@ test('default MCP bridge initializes, writes, and retrieves knowledge through th
 	assert.equal(invalid.isError, true);
 });
 
-test('apicore serves SDK MCP through a private Unix socket and stdio proxy', { skip: process.platform === 'win32' }, async (t) => {
+test('apicore serves SDK MCP through private local IPC and stdio proxy', async (t) => {
 	const env = environment(t);
 	const directory = path.join(env.directory, 'socket');
 	fs.mkdirSync(directory, { mode: 0o700 });
-	const socket = path.join(directory, 'brain.sock');
+	const socket = process.platform === 'win32' ? defaultSocketPath(env.root) : path.join(directory, 'brain.sock');
 	const service = await serveApiCore(env.root, socket);
 	env.cleanup(() => service.close());
-	assert.equal(fs.statSync(socket).mode & 0o777, 0o600);
-	assert.equal(fs.statSync(socket).uid, process.getuid());
-	await assert.rejects(() => serveApiCore(env.root, socket), /Socket already exists/);
+	if (process.platform !== 'win32') {
+		assert.equal(fs.statSync(socket).mode & 0o777, 0o600);
+		assert.equal(fs.statSync(socket).uid, process.getuid());
+	} else {
+		await require('../dist/brain/windows-pipe').checkWindowsPipe(socket);
+	}
+	await assert.rejects(() => serveApiCore(env.root, socket), /Socket already exists|EADDRINUSE/);
 	const connection = await client(t, env, ['--socket', socket]);
 	const tools = await connection.listTools();
 	assert.ok(tools.tools.some((tool) => tool.name === 'get_context'));
@@ -445,6 +474,18 @@ test('apicore serves SDK MCP through a private Unix socket and stdio proxy', { s
 	assert.equal(JSON.parse(projectStatus.content[0].text).profile, 'projects/socket-project');
 	const unrelated = environment(t);
 	await assert.rejects(() => client(t, unrelated, ['--socket', socket]), /HTTP 409/);
+});
+
+test('Windows bridge rejects permissive and remote named pipes', { skip: process.platform !== 'win32' }, async (t) => {
+	const env = environment(t);
+	const { checkWindowsPipe } = require('../dist/brain/windows-pipe');
+	const socket = defaultSocketPath(env.root);
+	assert.notEqual(socket, defaultSocketPath(path.join(env.root, 'other')));
+	const server = require('node:net').createServer((connection) => connection.resume());
+	await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
+	env.cleanup(() => new Promise((resolve) => server.close(resolve)));
+	await assert.rejects(() => checkWindowsPipe(socket), /grants access to another Windows account/);
+	await assert.rejects(() => checkWindowsPipe('\\\\remote\\pipe\\brain'), /local Windows named pipe/);
 });
 
 test('missing service fails without starting a standalone brain server', (t) => {
@@ -529,7 +570,7 @@ test('canonical Markdown skills support existing templates without recreating du
 	assert.equal(fs.existsSync(template), false);
 	const rendered = renderProfile(project.cwd, project.directory, true, 'codex', undefined, { configRoot: env.root, profile: 'projects/markdown-skills' });
 	const native = rendered.context.skills.find((item) => item.name === 'commit-workflow');
-	assert.ok(native.sourcePath.endsWith('/SKILL.md'));
+	assert.ok(path.basename(native.sourcePath) === 'SKILL.md');
 	assert.doesNotMatch(native.renderedContent, /\{%|\{\{/);
 	assert.doesNotMatch(getSkill(env.store(project.cwd), 'commit-workflow').content, /\{%|\{\{/);
 });
@@ -849,7 +890,7 @@ test('sync combines changes and stops before pushing on conflict or remote failu
 	const synced = syncGit(store, 'sync', 'Save local addition');
 	assert.equal(synced.steps.length, 3);
 	assert.equal(git(env.root, ['log', '-1', '--format=%s']), 'Save local addition');
-	assert.equal(fs.readFileSync(path.join(env.root, 'default/templates/remote.txt'), 'utf8'), 'Remote addition\n');
+	assert.equal(fs.readFileSync(path.join(env.root, 'default/templates/remote.txt'), 'utf8').replace(/\r\n/g, '\n'), 'Remote addition\n');
 	assert.equal(git(remote, ['rev-parse', 'main']), git(env.root, ['rev-parse', 'HEAD']));
 	git(checkout, ['pull', '--ff-only']);
 	fs.writeFileSync(path.join(checkout, 'default/templates/shared.txt'), 'Remote edit\n');
@@ -861,7 +902,7 @@ test('sync combines changes and stops before pushing on conflict or remote failu
 	assert.throws(() => syncGit(store, 'sync'), /Saved 1 file[\s\S]*Pull stopped with conflicts/);
 	assert.equal(git(remote, ['rev-parse', 'main']), remoteHead);
 	git(env.root, ['rebase', '--abort']);
-	assert.equal(fs.readFileSync(path.join(env.root, 'default/templates/shared.txt'), 'utf8'), 'Local edit\n');
+	assert.equal(fs.readFileSync(path.join(env.root, 'default/templates/shared.txt'), 'utf8').replace(/\r\n/g, '\n'), 'Local edit\n');
 	git(env.root, ['remote', 'set-url', 'origin', path.join(env.directory, 'missing.git')]);
 	store.atomicWrite('default/templates/offline.txt', 'Keep locally\n');
 	assert.throws(() => syncGit(store, 'save'), /Saved 1 file[\s\S]*git push failed/);
@@ -982,7 +1023,7 @@ test('startup pull fast-forwards clean knowledge and preserves dirty or divergen
 	assert.equal(fs.existsSync(path.join(env.root, 'remote-note.md')), false);
 	fs.unlinkSync(path.join(env.root, 'unsaved.md'));
 	assert.equal(pullOnStart(store), 'Startup pull completed.');
-	assert.equal(fs.readFileSync(path.join(env.root, 'remote-note.md'), 'utf8'), '# Remote knowledge\n');
+	assert.equal(fs.readFileSync(path.join(env.root, 'remote-note.md'), 'utf8').replace(/\r\n/g, '\n'), '# Remote knowledge\n');
 	fs.writeFileSync(path.join(env.root, 'local-note.md'), 'Local commit');
 	git(env.root, ['add', '.']);
 	git(env.root, ['commit', '-m', 'Local test knowledge']);
@@ -1061,7 +1102,7 @@ test('review archive migrates closed files, recovers interrupted deletion, and s
 
 test('MCP recalls paginated closure history while normal retrieval stays clear', { skip: process.platform === 'win32' }, async (t) => {
 	const env = environment(t);
-	const service = await serveApiCore(env.root, path.join(env.root, 'runtime', 'agent-brain.sock'));
+	const service = await serveApiCore(env.root, defaultSocketPath(env.root));
 	env.cleanup(() => service.close());
 	const mcp = await client(t, env);
 	const call = async (name, args) => { const result = await mcp.callTool({ name, arguments: args }); assert.ok(!result.isError, result.content[0].text); return JSON.parse(result.content[0].text); };
@@ -1192,7 +1233,7 @@ test('consolidation skill upgrades preserve customization and match the packaged
 
 test('MCP and CLI expose inventory, archival and original knowledge lookup', { skip: process.platform === 'win32' }, async (t) => {
 	const env = environment(t);
-	const service = await serveApiCore(env.root, path.join(env.root, 'runtime', 'agent-brain.sock'));
+	const service = await serveApiCore(env.root, defaultSocketPath(env.root));
 	env.cleanup(() => service.close());
 	const mcp = await client(t, env);
 	const call = async (name, args) => { const result = await mcp.callTool({ name, arguments: args }); assert.ok(!result.isError, result.content[0].text); return JSON.parse(result.content[0].text); };

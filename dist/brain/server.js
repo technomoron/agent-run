@@ -20,6 +20,7 @@ const skills_1 = require("./skills");
 const todos_1 = require("./todos");
 const connectors_1 = require("./connectors");
 const git_1 = require("./git");
+const windows_pipe_1 = require("./windows-pipe");
 var config_1 = require("./config");
 Object.defineProperty(exports, "defaultSocketPath", { enumerable: true, get: function () { return config_1.defaultSocketPath; } });
 function createBrainServer(store) {
@@ -113,20 +114,26 @@ function createBrainServer(store) {
     return server;
 }
 function requirePrivateSocketDirectory(socketPath) {
-    if (process.platform === 'win32')
-        throw new Error('The agent-brain Unix-socket service requires Linux or macOS.');
     const stat = fs.lstatSync(path.dirname(socketPath));
     if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o077) !== 0)
         throw new Error('The socket directory must be owned by the current user with mode 0700.');
 }
 async function serveApiCore(configRoot, socketPath) {
-    const directory = path.dirname(socketPath);
-    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-    requirePrivateSocketDirectory(socketPath);
-    if (fs.existsSync(socketPath))
-        throw new Error(`Socket already exists: ${socketPath}. Stop the running service, or remove the socket after confirming it is stale.`);
+    if (process.platform !== 'win32') {
+        const directory = path.dirname(socketPath);
+        fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        requirePrivateSocketDirectory(socketPath);
+        if (fs.existsSync(socketPath))
+            throw new Error(`Socket already exists: ${socketPath}. Stop the running service, or remove the socket after confirming it is stale.`);
+    }
+    else if (!/^\\\\\.\\pipe\\[a-zA-Z0-9._-]+$/.test(socketPath)) {
+        throw new Error('On Windows, --socket must be a local named pipe (\\\\.\\pipe\\name).');
+    }
+    let ready = false;
     const api = new apicore_server_1.ApiServer({ authApi: false, origins: [], devMode: false });
     api.fastify.post('/mcp', async (request, reply) => {
+        if (!ready)
+            return reply.code(503).send();
         if (request.headers.origin)
             return reply.code(403).send({ error: 'Browser requests are not supported' });
         if (request.headers['x-agent-brain-root'] !== encodeURIComponent(path.resolve(configRoot)))
@@ -158,16 +165,36 @@ async function serveApiCore(configRoot, socketPath) {
     });
     api.fastify.route({ method: ['GET', 'DELETE'], url: '/mcp', handler: async (_request, reply) => reply.code(405).send() });
     await api.fastify.listen({ path: socketPath });
-    fs.chmodSync(socketPath, 0o600);
+    try {
+        if (process.platform === 'win32')
+            await (0, windows_pipe_1.checkWindowsPipe)(socketPath, true);
+        else
+            fs.chmodSync(socketPath, 0o600);
+        ready = true;
+    }
+    catch (error) {
+        await api.fastify.close();
+        throw error;
+    }
     return { close: () => api.fastify.close() };
 }
 async function proxyStdio(socketPath, cwd, configRoot) {
-    const socket = fs.lstatSync(socketPath, { throwIfNoEntry: false });
-    if (!socket)
-        throw new Error(`Agent-brain service is not running at ${socketPath}. Start agent-brain serve with the same --configdir and --socket, or enable its systemd user service.`);
-    requirePrivateSocketDirectory(socketPath);
-    if (!socket.isSocket() || socket.uid !== process.getuid() || (socket.mode & 0o077) !== 0)
-        throw new Error('The brain socket must belong to the current user with mode 0600.');
+    if (process.platform === 'win32') {
+        try {
+            await (0, windows_pipe_1.checkWindowsPipe)(socketPath);
+        }
+        catch (error) {
+            throw new Error(`Agent-brain service is not running or its pipe is not private at ${socketPath}. Start agent-brain serve with the same --configdir and --socket. ${String(error)}`);
+        }
+    }
+    else {
+        const socket = fs.lstatSync(socketPath, { throwIfNoEntry: false });
+        if (!socket)
+            throw new Error(`Agent-brain service is not running at ${socketPath}. Start agent-brain serve with the same --configdir and --socket, or enable its systemd user service.`);
+        requirePrivateSocketDirectory(socketPath);
+        if (!socket.isSocket() || socket.uid !== process.getuid() || (socket.mode & 0o077) !== 0)
+            throw new Error('The brain socket must belong to the current user with mode 0600.');
+    }
     const stdio = new stdio_js_1.StdioServerTransport();
     let protocolVersion;
     async function send(message) {

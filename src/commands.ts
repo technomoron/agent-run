@@ -128,6 +128,9 @@ async function runCompress(command: Extract<ParsedInvocation, { command: 'compre
 			skill.content
 		].join('\n\n');
 	} finally { store.close(); }
+	// cmd.exe terminates a .cmd launch at a literal newline, even inside quotes.
+	// Keep this generated prose prompt in one argument through Windows npm shims.
+	if (process.platform === 'win32') prompt = prompt.replace(/\r?\n/g, ' ');
 	// Use the normal adapters, configuration and permission modes. The prompt is one argv value.
 	runTool({ command: agent, args: agent === 'gemini' ? ['-i', prompt] : [prompt], wrapperArgs: {
 		none: false, create: false, local: false, show: false, generate: false, sandboxMode: null, codexNetwork: false

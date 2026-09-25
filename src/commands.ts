@@ -59,16 +59,21 @@ import {
 } from './project';
 import { renderProfile, syncAgentProfile, syncRenderedProfile } from './renderer';
 import { spawnAgent } from './runtime/spawn-agent';
-import { fail, formatCommand, formatPathList, uniqueSorted, verbose } from './utils';
+import { fail, formatCommand, formatError, formatPathList, uniqueSorted, verbose } from './utils';
 
 export function main(invokedTool: string, argv: string[]): void {
-	dispatch(parseInvocation(invokedTool, argv));
+	try {
+		dispatch(parseInvocation(invokedTool, argv));
+	} catch (error) {
+		process.stderr.write(`agent-run: ${formatError(error)}\n`);
+		process.exitCode = 1;
+	}
 }
 
 function dispatch(command: ParsedInvocation): void {
 	switch (command.command) {
 		case 'compress':
-			void runCompress(command).catch((error: unknown) => { process.stderr.write(`agent-run: ${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
+			void runCompress(command).catch((error: unknown) => { process.stderr.write(`agent-run: ${formatError(error)}\n`); process.exitCode = 1; });
 			return;
 		case 'mcp':
 		case 'create':

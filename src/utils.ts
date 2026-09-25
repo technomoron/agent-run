@@ -23,6 +23,12 @@ export function localDateString(): string {
 }
 
 export function formatError(error: unknown): string {
+	if (error instanceof Error) {
+		const { code, path: filePath } = error as NodeJS.ErrnoException;
+		if (code === 'EACCES' || code === 'EPERM') {
+			return `${error.message}\nCheck file ownership and permissions${filePath ? ` for ${filePath}` : ''} and its parent directories. Run agent-run as your normal user, not with sudo.`;
+		}
+	}
 	return error instanceof Error ? error.message : String(error);
 }
 

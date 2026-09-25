@@ -1,6 +1,11 @@
 CHANGES
 =======
 
+Version 0.99.43 (2026-09-25)
+----------------------------
+* Report startup errors without a stack trace and include file ownership and
+  permissions guidance when access is denied.
+
 Version 0.99.42 (2026-09-25)
 ----------------------------
 * Apply repository AI-file checks only to project scopes and actual repositories.

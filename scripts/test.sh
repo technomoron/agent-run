@@ -695,6 +695,36 @@ assert_contains "$TMP_DIR/codex-generate.out" "Generated files:"
 assert_file "$CODEX_AGENTS_FILE"
 assert_file "$LIVE_DIR/CLAUDE.md"
 
+# Inject filesystem failures so these checks also work as root and on Windows.
+cat >"$TMP_DIR/deny-config-read.cjs" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const readFileSync = fs.readFileSync;
+fs.readFileSync = function (file, ...args) {
+	if (typeof file === 'string' && path.resolve(file) === path.resolve(process.env.TEST_DENIED_CONFIG)) {
+		const code = process.env.TEST_ERROR_CODE;
+		throw Object.assign(new Error(`${code}: cannot open '${file}'`), { code, path: file, syscall: 'open' });
+	}
+	return readFileSync.call(this, file, ...args);
+};
+NODE
+for error_code in EACCES EPERM EIO; do
+	set +e
+	(cd "$PROJECT" && TEST_DENIED_CONFIG="$EXPECTED_CODEX_CONFIG_FILE" TEST_ERROR_CODE="$error_code" AGENT_RUN_ARG_CAPTURE="$TMP_DIR/denied-agent.out" PATH="$FAKE_TOOL_BIN:$PATH" node --require "$TMP_DIR/deny-config-read.cjs" "$BIN" codex >"$TMP_DIR/denied-config.out" 2>&1)
+	error_status=$?
+	set -e
+	[ "$error_status" -eq 1 ] || fail "expected exit 1 for $error_code, got $error_status"
+	assert_contains "$TMP_DIR/denied-config.out" "agent-run: $error_code: cannot open"
+	assert_contains "$TMP_DIR/denied-config.out" "$EXPECTED_CODEX_CONFIG_FILE"
+	assert_not_contains "$TMP_DIR/denied-config.out" "    at "
+	assert_no_file "$TMP_DIR/denied-agent.out"
+	if [ "$error_code" != EIO ]; then
+		assert_contains "$TMP_DIR/denied-config.out" "Check file ownership and permissions"
+	else
+		assert_not_contains "$TMP_DIR/denied-config.out" "Check file ownership and permissions"
+	fi
+done
+
 USER_CLAUDE_CONFIG="$TMP_DIR/user-claude-config"
 mkdir -p "$USER_CLAUDE_CONFIG"
 (cd "$PROJECT" && CLAUDE_CONFIG_DIR="$USER_CLAUDE_CONFIG" AGENT_RUN_ARG_CAPTURE="$TMP_DIR/claude-args.out" AGENT_RUN_ENV_CAPTURE="$TMP_DIR/claude-env.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" claude --memory-check)

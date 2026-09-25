@@ -15,12 +15,18 @@ const renderer_1 = require("./renderer");
 const spawn_agent_1 = require("./runtime/spawn-agent");
 const utils_1 = require("./utils");
 function main(invokedTool, argv) {
-    dispatch((0, cli_1.parseInvocation)(invokedTool, argv));
+    try {
+        dispatch((0, cli_1.parseInvocation)(invokedTool, argv));
+    }
+    catch (error) {
+        process.stderr.write(`agent-run: ${(0, utils_1.formatError)(error)}\n`);
+        process.exitCode = 1;
+    }
 }
 function dispatch(command) {
     switch (command.command) {
         case 'compress':
-            void runCompress(command).catch((error) => { process.stderr.write(`agent-run: ${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
+            void runCompress(command).catch((error) => { process.stderr.write(`agent-run: ${(0, utils_1.formatError)(error)}\n`); process.exitCode = 1; });
             return;
         case 'mcp':
         case 'create':

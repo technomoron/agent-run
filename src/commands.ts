@@ -48,6 +48,7 @@ import {
 	failForLocalAiFiles,
 	findLocalAiFiles,
 	findProjectRoot,
+	hasProjectFileScope,
 	isIgnoredDir,
 	projectRootForProfile,
 	resolveAgentDir,
@@ -244,8 +245,9 @@ function checkLocalAiFiles(
 	context: RenderContext,
 	allowLocal: boolean
 ): void {
+	if (!context.guardrails.forbidRepoAiFiles || !hasProjectFileScope(projectRoot, context.profile)) return;
 	const files = findLocalAiFiles(projectRoot, agentDir);
-	if (!context.guardrails.forbidRepoAiFiles || files.length === 0) {
+	if (files.length === 0) {
 		return;
 	}
 	if (!allowLocal) {

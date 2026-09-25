@@ -1,10 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { RenderContext } from '../model';
-import { findLocalAiFiles, warnForLocalAiFiles } from '../project';
+import { findLocalAiFiles, hasProjectFileScope, warnForLocalAiFiles } from '../project';
 
 export function postflightProjectCheck(context: RenderContext, allowLocal: boolean, code: number): number {
-	if (!context.guardrails.forbidRepoAiFiles) {
+	if (!context.guardrails.forbidRepoAiFiles || !hasProjectFileScope(context.projectRoot, context.profile)) {
 		return code;
 	}
 	if (!allowLocal) {

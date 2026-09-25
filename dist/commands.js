@@ -187,8 +187,10 @@ function requireProfile(tool, agentDir) {
     process.exit(1);
 }
 function checkLocalAiFiles(command, projectRoot, agentDir, context, allowLocal) {
+    if (!context.guardrails.forbidRepoAiFiles || !(0, project_1.hasProjectFileScope)(projectRoot, context.profile))
+        return;
     const files = (0, project_1.findLocalAiFiles)(projectRoot, agentDir);
-    if (!context.guardrails.forbidRepoAiFiles || files.length === 0) {
+    if (files.length === 0) {
         return;
     }
     if (!allowLocal) {

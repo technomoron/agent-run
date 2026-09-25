@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveAgentDir = resolveAgentDir;
 exports.findLocalAiFiles = findLocalAiFiles;
 exports.findSourceRepos = findSourceRepos;
+exports.hasProjectFileScope = hasProjectFileScope;
 exports.isIgnoredDir = isIgnoredDir;
 exports.warnForLocalAiFiles = warnForLocalAiFiles;
 exports.failForLocalAiFiles = failForLocalAiFiles;
@@ -73,6 +74,11 @@ function findSourceRepos(rootPath) {
 }
 function looksLikeRepoRoot(dir) {
     return fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, 'package.json'));
+}
+function hasProjectFileScope(projectRoot, profile) {
+    // The default brain scope also serves home directories and other non-project
+    // folders. Personal tool configuration there is not repository-local state.
+    return profile !== 'default' || looksLikeRepoRoot(projectRoot);
 }
 function isIgnoredDir(dir) {
     if (fs.existsSync(path.join(dir, constants_1.IGNORE_FILE_NAME))) {

@@ -25,7 +25,7 @@ function checkProject(projectRoot) {
         return findings;
     }
     const agentDir = (0, project_1.resolveAgentDir)(projectRoot);
-    if (profileForbidsLocalAiFiles(projectRoot, agentDir, profileResult.profile)) {
+    if ((0, project_1.hasProjectFileScope)(projectRoot, profileResult.profile) && profileForbidsLocalAiFiles(projectRoot, agentDir, profileResult.profile)) {
         for (const file of (0, project_1.findLocalAiFiles)(projectRoot, agentDir)) {
             findings.push({ message: `local AI file in project: ${file}`, severity: 'ERROR' });
         }

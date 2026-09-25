@@ -374,6 +374,33 @@ test('project registration and default scope feed every native MCP renderer', (t
 	}
 });
 
+test('default-scope startup and exit preserve personal AI files without scanning unrelated directories', (t) => {
+	const env = environment(t);
+	fs.mkdirSync(path.join(env.cwd, '.codex'));
+	fs.mkdirSync(path.join(env.cwd, '.claude'));
+	const personal = path.join(env.cwd, '.claude', 'settings.local.json');
+	fs.writeFileSync(personal, '{"personal":true}\n');
+	const bin = path.join(env.directory, 'bin');
+	fs.mkdirSync(bin);
+	fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nprintf "native-started\\n"\n', { mode: 0o755 });
+	fs.writeFileSync(path.join(bin, 'codex.cmd'), '@echo off\r\necho native-started\r\n');
+	const realPath = `${bin}${path.delimiter}${process.env.AGENT_RUN_REAL_PATH ?? process.env.PATH}`;
+	const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/agent-run.js'), '--configdir', env.root, 'codex'], {
+		cwd: env.cwd, env: { ...process.env, PATH: realPath, AGENT_RUN_REAL_PATH: realPath }, encoding: 'utf8'
+	});
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /native-started/);
+	assert.equal(fs.readFileSync(personal, 'utf8'), '{"personal":true}\n');
+	const { hasProjectFileScope } = require('../dist/project');
+	assert.equal(hasProjectFileScope(env.cwd, 'default'), false);
+	assert.equal(hasProjectFileScope(env.cwd, 'projects/registered'), true);
+	fs.mkdirSync(path.join(env.cwd, '.git'));
+	assert.equal(hasProjectFileScope(env.cwd, 'default'), true);
+	fs.rmdirSync(path.join(env.cwd, '.git'));
+	fs.writeFileSync(path.join(env.cwd, 'package.json'), '{}');
+	assert.equal(hasProjectFileScope(env.cwd, 'default'), true);
+});
+
 test('generated MCP files stay identical across install locations and runtime environments', (t) => {
 	const env = environment(t);
 	const project = env.project('portable');

@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const project_1 = require("../project");
 function postflightProjectCheck(context, allowLocal, code) {
-    if (!context.guardrails.forbidRepoAiFiles) {
+    if (!context.guardrails.forbidRepoAiFiles || !(0, project_1.hasProjectFileScope)(context.projectRoot, context.profile)) {
         return code;
     }
     if (!allowLocal) {

@@ -1,6 +1,14 @@
 CHANGES
 =======
 
+Version 0.99.42 (2026-09-25)
+----------------------------
+* Apply repository AI-file checks only to project scopes and actual repositories.
+  Default-scope launches from a home directory no longer scan protected Windows
+  folders or treat personal Codex and Claude settings as repository files.
+* Skip the startup scan when the repository AI-file guard is disabled, and
+  preserve personal Claude settings during default-scope postflight checks.
+
 Version 0.99.41 (2026-09-25)
 ----------------------------
 * Use a shared Codex home with native named profiles, keeping project

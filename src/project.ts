@@ -83,6 +83,12 @@ function looksLikeRepoRoot(dir: string): boolean {
 	return fs.existsSync(path.join(dir, '.git')) || fs.existsSync(path.join(dir, 'package.json'));
 }
 
+export function hasProjectFileScope(projectRoot: string, profile: string): boolean {
+	// The default brain scope also serves home directories and other non-project
+	// folders. Personal tool configuration there is not repository-local state.
+	return profile !== 'default' || looksLikeRepoRoot(projectRoot);
+}
+
 export function isIgnoredDir(dir: string): boolean {
 	if (fs.existsSync(path.join(dir, IGNORE_FILE_NAME))) {
 		return true;

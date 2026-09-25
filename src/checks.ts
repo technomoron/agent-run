@@ -8,6 +8,7 @@ import {
 	defaultConfigRoot,
 	findLocalAiFiles,
 	findSourceRepos,
+	hasProjectFileScope,
 	resolveAgentDir,
 	resolveProfileResult
 } from './project';
@@ -27,7 +28,7 @@ export function checkProject(projectRoot: string): Finding[] {
 	}
 
 	const agentDir = resolveAgentDir(projectRoot);
-	if (profileForbidsLocalAiFiles(projectRoot, agentDir, profileResult.profile)) {
+	if (hasProjectFileScope(projectRoot, profileResult.profile) && profileForbidsLocalAiFiles(projectRoot, agentDir, profileResult.profile)) {
 		for (const file of findLocalAiFiles(projectRoot, agentDir)) {
 			findings.push({ message: `local AI file in project: ${file}`, severity: 'ERROR' });
 		}

@@ -61,6 +61,11 @@ Example:
 ```text
 ~/.agent-run/
   agent-run.defaults.jsonc
+  runtime/codex/         # shared, ignored Codex home
+    agent-run-<id>.config.toml
+    skills/agent-run-<id>/
+    sessions/
+    memories/
   org/
     my-api/
       agent-run.jsonc
@@ -77,8 +82,6 @@ Example:
           codex-home/
             AGENTS.md
             config.toml
-            memories/    # native Codex memory, local generated state
-            skills/
         gemini/
           AGENTS.md
           settings.json
@@ -107,8 +110,10 @@ the agent config tree.
 - `overrides/`: optional per-profile template overrides
 - `notes/memory/`: durable project memory shared through the config repository
 - `live/memories/codex-home/AGENTS.md`: generated Codex instructions
-- `live/memories/codex-home/config.toml`: generated Codex config
-- `live/memories/codex-home/skills/`: generated Codex skills
+- `live/memories/codex-home/config.toml`: rendered Codex template for inspection
+- `<config-root>/runtime/codex/`: shared Codex home, authentication and session state
+- `runtime/codex/agent-run-<id>.config.toml`: named Codex profile with project instructions and settings
+- `runtime/codex/skills/agent-run-<id>/`: generated skills, enabled only for that profile
 - `live/CLAUDE.md`: generated Claude instructions
 - `live/.claude/`: generated Claude settings, MCP configuration, and local
   plugin skills
@@ -288,15 +293,30 @@ and `agent-run grok --help` pass `--help` through to the underlying tool.
 For any native agent command, use `--generate` to generate profile files
 without launching the underlying tool.
 
-Codex defaults to `-a on-request -s workspace-write`. `agent-run` sets
-`CODEX_HOME` under the private agent directory, where Codex discovers the
-generated `AGENTS.md`, `config.toml`, and skills natively. It starts Codex from
-that private directory, passes the project root with `-C`, and keeps generated
-guard shims on `PATH`. Use `--network` to enable network access in the
-workspace-write sandbox.
-When `~/.codex/auth.json` exists, profile-specific Codex homes link their
-`auth.json` to that shared login cache so changing profiles does not require a
-new ChatGPT login.
+Codex defaults to `-a on-request -s workspace-write`. `agent-run` uses one
+`CODEX_HOME` at `<config-root>/runtime/codex` and selects a generated named
+profile with `--profile`. Project instructions are added through
+`developer_instructions`; MCP settings and per-skill enablement stay in the
+named profile. The normal global Codex executable is used. Codex 0.157.0 runs
+named-profile sessions with its embedded backend, avoiding automatic daemon
+package copies and the long per-project Unix socket path. Agent-run does not
+add `--no-daemon`. This layout requires Codex with named profile-file support
+(0.134.0 or newer); Windows and Debian are tested with 0.157.0.
+
+Codex starts from the project root, also passed with `-C`, with generated guard
+shims on `PATH`. Use `--network` to enable network access in the workspace-write
+sandbox. Windows profiles default to the native unelevated sandbox unless the
+profile template specifies another mode. When `~/.codex/auth.json` exists, the
+shared home links that login cache (copies it when Windows cannot create file
+symlinks), so changing projects does not require another login.
+
+On first use of each old project home, agent-run copies its `sessions/` and
+`archived_sessions/` rollouts into the shared home without overwriting existing
+files. Codex rebuilds its derived session index. Original files, databases,
+history, native memories and old daemon packages remain untouched in the old
+home; databases and daemon installations are not copied. Close old agent-run
+sessions before upgrading so their final turns are included. New sessions and
+native memories use the shared home; durable project knowledge remains separate.
 
 ### Project Memory
 
@@ -306,7 +326,7 @@ current task. Agents may update project memory when the user explicitly requests
 authorizes a standing workflow, such as saving durable corrections and updating
 affected specs. This authorization does not permit Git or external-service writes.
 
-Codex's native `$CODEX_HOME/memories/` remains under ignored `live/` state. It
+Codex's native `$CODEX_HOME/memories/` lives in the ignored shared home. It
 is generated, machine-local recall data and is not copied into the tracked
 project memory directory. Project memory is plain Markdown so it can be
 reviewed and shared through the Git repository that normally holds the
@@ -421,7 +441,8 @@ then rewrites generated files:
 - `live/CLAUDE.md`
 - `live/memories/codex-home/AGENTS.md`
 - `live/memories/codex-home/config.toml`
-- `live/memories/codex-home/skills/**`
+- `<config-root>/runtime/codex/agent-run-<id>.config.toml`
+- `<config-root>/runtime/codex/skills/agent-run-<id>/**`
 - `live/.claude/**`
 - `live/gemini/**`
 - `live/grok/**`

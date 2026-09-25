@@ -18,6 +18,7 @@ const project_1 = require("./project");
 const templates_1 = require("./templates");
 const utils_1 = require("./utils");
 const config_1 = require("./brain/config");
+const codex_profile_1 = require("./runtime/codex-profile");
 function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = null, trace, options) {
     const configRoot = options?.configRoot ?? (0, project_1.defaultConfigRoot)(projectRoot);
     const profile = options?.profile ?? (0, project_1.resolveProfile)(projectRoot);
@@ -92,11 +93,14 @@ function syncAgentProfile(projectRoot, agentDir, options) {
     return syncRenderedProfile(rendered);
 }
 function syncRenderedProfile(rendered) {
+    return (0, codex_profile_1.withCodexProfileLock)(rendered.context, () => writeRenderedProfile(rendered));
+}
+function writeRenderedProfile(rendered) {
     (0, config_tree_1.ensureConfigRootGitignore)(rendered.configRoot);
     syncRuntimeDirs(rendered);
     removeStaleGeneratedEntries(rendered);
     for (const file of rendered.files) {
-        writeGeneratedFile(file.path, file.content, file.executable ?? false);
+        writeGeneratedFile(file.path, file.content, file.executable ?? false, file.atomic ?? false);
     }
     removeLegacyGeneratedCodexFiles(rendered.context);
     removeLegacyGeneratedClaudeSettings(rendered.context);
@@ -129,11 +133,14 @@ function syncRuntimeDirs(rendered) {
         }
     }
 }
-function writeGeneratedFile(filePath, content, executable) {
+function writeGeneratedFile(filePath, content, executable, atomic) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const unchanged = fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf8') === content;
     if (!unchanged) {
-        fs.writeFileSync(filePath, content, 'utf8');
+        if (atomic)
+            (0, codex_profile_1.writeCodexProfileFile)(filePath, content);
+        else
+            fs.writeFileSync(filePath, content, 'utf8');
         (0, utils_1.verbose)(`write ${filePath}`);
     }
     if (executable && !constants_1.IS_WINDOWS) {

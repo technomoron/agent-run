@@ -1,6 +1,6 @@
 {
   "name": "@technomoron/agent-run",
-  "version": "0.99.40",
+  "version": "0.99.41",
   "packageManager": "pnpm@10.34.5",
   "bin": {
     "agent-run": "dist/agent-run.js",
@@ -35,7 +35,8 @@
     "clean:dist": "rimraf ./dist/",
     "cleanbuild": "run-s clean:dist build",
     "prepack": "run-s build",
-    "test": "run-s build test:integration test:release",
+    "test": "run-s build test:codex-profiles test:integration test:release",
+    "test:codex-profiles": "node --test scripts/test-codex-profiles.cjs",
     "test:brain": "node --test scripts/test-brain.cjs",
     "test:integration": "bash ./scripts/test.sh",
     "test:release": "bash ./scripts/test-release.sh",
@@ -65,6 +66,7 @@
     "cross-spawn": "^7.0.6",
     "jsonc-parser": "^3.3.1",
     "nunjucks": "^3.2.4",
+    "smol-toml": "^1.9.0",
     "yaml": "^2.9.0",
     "zod": "^4.5.4"
   }

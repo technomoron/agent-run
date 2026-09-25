@@ -224,7 +224,7 @@ export type RenderContext = {
 	renderedAgentSections: string[];
 };
 
-export type RenderedFile = { path: string; content: string; executable?: boolean };
+export type RenderedFile = { path: string; content: string; executable?: boolean; atomic?: boolean };
 
 export type RenderedProfile = {
 	agentDir: string;

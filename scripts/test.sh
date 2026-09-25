@@ -99,6 +99,13 @@ GROK_AGENTS_FILE="$GROK_RUNTIME_DIR/AGENTS.md"
 GROK_CONFIG_FILE="$GROK_RUNTIME_DIR/config.toml"
 GROK_SKILLS_DIR="$GROK_RUNTIME_DIR/skills"
 BIN="$ROOT/dist/agent-run.js"
+CODEX_PROFILE_NAME="$(node - "$ROOT/dist/runtime/codex-profile.js" "$AGENT_DIR" <<'NODE'
+const { codexProfileName } = require(process.argv[2]);
+console.log(codexProfileName({ profileDir: process.argv[3] }));
+NODE
+)"
+CODEX_SHARED_HOME="$EXAMPLE/agent-config/runtime/codex"
+CODEX_SKILLS_DIR="$CODEX_SHARED_HOME/skills/$CODEX_PROFILE_NAME"
 
 # Keep packaged example MCP servers disabled, but enable one in this isolated
 # test tree so every adapter's active MCP serialization is exercised.
@@ -164,6 +171,8 @@ else
 	EXPECTED_GLOBAL_SNIPPET="$EXPECTED_EXAMPLE/agent-config/global/snippets/git-rules.md.njk"
 fi
 PACKAGE_JSON="$ROOT/package.json"
+EXPECTED_CODEX_SHARED_HOME="$(node -e 'console.log(require("path").resolve(process.argv[1]))' "$CODEX_SHARED_HOME")"
+EXPECTED_CODEX_SKILLS_DIR="$(node -e 'console.log(require("path").resolve(process.argv[1]))' "$CODEX_SKILLS_DIR")"
 if command -v cygpath >/dev/null 2>&1; then
 	PACKAGE_JSON="$(cygpath -w "$PACKAGE_JSON")"
 fi
@@ -478,7 +487,7 @@ printf '%s\n' '{"token":"shared"}' >"$TEST_HOME/.grok/auth.json"
 printf '%s\n' '---' 'name: personal' 'description: Personal test skill.' '---' >"$TEST_HOME/.gemini/skills/personal/SKILL.md"
 HOME="$TEST_HOME" USERPROFILE="$TEST_HOME" node "$BIN" update "$PROJECT" >"$TMP_DIR/update-auth.out"
 assert_contains "$TMP_DIR/update-auth.out" "OK profile starter/basic-project"
-PROFILE_AUTH="$LIVE_DIR/memories/codex-home/auth.json"
+PROFILE_AUTH="$CODEX_SHARED_HOME/auth.json"
 if [ -L "$PROFILE_AUTH" ]; then
 	LINK_TARGET="$(readlink "$PROFILE_AUTH")"
 	EXPECTED_AUTH="$TEST_HOME/.codex/auth.json"
@@ -623,7 +632,10 @@ assert_not_contains "$TMP_DIR/codex-args.out" "system_prompt_file"
 assert_line_count "$TMP_DIR/codex-args.out" "--add-dir" 1
 assert_contains "$TMP_DIR/codex-args.out" "$EXPECTED_PROJECT_MEMORY_DIR"
 assert_not_contains "$TMP_DIR/codex-args.out" "$EXPECTED_MEMORY_DIR"
-assert_contains "$TMP_DIR/codex-env.out" "CODEX_HOME=$EXPECTED_CODEX_HOME_DIR"
+assert_contains "$TMP_DIR/codex-env.out" "CODEX_HOME=$EXPECTED_CODEX_SHARED_HOME"
+assert_contains "$TMP_DIR/codex-args.out" "--profile"
+assert_contains "$TMP_DIR/codex-args.out" "$CODEX_PROFILE_NAME"
+assert_not_contains "$TMP_DIR/codex-args.out" "--no-daemon"
 assert_contains "$TMP_DIR/codex-env.out" "AGENT_PROJECT_MEMORY_DIR=$EXPECTED_PROJECT_MEMORY_DIR"
 
 if [ -x "$LIVE_DIR/bin/git" ]; then

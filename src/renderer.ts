@@ -31,6 +31,7 @@ import { defaultConfigRoot, parseProfile, resolveProfile } from './project';
 import { buildRenderContext, createNunjucksEnv } from './templates';
 import { formatError, isSamePathOrDescendant, verbose } from './utils';
 import { readBrainConfig } from './brain/config';
+import { withCodexProfileLock, writeCodexProfileFile } from './runtime/codex-profile';
 
 export function renderProfile(
 	projectRoot: string,
@@ -122,11 +123,15 @@ export function syncAgentProfile(
 }
 
 export function syncRenderedProfile(rendered: RenderedProfile): RenderedProfile {
+	return withCodexProfileLock(rendered.context, () => writeRenderedProfile(rendered));
+}
+
+function writeRenderedProfile(rendered: RenderedProfile): RenderedProfile {
 	ensureConfigRootGitignore(rendered.configRoot);
 	syncRuntimeDirs(rendered);
 	removeStaleGeneratedEntries(rendered);
 	for (const file of rendered.files) {
-		writeGeneratedFile(file.path, file.content, file.executable ?? false);
+		writeGeneratedFile(file.path, file.content, file.executable ?? false, file.atomic ?? false);
 	}
 	removeLegacyGeneratedCodexFiles(rendered.context);
 	removeLegacyGeneratedClaudeSettings(rendered.context);
@@ -161,11 +166,12 @@ function syncRuntimeDirs(rendered: RenderedProfile): void {
 	}
 }
 
-function writeGeneratedFile(filePath: string, content: string, executable: boolean): void {
+function writeGeneratedFile(filePath: string, content: string, executable: boolean, atomic: boolean): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
 	const unchanged = fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf8') === content;
 	if (!unchanged) {
-		fs.writeFileSync(filePath, content, 'utf8');
+		if (atomic) writeCodexProfileFile(filePath, content);
+		else fs.writeFileSync(filePath, content, 'utf8');
 		verbose(`write ${filePath}`);
 	}
 	if (executable && !IS_WINDOWS) {

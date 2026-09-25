@@ -34,6 +34,8 @@ export const BRAIN_GITIGNORE_ENTRIES = [
 ];
 
 export const GENERATED_GITIGNORE_ENTRIES = [
+	'# Shared machine-local Codex state',
+	'/runtime/codex/',
 	'# Generated agent-run live profiles',
 	'**/live/',
 	'',

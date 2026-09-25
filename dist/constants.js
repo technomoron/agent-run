@@ -33,6 +33,8 @@ exports.BRAIN_GITIGNORE_ENTRIES = [
     ''
 ];
 exports.GENERATED_GITIGNORE_ENTRIES = [
+    '# Shared machine-local Codex state',
+    '/runtime/codex/',
     '# Generated agent-run live profiles',
     '**/live/',
     '',

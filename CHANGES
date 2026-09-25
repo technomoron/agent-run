@@ -1,6 +1,17 @@
 CHANGES
 =======
 
+Version 0.99.41 (2026-09-25)
+----------------------------
+* Use a shared Codex home with native named profiles, keeping project
+  instructions, MCP configuration and same-name skills separate. Codex 0.157
+  profile launches avoid the automatic per-project daemon installation and
+  Unix socket path-length failure while using the global executable.
+* Preserve old session rollouts through a non-overwriting migration; retain
+  original project homes and let Codex rebuild its derived session index.
+* Use the native unelevated Windows sandbox by default for generated profiles
+  and start Codex from the source project directory.
+
 Version 0.99.40 (2026-09-24)
 ----------------------------
 * Add native Windows agent-brain service and MCP bridging over per-user named

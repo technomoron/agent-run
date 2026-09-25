@@ -5,6 +5,7 @@ import { LIVE_DIR_NAME, UNEXPANDED_TEMPLATE_RE } from './constants';
 import { NormalizedManifest, RenderContext, RenderTrace } from './model';
 import { isSamePathOrDescendant, localDateString } from './utils';
 import { readBrainConfig } from './brain/config';
+import { codexProfileSkills } from './runtime/codex-profile';
 
 export function createNunjucksEnv(configRoot: string): nunjucks.Environment {
 	return new nunjucks.Environment(new nunjucks.FileSystemLoader(configRoot, { noCache: true }), {
@@ -84,10 +85,10 @@ export function buildRenderContext(
 		memoriesDir,
 		globalMemoryDir: readBrainConfig(configRoot)?.enabled ? path.join(configRoot, 'global', 'memory') : path.join(configRoot, 'notes', 'memory'),
 		projectMemoryDir,
-		nativeMemoryDir: path.join(codexHomeDir, 'memories'),
+		nativeMemoryDir: path.join(configRoot, 'runtime', 'codex', 'memories'),
 		codexHomeDir,
 		overridesDir: path.join(profileDir, 'overrides'),
-		codexSkillsDir: path.join(codexHomeDir, 'skills'),
+		codexSkillsDir: codexProfileSkills(baseContext),
 		claudeSkillsDir: path.join(liveDir, '.claude', 'skills'),
 		geminiRuntimeDir,
 		geminiHomeDir,

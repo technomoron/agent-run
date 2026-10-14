@@ -3,7 +3,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+BRAIN_TEST_PID=''
+export HOME="$TMP_DIR/home"
+export USERPROFILE="$HOME"
+export CODEX_HOME="$HOME/.codex"
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+export GEMINI_CLI_HOME="$HOME"
+export GROK_HOME="$HOME/.grok"
+mkdir -p "$HOME"
+trap 'if [ -n "$BRAIN_TEST_PID" ]; then kill "$BRAIN_TEST_PID" 2>/dev/null || true; wait "$BRAIN_TEST_PID" 2>/dev/null || true; fi; rm -rf "$TMP_DIR"' EXIT
 
 fail() {
 	echo "FAIL $*" >&2
@@ -1388,6 +1396,30 @@ EOF
 COMPRESS_CONFIG="$TMP_DIR/compress-config"
 cp -R "$EXAMPLE/agent-config" "$COMPRESS_CONFIG"
 node "$ROOT/dist/agent-brain.js" init --configdir "$COMPRESS_CONFIG" --cwd "$PROJECT" >"$TMP_DIR/compress-init.out"
+node - "$COMPRESS_CONFIG" "$ROOT/dist/agent-brain.js" <<'EOF'
+const fs = require('node:fs');
+const path = require('node:path');
+const file = path.join(process.argv[2], 'agent-run.defaults.jsonc');
+const config = require('jsonc-parser').parse(fs.readFileSync(file, 'utf8'));
+config.mcp = {servers: {'agent-brain': {transport: 'stdio', command: process.execPath, args: [process.argv[3], 'mcp', '--configdir', process.argv[2], '--cwd', process.cwd()]}}};
+fs.writeFileSync(file, JSON.stringify(config));
+EOF
+# A configured but unavailable brain must stop all four agents before launch.
+for agent in codex claude gemini grok; do
+	if (cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/brain-blocked-$agent.args" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" --configdir "$COMPRESS_CONFIG" "$agent" >"$TMP_DIR/brain-blocked-$agent.out" 2>&1); then
+		fail "$agent started without brain"
+	fi
+	assert_contains "$TMP_DIR/brain-blocked-$agent.out" "Cannot start agent: agent-brain MCP check failed"
+	assert_no_file "$TMP_DIR/brain-blocked-$agent.args"
+done
+chmod 700 "$COMPRESS_CONFIG/runtime"
+node "$ROOT/dist/agent-brain.js" serve --configdir "$COMPRESS_CONFIG" >"$TMP_DIR/brain-service.out" 2>&1 &
+BRAIN_TEST_PID=$!
+for attempt in $(seq 1 100); do
+	if grep -Fq 'agent-brain listening on ' "$TMP_DIR/brain-service.out"; then break; fi
+	sleep 0.1
+done
+assert_contains "$TMP_DIR/brain-service.out" 'agent-brain listening on '
 # Updating existing profiles refreshes brain guidance for both instruction formats.
 node "$BIN" --configdir "$COMPRESS_CONFIG" update "$PROJECT" >"$TMP_DIR/brain-update.out"
 for instructions in "$COMPRESS_CONFIG/starter/basic-project/live/memories/codex-home/AGENTS.md" "$COMPRESS_CONFIG/starter/basic-project/live/CLAUDE.md"; do

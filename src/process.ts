@@ -14,8 +14,8 @@ import {
 
 const crossSpawn = require('cross-spawn') as typeof import('cross-spawn');
 
-export function findRealBinary(tool: ToolName): string {
-	const pathDirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+export function findRealBinary(tool: ToolName, searchPath = process.env.PATH ?? ''): string {
+	const pathDirs = searchPath.split(path.delimiter).filter(Boolean);
 	const currentScriptArg = process.argv[1];
 	const currentScript = currentScriptArg ? fs.realpathSync(currentScriptArg) : '';
 	const wrappers = wrapperCandidates(tool);
@@ -36,7 +36,7 @@ export function findRealBinary(tool: ToolName): string {
 			return candidate;
 		}
 	}
-	fail(`no ${tool} binary found in PATH`);
+	throw new Error(`no ${tool} binary found in PATH`);
 }
 
 function wrapperCandidates(tool: ToolName): Set<string> {

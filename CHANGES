@@ -1,6 +1,15 @@
 CHANGES
 =======
 
+Version 0.99.44 (2026-10-14)
+----------------------------
+* Remove local agent sessions last modified more than seven days ago before
+  startup, including Codex SQLite history, using native deletion where needed.
+* Add --clean to delete all saved sessions for selected agents while preserving
+  authentication, settings, skills and brain knowledge.
+* Check the configured brain MCP connection before launching an agent, and
+  explain socket ownership and permission failures.
+
 Version 0.99.43 (2026-09-25)
 ----------------------------
 * Report startup errors without a stack trace and include file ownership and

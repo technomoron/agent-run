@@ -13,6 +13,8 @@ const process_1 = require("./process");
 const project_1 = require("./project");
 const renderer_1 = require("./renderer");
 const spawn_agent_1 = require("./runtime/spawn-agent");
+const brain_preflight_1 = require("./runtime/brain-preflight");
+const clean_sessions_1 = require("./runtime/clean-sessions");
 const utils_1 = require("./utils");
 function main(invokedTool, argv) {
     try {
@@ -25,6 +27,9 @@ function main(invokedTool, argv) {
 }
 function dispatch(command) {
     switch (command.command) {
+        case 'clean':
+            (0, clean_sessions_1.reportCleanup)((0, clean_sessions_1.cleanSessions)((0, project_1.defaultConfigRoot)(process.cwd()), command.agents, true), true);
+            return;
         case 'compress':
             void runCompress(command).catch((error) => { process.stderr.write(`agent-run: ${(0, utils_1.formatError)(error)}\n`); process.exitCode = 1; });
             return;
@@ -57,7 +62,7 @@ function dispatch(command) {
             runMigrateConfig(command);
             return;
         default:
-            runTool(command);
+            void runTool(command).catch((error) => { process.stderr.write(`agent-run: ${(0, utils_1.formatError)(error)}\n`); process.exitCode = 1; });
     }
 }
 async function runCompress(command) {
@@ -96,11 +101,11 @@ async function runCompress(command) {
     if (process.platform === 'win32')
         prompt = prompt.replace(/\r?\n/g, ' ');
     // Use the normal adapters, configuration and permission modes. The prompt is one argv value.
-    runTool({ command: agent, args: agent === 'gemini' ? ['-i', prompt] : [prompt], wrapperArgs: {
+    await runTool({ command: agent, args: agent === 'gemini' ? ['-i', prompt] : [prompt], wrapperArgs: {
             none: false, create: false, local: false, show: false, generate: false, sandboxMode: null, codexNetwork: false
         } });
 }
-function runTool(parsed) {
+async function runTool(parsed) {
     const { args, command, wrapperArgs } = parsed;
     const adapter = (0, registry_1.getAgentAdapter)(command);
     const projectRoot = (0, project_1.findProjectRoot)(process.cwd());
@@ -144,11 +149,13 @@ function runTool(parsed) {
     }
     checkLocalAiFiles(command, projectRoot, agentDir, preview.context, wrapperArgs.local);
     const realBinary = (0, process_1.findRealBinary)(command);
+    await (0, brain_preflight_1.requireBrain)(preview.context);
     const rendered = (0, renderer_1.syncRenderedProfile)(preview);
     const runtime = rendered.runtimes[command];
     if (!runtime) {
         (0, utils_1.fail)(`no generated ${command} runtime found for profile ${rendered.profile}`);
     }
+    (0, clean_sessions_1.reportCleanup)((0, clean_sessions_1.cleanSessions)(configRoot));
     (0, spawn_agent_1.spawnAgent)(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
 }
 function runStatus() {

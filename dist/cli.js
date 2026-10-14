@@ -12,10 +12,25 @@ function parseInvocation(invokedTool, argv) {
     let command = normalizeCommandName(invokedTool);
     const options = extractGlobalOptions(argv);
     applyGlobalOptions(options);
+    if (command === null && (options.args[0] === '--clean' || options.args[0]?.startsWith('--clean='))) {
+        return parseCleanCommand(options.args);
+    }
     if (command === null) {
         command = extractCommand(options.args);
     }
     return parseCommand(command, options.args);
+}
+function parseCleanCommand(args) {
+    const flag = args[0];
+    const values = [
+        ...(flag.includes('=') ? [flag.slice('--clean='.length)] : []),
+        ...args.slice(1)
+    ].flatMap((value) => value.split(','));
+    if (!values.length || values.some((value) => value !== 'all' && !types_1.AGENT_IDS.includes(value))
+        || (values.includes('all') && values.length !== 1)) {
+        (0, utils_1.fail)('--clean requires all or a list of codex, claude, gemini, grok');
+    }
+    return { command: 'clean', agents: values[0] === 'all' ? [...types_1.AGENT_IDS] : [...new Set(values)] };
 }
 function applyGlobalOptions(options) {
     if (options.verbose) {
@@ -52,6 +67,8 @@ function parseCommand(command, args) {
         case 'create':
         case 'project':
             return { command, args };
+        case 'clean':
+            (0, utils_1.fail)('Use agent-run --clean all|codex,claude,gemini,grok');
         case 'compress':
             return parseCompressCommand(args);
         case 'check':
@@ -156,6 +173,8 @@ function parseRunCommand(command, inputArgs) {
     const args = [];
     let passthrough = false;
     for (const arg of inputArgs) {
+        if (!passthrough && (arg === '--clean' || arg.startsWith('--clean=')))
+            (0, utils_1.fail)('Use --clean on its own: agent-run --clean all|codex,claude,gemini,grok');
         if (passthrough) {
             args.push(arg);
             continue;
@@ -380,6 +399,7 @@ function renderHelp(topic) {
         '                                           Run gemini with generated private config',
         '  grok [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
         '                                           Run grok with generated private config',
+        '  --clean all|AGENTS                    Delete saved sessions for selected agents',
         '  compress [--agent NAME] [--scope SCOPE] [--dry-run]  Consolidate brain knowledge',
         '  setup [org/repo]                      Install the default tree and selected profile',
         '  check [--all] [path]                  Validate generated profile output',

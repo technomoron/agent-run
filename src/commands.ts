@@ -59,6 +59,8 @@ import {
 } from './project';
 import { renderProfile, syncAgentProfile, syncRenderedProfile } from './renderer';
 import { spawnAgent } from './runtime/spawn-agent';
+import { requireBrain } from './runtime/brain-preflight';
+import { cleanSessions, reportCleanup } from './runtime/clean-sessions';
 import { fail, formatCommand, formatError, formatPathList, uniqueSorted, verbose } from './utils';
 
 export function main(invokedTool: string, argv: string[]): void {
@@ -72,6 +74,9 @@ export function main(invokedTool: string, argv: string[]): void {
 
 function dispatch(command: ParsedInvocation): void {
 	switch (command.command) {
+		case 'clean':
+			reportCleanup(cleanSessions(defaultConfigRoot(process.cwd()), command.agents, true), true);
+			return;
 		case 'compress':
 			void runCompress(command).catch((error: unknown) => { process.stderr.write(`agent-run: ${formatError(error)}\n`); process.exitCode = 1; });
 			return;
@@ -104,7 +109,7 @@ function dispatch(command: ParsedInvocation): void {
 			runMigrateConfig(command);
 			return;
 		default:
-			runTool(command);
+			void runTool(command).catch((error: unknown) => { process.stderr.write(`agent-run: ${formatError(error)}\n`); process.exitCode = 1; });
 	}
 }
 
@@ -138,12 +143,12 @@ async function runCompress(command: Extract<ParsedInvocation, { command: 'compre
 	// Keep this generated prose prompt in one argument through Windows npm shims.
 	if (process.platform === 'win32') prompt = prompt.replace(/\r?\n/g, ' ');
 	// Use the normal adapters, configuration and permission modes. The prompt is one argv value.
-	runTool({ command: agent, args: agent === 'gemini' ? ['-i', prompt] : [prompt], wrapperArgs: {
+	await runTool({ command: agent, args: agent === 'gemini' ? ['-i', prompt] : [prompt], wrapperArgs: {
 		none: false, create: false, local: false, show: false, generate: false, sandboxMode: null, codexNetwork: false
 	} });
 }
 
-function runTool(parsed: RunCommand): void {
+async function runTool(parsed: RunCommand): Promise<void> {
 	const { args, command, wrapperArgs } = parsed;
 	const adapter = getAgentAdapter(command);
 	const projectRoot = findProjectRoot(process.cwd());
@@ -189,11 +194,13 @@ function runTool(parsed: RunCommand): void {
 
 	checkLocalAiFiles(command, projectRoot, agentDir, preview.context, wrapperArgs.local);
 	const realBinary = findRealBinary(command);
+	await requireBrain(preview.context);
 	const rendered = syncRenderedProfile(preview);
 	const runtime = rendered.runtimes[command];
 	if (!runtime) {
 		fail(`no generated ${command} runtime found for profile ${rendered.profile}`);
 	}
+	reportCleanup(cleanSessions(configRoot));
 	spawnAgent(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
 }
 

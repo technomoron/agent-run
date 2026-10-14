@@ -281,7 +281,7 @@ Config root:
 
 ## Commands
 
-Global flag:
+Global flags:
 
 - `-h`, `--help`: show wrapper help for `agent-run` and the built-in commands
 - `-v`, `--verbose`: print path resolution, file creation, include expansion,
@@ -289,6 +289,26 @@ Global flag:
 
 `agent-run codex --help`, `agent-run claude --help`, `agent-run gemini --help`,
 and `agent-run grok --help` pass `--help` through to the underlying tool.
+
+Agent launches purge local sessions last modified more than seven days ago for all
+four agents. This covers native user homes and the profiles under the selected
+configuration root. Sessions exactly seven days old are retained. Authentication,
+settings, skills and brain knowledge are preserved.
+
+Delete all saved sessions for selected agents without launching an agent:
+
+```sh
+agent-run --clean all
+agent-run --clean codex,claude
+agent-run --clean grok gemini
+```
+
+`--configdir PATH` selects the configuration tree to scan. The native user homes
+are also included. Codex and Grok deletion requires an installed CLI with its
+native deletion command; Codex SQLite history is included. Failed or unsupported
+deletions are reported and retained; explicit cleanup exits with status 1 if any
+operation fails. A current session identified in the environment is skipped.
+Symlinks and paths owned by a different user are not cleaned.
 
 For any native agent command, use `--generate` to generate profile files
 without launching the underlying tool.
@@ -1067,6 +1087,8 @@ The supplied service uses `serve --pull`. On startup this pulls the configuratio
 repository with `--ff-only --no-rebase` when it is clean and has an upstream.
 Dirty checkouts and missing upstreams are skipped. Divergence or network failures
 are reported in the service journal and the service continues with local files.
+Before launching any configured agent, agent-run initializes its enabled brain MCP connection and calls `brain_status`. If this fails, launch stops with the underlying error. A disabled brain MCP connection also blocks launch when brain is enabled. Run the agent and brain service as the same user; private socket ownership is enforced. `--none` remains an explicit configuration bypass.
+
 Startup never commits, pushes, stashes, or rebases local work. Omit `--pull` to
 disable this behavior for a manually launched service.
 

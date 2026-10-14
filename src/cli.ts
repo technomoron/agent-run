@@ -30,10 +30,26 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 	let command = normalizeCommandName(invokedTool);
 	const options = extractGlobalOptions(argv);
 	applyGlobalOptions(options);
+	if (command === null && (options.args[0] === '--clean' || options.args[0]?.startsWith('--clean='))) {
+		return parseCleanCommand(options.args);
+	}
 	if (command === null) {
 		command = extractCommand(options.args);
 	}
 	return parseCommand(command, options.args);
+}
+
+function parseCleanCommand(args: string[]): Extract<ParsedInvocation, { command: 'clean' }> {
+	const flag = args[0]!;
+	const values = [
+		...(flag.includes('=') ? [flag.slice('--clean='.length)] : []),
+		...args.slice(1)
+	].flatMap((value) => value.split(','));
+	if (!values.length || values.some((value) => value !== 'all' && !AGENT_IDS.includes(value as ToolName))
+		|| (values.includes('all') && values.length !== 1)) {
+		fail('--clean requires all or a list of codex, claude, gemini, grok');
+	}
+	return { command: 'clean', agents: values[0] === 'all' ? [...AGENT_IDS] : [...new Set(values)] as ToolName[] };
 }
 
 function applyGlobalOptions(options: GlobalOptions): void {
@@ -73,6 +89,8 @@ function parseCommand(command: CommandName, args: string[]): ParsedInvocation {
 		case 'create':
 		case 'project':
 			return { command, args };
+		case 'clean':
+			fail('Use agent-run --clean all|codex,claude,gemini,grok');
 		case 'compress':
 			return parseCompressCommand(args);
 		case 'check':
@@ -168,6 +186,7 @@ function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
 	const args: string[] = [];
 	let passthrough = false;
 	for (const arg of inputArgs) {
+		if (!passthrough && (arg === '--clean' || arg.startsWith('--clean='))) fail('Use --clean on its own: agent-run --clean all|codex,claude,gemini,grok');
 		if (passthrough) {
 			args.push(arg);
 			continue;
@@ -399,6 +418,7 @@ function renderHelp(topic: HelpTopic): string {
 		'                                           Run gemini with generated private config',
 		'  grok [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
 		'                                           Run grok with generated private config',
+		'  --clean all|AGENTS                    Delete saved sessions for selected agents',
 		'  compress [--agent NAME] [--scope SCOPE] [--dry-run]  Consolidate brain knowledge',
 		'  setup [org/repo]                      Install the default tree and selected profile',
 		'  check [--all] [path]                  Validate generated profile output',

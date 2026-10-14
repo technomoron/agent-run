@@ -374,7 +374,7 @@ test('project registration and default scope feed every native MCP renderer', (t
 	}
 });
 
-test('default-scope startup and exit preserve personal AI files without scanning unrelated directories', (t) => {
+test('default-scope startup and exit preserve personal AI files without scanning unrelated directories', async (t) => {
 	const env = environment(t);
 	fs.mkdirSync(path.join(env.cwd, '.codex'));
 	fs.mkdirSync(path.join(env.cwd, '.claude'));
@@ -385,10 +385,15 @@ test('default-scope startup and exit preserve personal AI files without scanning
 	fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nprintf "native-started\\n"\n', { mode: 0o755 });
 	fs.writeFileSync(path.join(bin, 'codex.cmd'), '@echo off\r\necho native-started\r\n');
 	const realPath = `${bin}${path.delimiter}${process.env.AGENT_RUN_REAL_PATH ?? process.env.PATH}`;
-	const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/agent-run.js'), '--configdir', env.root, 'codex'], {
+	const defaults = path.join(env.root, 'agent-run.defaults.jsonc');
+	const config = require('jsonc-parser').parse(fs.readFileSync(defaults, 'utf8'));
+	config.mcp = { servers: { 'agent-brain': { command: process.execPath, args: [path.resolve(__dirname, '../dist/agent-brain.js'), 'mcp', '--configdir', env.root, '--cwd', env.cwd] } } };
+	fs.writeFileSync(defaults, JSON.stringify(config));
+	const service = await serveApiCore(env.root, defaultSocketPath(env.root));
+	env.cleanup(() => service.close());
+	const result = await require('node:util').promisify(require('node:child_process').execFile)(process.execPath, [path.resolve(__dirname, '../dist/agent-run.js'), '--configdir', env.root, 'codex'], {
 		cwd: env.cwd, env: { ...process.env, PATH: realPath, AGENT_RUN_REAL_PATH: realPath }, encoding: 'utf8'
 	});
-	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /native-started/);
 	assert.equal(fs.readFileSync(personal, 'utf8'), '{"personal":true}\n');
 	const { hasProjectFileScope } = require('../dist/project');
@@ -1314,4 +1319,22 @@ test('consolidation extracts user memory into typed destinations and rejects sym
 	archiveKnowledge(store, request);
 	assert.deepEqual(knowledgeHistory(store, { id: source.id }).items[0].replacements.map((item) => item.id), targets.map((item) => item.id));
 	assert.deepEqual(store.allKnowledge().map((item) => item.type).sort(), ['constraint', 'memory']);
+});
+
+test('brain preflight checks the configured MCP bridge, reports its cause and rejects disabled connections', async (t) => {
+	const env = environment(t);
+	const { requireBrain } = require('../dist/runtime/brain-preflight');
+	const context = renderProfile(env.cwd, path.join(env.root, 'default'), true, null, undefined, { configRoot: env.root, profile: 'default' }).context;
+	const connection = context.mcpServers['agent-brain'];
+	connection.command = process.execPath;
+	connection.args = [path.resolve(__dirname, '../dist/agent-brain.js'), 'mcp', '--configdir', env.root, '--cwd', env.cwd];
+	await assert.rejects(requireBrain(context), /service is not running/);
+	const service = await serveApiCore(env.root, defaultSocketPath(env.root));
+	env.cleanup(() => service.close());
+	await requireBrain(context);
+	connection.enabled = false;
+	await assert.rejects(requireBrain(context), /disabled or missing/);
+	connection.enabled = true;
+	connection.command = path.join(env.directory, 'missing-executable');
+	await assert.rejects(requireBrain(context), /ENOENT/);
 });

@@ -116,7 +116,7 @@ function createBrainServer(store) {
 function requirePrivateSocketDirectory(socketPath) {
     const stat = fs.lstatSync(path.dirname(socketPath));
     if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o077) !== 0)
-        throw new Error('The socket directory must be owned by the current user with mode 0700.');
+        throw new Error(`The socket directory ${path.dirname(socketPath)} must be owned by the current user with mode 0700 (current uid ${process.getuid()}, owner uid ${stat.uid}, mode ${(stat.mode & 0o777).toString(8)}). Run agent-run and agent-brain as the same user.`);
 }
 async function serveApiCore(configRoot, socketPath) {
     if (process.platform !== 'win32') {

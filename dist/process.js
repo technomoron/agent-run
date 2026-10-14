@@ -9,8 +9,8 @@ const path = require("path");
 const constants_1 = require("./constants");
 const utils_1 = require("./utils");
 const crossSpawn = require('cross-spawn');
-function findRealBinary(tool) {
-    const pathDirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+function findRealBinary(tool, searchPath = process.env.PATH ?? '') {
+    const pathDirs = searchPath.split(path.delimiter).filter(Boolean);
     const currentScriptArg = process.argv[1];
     const currentScript = currentScriptArg ? fs.realpathSync(currentScriptArg) : '';
     const wrappers = wrapperCandidates(tool);
@@ -31,7 +31,7 @@ function findRealBinary(tool) {
             return candidate;
         }
     }
-    (0, utils_1.fail)(`no ${tool} binary found in PATH`);
+    throw new Error(`no ${tool} binary found in PATH`);
 }
 function wrapperCandidates(tool) {
     const names = [

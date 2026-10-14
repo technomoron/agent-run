@@ -328,7 +328,7 @@ function readAgentRunEnv(dir: string): Record<string, string> {
 	return env;
 }
 
-function parseEnvFile(content: string): Record<string, string> {
+export function parseEnvFile(content: string): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const rawLine of content.replace(/\r\n/g, '\n').split('\n')) {
 		const line = rawLine.trim();

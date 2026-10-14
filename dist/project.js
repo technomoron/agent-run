@@ -12,6 +12,7 @@ exports.resolveProfile = resolveProfile;
 exports.resolveProfileResult = resolveProfileResult;
 exports.parseProfile = parseProfile;
 exports.projectRootForProfile = projectRootForProfile;
+exports.parseEnvFile = parseEnvFile;
 exports.defaultConfigRoot = defaultConfigRoot;
 const childProcess = require("child_process");
 const fs = require("fs");

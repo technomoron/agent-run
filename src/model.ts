@@ -63,7 +63,7 @@ export type MigrateConfigCommand = {
 };
 
 export type ParsedInvocation =
-	| { command: 'clean'; agents: ToolName[] }
+	| { command: 'clean'; agents: ToolName[]; olderOnly?: boolean }
 	| { command: 'mcp' | 'create' | 'project'; args: string[] }
 	| { command: 'compress'; agent?: ToolName; scope?: 'global' | 'project' | 'default'; dryRun: boolean }
 	| RunCommand

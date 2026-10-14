@@ -1,6 +1,16 @@
 CHANGES
 =======
 
+Version 0.99.45 (2026-10-14)
+----------------------------
+* Move automatic session cleanup out of interactive startup and exit into
+  scheduled maintenance, using the hourly AI tools timer on Linux.
+* Add --clean-old and per-user cleanup.env retention settings, defaulting to
+  seven days; set AGENT_RUN_SESSION_RETENTION_DAYS=0 to disable retention cleanup.
+* Add hourly Windows session cleanup as a hidden, unelevated scheduled task.
+* Run Linux cleanup as explicitly selected normal users and preserve native
+  session deletion and history maintenance.
+
 Version 0.99.44 (2026-10-14)
 ----------------------------
 * Remove local agent sessions last modified more than seven days ago before

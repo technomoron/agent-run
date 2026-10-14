@@ -27,9 +27,11 @@ function main(invokedTool, argv) {
 }
 function dispatch(command) {
     switch (command.command) {
-        case 'clean':
-            (0, clean_sessions_1.reportCleanup)((0, clean_sessions_1.cleanSessions)((0, project_1.defaultConfigRoot)(process.cwd()), command.agents, true), true);
+        case 'clean': {
+            const root = (0, project_1.defaultConfigRoot)(process.cwd());
+            (0, clean_sessions_1.reportCleanup)((0, clean_sessions_1.cleanSessions)(root, command.agents, !command.olderOnly, Date.now(), command.olderOnly ? (0, clean_sessions_1.sessionRetentionDays)(root) : 7), true);
             return;
+        }
         case 'compress':
             void runCompress(command).catch((error) => { process.stderr.write(`agent-run: ${(0, utils_1.formatError)(error)}\n`); process.exitCode = 1; });
             return;
@@ -155,7 +157,6 @@ async function runTool(parsed) {
     if (!runtime) {
         (0, utils_1.fail)(`no generated ${command} runtime found for profile ${rendered.profile}`);
     }
-    (0, clean_sessions_1.reportCleanup)((0, clean_sessions_1.cleanSessions)(configRoot));
     (0, spawn_agent_1.spawnAgent)(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
 }
 function runStatus() {

@@ -5,6 +5,55 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 
+test('timer cleanup selects normal users and invokes retention cleanup with a clean environment', { skip: process.platform === 'win32' }, (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-cleanup-helper-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const log = path.join(directory, 'calls');
+	const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+	function executable(name, body) {
+		const file = path.join(directory, name);
+		fs.writeFileSync(file, `#!/bin/bash\nset -eu\n${body}\n`, {mode: 0o755});
+		return quote(file);
+	}
+	const id = executable('id', 'echo "${CLEANUP_TEST_UID:-0}"');
+	const getent = executable('getent', `case "$2" in
+bjorn) echo 'bjorn:x:1000:1000::/home/bjorn:/bin/bash' ;;
+other) echo 'other:x:1001:1001::/home/other:/bin/bash' ;;
+root) echo 'root:x:0:0::/root:/bin/bash' ;;
+*) exit 2 ;;
+esac`);
+	const runuser = executable('runuser', `printf '%s\\n' "$*" >> "$CLEANUP_TEST_LOG"
+if [ "$2" = "\${CLEANUP_TEST_FAIL_USER:-}" ]; then exit 1; fi`);
+	const source = fs.readFileSync(path.join(__dirname, 'cleanup-agent-sessions.sh'), 'utf8')
+		.replace('$(id -u)', `$(${id} -u)`)
+		.replace('getent passwd', `${getent} passwd`)
+		.replace('runuser -u', `${runuser} -u`);
+	const script = path.join(directory, 'cleanup'); fs.writeFileSync(script, source);
+	function run(overrides = {}) {
+		fs.writeFileSync(log, '');
+		const env = { ...process.env, CLEANUP_TEST_LOG: log, AI_TOOLS_BRAIN_USERS: 'bjorn', ...overrides };
+		if (!Object.hasOwn(overrides, 'AI_TOOLS_CLEANUP_USERS')) delete env.AI_TOOLS_CLEANUP_USERS;
+		return spawnSync('bash', [script], {env, encoding: 'utf8'});
+	}
+	assert.equal(run().status, 0);
+	let calls = fs.readFileSync(log, 'utf8');
+	assert.match(calls, /-u bjorn -- env -i HOME=\/home\/bjorn USER=bjorn LOGNAME=bjorn/);
+	assert.match(calls, /cd "\$HOME" && exec "\$@"/);
+	assert.match(calls, /--configdir \/home\/bjorn\/\.agent-run --clean-old all/);
+	assert.doesNotMatch(calls, /--clean all/);
+	assert.equal(run({AI_TOOLS_CLEANUP_USERS: ''}).status, 0);
+	assert.equal(fs.readFileSync(log, 'utf8'), '');
+	assert.equal(run({AI_TOOLS_CLEANUP_USERS: 'bjorn other', CLEANUP_TEST_FAIL_USER: 'bjorn'}).status, 1);
+	assert.match(fs.readFileSync(log, 'utf8'), /-u other/);
+	const refused = run({AI_TOOLS_CLEANUP_USERS: 'root unknown'});
+	assert.equal(refused.status, 1); assert.match(refused.stderr, /system account/); assert.match(refused.stderr, /Unknown cleanup account/);
+	assert.equal(fs.readFileSync(log, 'utf8'), '');
+	assert.equal(run({CLEANUP_TEST_UID: '1000'}).status, 1);
+	assert.equal(fs.readFileSync(log, 'utf8'), '');
+	const service = fs.readFileSync(path.join(__dirname, '../ops/systemd/ai-tools-update.service'), 'utf8');
+	assert.match(service, /ExecStartPost=\/usr\/local\/libexec\/agent-run\/cleanup-agent-sessions/);
+});
+
 test('updater configures pnpm under sudo and limits install hooks', { skip: process.platform === 'win32' }, (t) => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-updater-'));
 	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

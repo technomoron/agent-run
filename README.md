@@ -290,10 +290,19 @@ Global flags:
 `agent-run codex --help`, `agent-run claude --help`, `agent-run gemini --help`,
 and `agent-run grok --help` pass `--help` through to the underlying tool.
 
-Agent launches purge local sessions last modified more than seven days ago for all
-four agents. This covers native user homes and the profiles under the selected
-configuration root. Sessions exactly seven days old are retained. Authentication,
-settings, skills and brain knowledge are preserved.
+Session cleanup runs separately from interactive agent startup and exit. The
+hourly AI tool timer cleans sessions older than seven days by default for selected
+users. Set retention in `~/.agent-run/cleanup.env`:
+
+```sh
+AGENT_RUN_SESSION_RETENTION_DAYS=7
+```
+
+Use a non-negative whole number of days; `0` disables retention cleanup.
+An environment value overrides the file. `--configdir PATH` selects another
+configuration root and its `cleanup.env`. Sessions exactly at the retention
+boundary are retained. Authentication, settings, skills and brain knowledge are
+preserved. Run retention cleanup manually with `agent-run --clean-old all`.
 
 Delete all saved sessions for selected agents without launching an agent:
 
@@ -1154,6 +1163,25 @@ package, the updater enables that account's service, enables lingering so it
 starts at boot without an interactive login, and restarts it to load the update.
 No accounts are selected by default. The service remains owned by the selected
 user and listens on that user's private Unix socket.
+
+After a successful timer update, session cleanup runs as each selected user.
+Set `AI_TOOLS_CLEANUP_USERS="bjorn"` in `/etc/default/ai-tools-update` to select
+accounts; if unset, it uses `AI_TOOLS_BRAIN_USERS`. An explicitly empty value
+disables scheduled cleanup. Each user's `~/.agent-run/cleanup.env` controls
+retention, defaulting to seven days. Failures appear in the systemd journal.
+
+On Windows, install hourly cleanup for the current user from PowerShell:
+
+```powershell
+$prefix = npm.cmd prefix -g
+& "$prefix\node_modules\@technomoron\agent-run\scripts\install-windows-cleanup.ps1"
+```
+
+The `Agent Session Cleanup` task runs hidden without elevation while the user is
+signed in, starting ten minutes after installation and repeating hourly. It uses
+the same `cleanup.env` and seven-day default. Pass `-ConfigRoot PATH` to select
+another configuration tree. Its latest output is in
+`<config-root>/runtime/cleanup.log`. The task skips overlapping runs.
 
 Node 24 or newer must be installed at `/usr/local/bin/node` before running the
 updater. `AI_TOOLS_AGENT_RUN_PACKAGE` can select a package version or a

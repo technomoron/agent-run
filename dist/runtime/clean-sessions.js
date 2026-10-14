@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.sessionRetentionDays = sessionRetentionDays;
 exports.cleanSessions = cleanSessions;
 exports.reportCleanup = reportCleanup;
 const fs = require("node:fs");
@@ -14,6 +15,17 @@ const manifest_1 = require("../manifest");
 const templates_1 = require("../templates");
 const project_1 = require("../project");
 const WEEK = 7 * 24 * 60 * 60 * 1000;
+const DAY = WEEK / 7;
+function sessionRetentionDays(configRoot) {
+    const file = path.join(configRoot, 'cleanup.env');
+    const settings = fs.existsSync(file) ? (0, project_1.parseEnvFile)(fs.readFileSync(file, 'utf8')) : {};
+    const value = process.env.AGENT_RUN_SESSION_RETENTION_DAYS ?? settings.AGENT_RUN_SESSION_RETENTION_DAYS ?? '7';
+    const days = Number(value);
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(days * DAY)) {
+        throw new Error('AGENT_RUN_SESSION_RETENTION_DAYS must be a non-negative whole number of days (0 disables retention cleanup).');
+    }
+    return days;
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Do not follow symlinks, including symlinked parent directories or another user's home.
 function owned(file) {
@@ -160,9 +172,11 @@ function pruneIndexes(home, agent, ids) {
         }
     }
 }
-function cleanSessions(configRoot, agents = types_1.AGENT_IDS, all = false, now = Date.now()) {
+function cleanSessions(configRoot, agents = types_1.AGENT_IDS, all = false, now = Date.now(), retentionDays = 7) {
     return agents.map((agent) => {
         const result = { agent, removed: 0, errors: [] };
+        if (!all && retentionDays === 0)
+            return result;
         let directories;
         try {
             directories = homes(configRoot, agent);
@@ -177,7 +191,7 @@ function cleanSessions(configRoot, agents = types_1.AGENT_IDS, all = false, now 
                     continue;
                 const removed = new Set();
                 for (const session of fileSessions(home, agent)) {
-                    if (!all && session.modified >= now - WEEK)
+                    if (!all && session.modified >= now - retentionDays * DAY)
                         continue;
                     if ([process.env.CODEX_THREAD_ID, process.env.CODEX_SESSION_ID, process.env.CLAUDE_SESSION_ID, process.env.GROK_SESSION_ID].includes(session.id)) {
                         if (all)

@@ -29,6 +29,7 @@ SERVICE_FILE="$ROOT/ops/systemd/ai-tools-update.service"
 TIMER_FILE="$ROOT/ops/systemd/ai-tools-update.timer"
 BRAIN_HELPER="$ROOT/scripts/ensure-agent-brain.sh"
 BRAIN_SERVICE="$ROOT/ops/systemd/agent-brain.service"
+CLEANUP_HELPER="$ROOT/scripts/cleanup-agent-sessions.sh"
 
 
 INSTALL_AI_TOOLS=0
@@ -82,6 +83,7 @@ run() {
 run install -d -m 0755 "$INSTALL_LIBEXEC_DIR" "$SYSTEMD_DIR" "$SYSTEMD_USER_DIR"
 run install -m 0755 "$UPDATE_SCRIPT" "$INSTALL_LIBEXEC_DIR/update-ai-tools"
 run install -m 0755 "$BRAIN_HELPER" "$INSTALL_LIBEXEC_DIR/ensure-agent-brain"
+run install -m 0755 "$CLEANUP_HELPER" "$INSTALL_LIBEXEC_DIR/cleanup-agent-sessions"
 run install -m 0644 "$BRAIN_SERVICE" "$SYSTEMD_USER_DIR/agent-brain.service"
 run install -m 0644 "$SERVICE_FILE" "$SYSTEMD_DIR/ai-tools-update.service"
 run install -m 0644 "$TIMER_FILE" "$SYSTEMD_DIR/ai-tools-update.timer"

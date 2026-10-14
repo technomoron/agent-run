@@ -5,7 +5,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 const { DatabaseSync } = require('node:sqlite');
 const { spawnSync } = require('node:child_process');
-const { cleanSessions } = require('../dist/runtime/clean-sessions');
+const { cleanSessions, sessionRetentionDays } = require('../dist/runtime/clean-sessions');
 const { parseInvocation } = require('../dist/cli');
 
 const oldId = '11111111-1111-4111-8111-111111111111';
@@ -19,6 +19,7 @@ function setup(t) {
 	fs.mkdirSync(home); fs.mkdirSync(config);
 	Object.assign(process.env, { HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, '.codex'), CLAUDE_CONFIG_DIR: path.join(home, '.claude'), GEMINI_CLI_HOME: home, GROK_HOME: path.join(home, '.grok') });
 	delete process.env.CODEX_THREAD_ID; delete process.env.CODEX_SESSION_ID;
+	delete process.env.AGENT_RUN_SESSION_RETENTION_DAYS;
 	t.after(() => { for (const key of Object.keys(process.env)) if (!(key in before)) delete process.env[key]; Object.assign(process.env, before); fs.rmSync(root, { recursive: true, force: true }); });
 	const now = Date.now();
 	function write(relative, content = '{}', age = week + 1000) {
@@ -35,11 +36,56 @@ test('--clean accepts all, comma and space selections and rejects invalid select
 	const env = setup(t);
 	assert.deepEqual(parseInvocation('agent-run', ['--clean', 'all']), { command: 'clean', agents: ['codex', 'claude', 'gemini', 'grok'] });
 	assert.deepEqual(parseInvocation('agent-run', ['--clean=claude,gemini', 'claude']), { command: 'clean', agents: ['claude', 'gemini'] });
+	assert.deepEqual(parseInvocation('agent-run', ['--clean-old', 'all']), { command: 'clean', agents: ['codex', 'claude', 'gemini', 'grok'], olderOnly: true });
+	assert.deepEqual(parseInvocation('agent-run', ['--clean-old=gemini']), { command: 'clean', agents: ['gemini'], olderOnly: true });
 	for (const args of [['--clean'], ['--clean', 'all,codex'], ['--clean', 'unknown'], ['codex', '--clean', 'all']]) {
 		const result = spawnSync(process.execPath, [path.resolve(__dirname, '../dist/agent-run.js'), ...args], { encoding: 'utf8' });
 		assert.equal(result.status, 1, result.stdout);
 		assert.match(result.stderr, /--clean/);
 	}
+});
+
+test('retention settings default to seven days, support file and environment values, and reject invalid values without shell evaluation', (t) => {
+	const env = setup(t);
+	const file = path.join(env.config, 'cleanup.env');
+	assert.equal(sessionRetentionDays(env.config), 7);
+	fs.writeFileSync(file, '# Retention\r\nAGENT_RUN_SESSION_RETENTION_DAYS="14"\r\n');
+	assert.equal(sessionRetentionDays(env.config), 14);
+	process.env.AGENT_RUN_SESSION_RETENTION_DAYS = '3';
+	assert.equal(sessionRetentionDays(env.config), 3);
+	delete process.env.AGENT_RUN_SESSION_RETENTION_DAYS;
+	fs.writeFileSync(file, 'AGENT_RUN_SESSION_RETENTION_DAYS=0\n');
+	assert.equal(sessionRetentionDays(env.config), 0);
+	for (const value of ['', '-1', '1.5', 'no', 'Infinity', '999999999999999999999', '$(touch should-not-exist)']) {
+		fs.writeFileSync(file, `AGENT_RUN_SESSION_RETENTION_DAYS=${value}\n`);
+		assert.throws(() => sessionRetentionDays(env.config), /non-negative whole number/);
+	}
+});
+
+test('custom retention keeps newer sessions and the boundary; zero disables cleanup, while --clean still removes all', (t) => {
+	const env = setup(t);
+	const old = env.write('.gemini/tmp/project/chats/old.json', '{}', 15 * 86400000);
+	const boundary = env.write('.gemini/tmp/project/chats/boundary.json', '{}', 14 * 86400000);
+	const recent = env.write('.gemini/tmp/project/chats/recent.json', '{}', 8 * 86400000);
+	assert.equal(cleanSessions(env.config, ['gemini'], false, env.now, 0)[0].removed, 0);
+	assert.ok(fs.existsSync(old));
+	assert.equal(cleanSessions(env.config, ['gemini'], false, env.now, 14)[0].removed, 1);
+	assert.ok(!fs.existsSync(old));
+	assert.ok(fs.existsSync(boundary)); assert.ok(fs.existsSync(recent));
+	assert.equal(cleanSessions(env.config, ['gemini'], true, env.now, 0)[0].removed, 2);
+});
+
+test('--clean-old reads the selected config root and refuses invalid retention before deleting sessions', (t) => {
+	const env = setup(t);
+	const old = env.write('.gemini/tmp/project/chats/old.json', '{}', 16 * 86400000);
+	const recent = env.write('.gemini/tmp/project/chats/recent.json', '{}', 8 * 86400000);
+	const file = path.join(env.config, 'cleanup.env');
+	const run = () => spawnSync(process.execPath, [path.resolve(__dirname, '../dist/agent-run.js'), '--configdir', env.config, '--clean-old', 'gemini'], { encoding: 'utf8' });
+	fs.writeFileSync(file, 'AGENT_RUN_SESSION_RETENTION_DAYS=invalid\n');
+	assert.equal(run().status, 1); assert.ok(fs.existsSync(old));
+	fs.writeFileSync(file, 'AGENT_RUN_SESSION_RETENTION_DAYS=14\n');
+	const result = run(); assert.equal(result.status, 0, result.stderr);
+	assert.ok(!fs.existsSync(old)); assert.ok(fs.existsSync(recent));
 });
 
 test('retention uses last modification, keeps the seven-day boundary and removes Claude companion data and index entries', (t) => {

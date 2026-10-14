@@ -630,7 +630,16 @@ cat >"$FAKE_TOOL_BIN/grok.cmd" <<'BAT'
 bash "%~dp0grok" %*
 BAT
 
-(cd "$PROJECT" && AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-args.out" AGENT_RUN_ENV_CAPTURE="$TMP_DIR/codex-env.out" PATH="$FAKE_TOOL_BIN:$PATH" node "$BIN" codex --memory-check)
+cat >"$TMP_DIR/check-cleanup-order.cjs" <<'NODE'
+const fs = require('node:fs');
+const cleanup = require(process.env.TEST_CLEANUP_MODULE);
+cleanup.cleanSessions = () => {
+	fs.writeFileSync(process.env.TEST_CLEANUP_MARKER, 'ran');
+	throw new Error('Interactive launch or exit must not run session cleanup');
+};
+NODE
+(cd "$PROJECT" && TEST_CLEANUP_MODULE="$(native_path "$ROOT/dist/runtime/clean-sessions.js")" TEST_CLEANUP_MARKER="$(native_path "$TMP_DIR/cleanup-after-exit")" AGENT_RUN_ARG_CAPTURE="$TMP_DIR/codex-args.out" AGENT_RUN_ENV_CAPTURE="$TMP_DIR/codex-env.out" PATH="$FAKE_TOOL_BIN:$PATH" node --require "$TMP_DIR/check-cleanup-order.cjs" "$BIN" codex --memory-check)
+assert_no_file "$TMP_DIR/cleanup-after-exit"
 assert_contains "$TMP_DIR/codex-args.out" "-a"
 assert_contains "$TMP_DIR/codex-args.out" "on-request"
 assert_contains "$TMP_DIR/codex-args.out" "-s"

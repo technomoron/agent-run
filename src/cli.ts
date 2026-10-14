@@ -30,7 +30,7 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 	let command = normalizeCommandName(invokedTool);
 	const options = extractGlobalOptions(argv);
 	applyGlobalOptions(options);
-	if (command === null && (options.args[0] === '--clean' || options.args[0]?.startsWith('--clean='))) {
+	if (command === null && options.args[0] && /^(--clean|--clean-old)(=|$)/.test(options.args[0])) {
 		return parseCleanCommand(options.args);
 	}
 	if (command === null) {
@@ -41,15 +41,17 @@ export function parseInvocation(invokedTool: string, argv: string[]): ParsedInvo
 
 function parseCleanCommand(args: string[]): Extract<ParsedInvocation, { command: 'clean' }> {
 	const flag = args[0]!;
+	const olderOnly = flag === '--clean-old' || flag.startsWith('--clean-old=');
+	const name = olderOnly ? '--clean-old' : '--clean';
 	const values = [
-		...(flag.includes('=') ? [flag.slice('--clean='.length)] : []),
+		...(flag.includes('=') ? [flag.slice(name.length + 1)] : []),
 		...args.slice(1)
 	].flatMap((value) => value.split(','));
 	if (!values.length || values.some((value) => value !== 'all' && !AGENT_IDS.includes(value as ToolName))
 		|| (values.includes('all') && values.length !== 1)) {
-		fail('--clean requires all or a list of codex, claude, gemini, grok');
+		fail(`${name} requires all or a list of codex, claude, gemini, grok`);
 	}
-	return { command: 'clean', agents: values[0] === 'all' ? [...AGENT_IDS] : [...new Set(values)] as ToolName[] };
+	return { command: 'clean', agents: values[0] === 'all' ? [...AGENT_IDS] : [...new Set(values)] as ToolName[], ...(olderOnly ? { olderOnly: true } : {}) };
 }
 
 function applyGlobalOptions(options: GlobalOptions): void {
@@ -186,7 +188,7 @@ function parseRunCommand(command: ToolName, inputArgs: string[]): RunCommand {
 	const args: string[] = [];
 	let passthrough = false;
 	for (const arg of inputArgs) {
-		if (!passthrough && (arg === '--clean' || arg.startsWith('--clean='))) fail('Use --clean on its own: agent-run --clean all|codex,claude,gemini,grok');
+		if (!passthrough && /^(--clean|--clean-old)(=|$)/.test(arg)) fail('Use --clean or --clean-old on its own: agent-run --clean-old all|codex,claude,gemini,grok');
 		if (passthrough) {
 			args.push(arg);
 			continue;
@@ -419,6 +421,7 @@ function renderHelp(topic: HelpTopic): string {
 		'  grok [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [args...]',
 		'                                           Run grok with generated private config',
 		'  --clean all|AGENTS                    Delete saved sessions for selected agents',
+		'  --clean-old all|AGENTS                Delete sessions older than configured retention (7 days)',
 		'  compress [--agent NAME] [--scope SCOPE] [--dry-run]  Consolidate brain knowledge',
 		'  setup [org/repo]                      Install the default tree and selected profile',
 		'  check [--all] [path]                  Validate generated profile output',

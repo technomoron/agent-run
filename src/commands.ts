@@ -60,7 +60,7 @@ import {
 import { renderProfile, syncAgentProfile, syncRenderedProfile } from './renderer';
 import { spawnAgent } from './runtime/spawn-agent';
 import { requireBrain } from './runtime/brain-preflight';
-import { cleanSessions, reportCleanup } from './runtime/clean-sessions';
+import { cleanSessions, reportCleanup, sessionRetentionDays } from './runtime/clean-sessions';
 import { fail, formatCommand, formatError, formatPathList, uniqueSorted, verbose } from './utils';
 
 export function main(invokedTool: string, argv: string[]): void {
@@ -74,9 +74,11 @@ export function main(invokedTool: string, argv: string[]): void {
 
 function dispatch(command: ParsedInvocation): void {
 	switch (command.command) {
-		case 'clean':
-			reportCleanup(cleanSessions(defaultConfigRoot(process.cwd()), command.agents, true), true);
+		case 'clean': {
+			const root = defaultConfigRoot(process.cwd());
+			reportCleanup(cleanSessions(root, command.agents, !command.olderOnly, Date.now(), command.olderOnly ? sessionRetentionDays(root) : 7), true);
 			return;
+		}
 		case 'compress':
 			void runCompress(command).catch((error: unknown) => { process.stderr.write(`agent-run: ${formatError(error)}\n`); process.exitCode = 1; });
 			return;
@@ -200,7 +202,6 @@ async function runTool(parsed: RunCommand): Promise<void> {
 	if (!runtime) {
 		fail(`no generated ${command} runtime found for profile ${rendered.profile}`);
 	}
-	reportCleanup(cleanSessions(configRoot));
 	spawnAgent(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
 }
 

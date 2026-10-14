@@ -9,9 +9,21 @@ import { findProfileDirs } from '../config-tree';
 import type { ToolName } from '../model';
 import { loadManifest, normalizeManifest } from '../manifest';
 import { buildRenderContext, createNunjucksEnv } from '../templates';
-import { projectRootForProfile } from '../project';
+import { parseEnvFile, projectRootForProfile } from '../project';
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
+const DAY = WEEK / 7;
+
+export function sessionRetentionDays(configRoot: string): number {
+	const file = path.join(configRoot, 'cleanup.env');
+	const settings = fs.existsSync(file) ? parseEnvFile(fs.readFileSync(file, 'utf8')) : {};
+	const value = process.env.AGENT_RUN_SESSION_RETENTION_DAYS ?? settings.AGENT_RUN_SESSION_RETENTION_DAYS ?? '7';
+	const days = Number(value);
+	if (!/^\d+$/.test(value) || !Number.isSafeInteger(days * DAY)) {
+		throw new Error('AGENT_RUN_SESSION_RETENTION_DAYS must be a non-negative whole number of days (0 disables retention cleanup).');
+	}
+	return days;
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Session = { id: string; files: string[]; modified: number };
 export type CleanupResult = { agent: ToolName; removed: number; errors: string[] };
@@ -148,9 +160,10 @@ function pruneIndexes(home: string, agent: ToolName, ids: Set<string>): void {
 	}
 }
 
-export function cleanSessions(configRoot: string, agents: readonly ToolName[] = AGENT_IDS, all = false, now = Date.now()): CleanupResult[] {
+export function cleanSessions(configRoot: string, agents: readonly ToolName[] = AGENT_IDS, all = false, now = Date.now(), retentionDays = 7): CleanupResult[] {
 	return agents.map((agent) => {
 		const result: CleanupResult = { agent, removed: 0, errors: [] };
+		if (!all && retentionDays === 0) return result;
 		let directories: string[];
 		try { directories = homes(configRoot, agent); }
 		catch (error) { result.errors.push(error instanceof Error ? error.message : String(error)); return result; }
@@ -159,7 +172,7 @@ export function cleanSessions(configRoot: string, agents: readonly ToolName[] = 
 				if (!owned(home)?.isDirectory()) continue;
 				const removed = new Set<string>();
 				for (const session of fileSessions(home, agent)) {
-					if (!all && session.modified >= now - WEEK) continue;
+					if (!all && session.modified >= now - retentionDays * DAY) continue;
 					if ([process.env.CODEX_THREAD_ID, process.env.CODEX_SESSION_ID, process.env.CLAUDE_SESSION_ID, process.env.GROK_SESSION_ID].includes(session.id)) {
 						if (all) result.errors.push(`Skipped current session ${session.id}`);
 						continue;

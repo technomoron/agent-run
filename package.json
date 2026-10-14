@@ -1,6 +1,6 @@
 {
   "name": "@technomoron/agent-run",
-  "version": "0.99.44",
+  "version": "0.99.45",
   "packageManager": "pnpm@10.34.5",
   "bin": {
     "agent-run": "dist/agent-run.js",
@@ -17,8 +17,11 @@
     "scripts/install-systemd-jobs.sh",
     "scripts/update-ai-tools.sh",
     "scripts/ensure-agent-brain.sh",
+    "scripts/cleanup-agent-sessions.sh",
     "scripts/brain-pipe-security.ps1",
     "scripts/install-windows-brain.ps1",
+    "scripts/install-windows-cleanup.ps1",
+    "scripts/run-windows-cleanup.ps1",
     "scripts/run-windows-brain.ps1",
     "scripts/run-hidden.vbs",
     "README.md",
@@ -36,7 +39,7 @@
     "cleanbuild": "run-s clean:dist build",
     "prepack": "run-s build",
     "test": "run-s build test:codex-profiles test:integration test:release",
-    "test:codex-profiles": "node --test scripts/test-codex-profiles.cjs scripts/test-session-cleanup.cjs",
+    "test:codex-profiles": "node --test scripts/test-codex-profiles.cjs scripts/test-session-cleanup.cjs scripts/test-windows-cleanup.cjs",
     "test:brain": "node --test scripts/test-brain.cjs",
     "test:integration": "bash ./scripts/test.sh",
     "test:release": "bash ./scripts/test-release.sh",

@@ -1,0 +1,16 @@
+export declare const IS_WINDOWS: boolean;
+export declare const ENV_FILE_NAME = ".agent-run.env";
+export declare const IGNORE_FILE_NAME = ".agent-run-ignore";
+export declare const CONFIG_ROOT_DEFAULTS_FILE_NAME = "agent-run.defaults.jsonc";
+export declare const MANIFEST_FILE_NAME = "agent-run.jsonc";
+export declare const LOCAL_TEMPLATE_FILE_NAME = "local.md.njk";
+export declare const LIVE_DIR_NAME = "live";
+export declare const CONFIG_ROOT_OVERRIDE_ENV = "AGENT_RUN_CONFIG_ROOT_OVERRIDE";
+export declare const CONFIG_DIR_ENV = "AGENT_CONFIG_DIR";
+export declare const VERBOSE_ENV = "AGENT_RUN_VERBOSE";
+export declare const UNEXPANDED_TEMPLATE_RE: RegExp;
+export declare const LOCAL_AI_FILE_NAMES: Set<string>;
+export declare const LOCAL_AI_DIRECTORY_NAMES: Set<string>;
+export declare const BRAIN_GITIGNORE_ENTRIES: string[];
+export declare const GENERATED_GITIGNORE_ENTRIES: string[];
+export declare const REQUIRED_GLOBAL_TEMPLATES: string[];

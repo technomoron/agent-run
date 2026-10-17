@@ -21,8 +21,10 @@ function createNunjucksEnv(configRoot) {
         throwOnUndefined: true
     });
 }
-function createSkillNunjucksEnv(configRoot, profileDir, trace) {
-    const roots = [path.join(configRoot, 'global', 'skills'), path.join(profileDir, 'skills')];
+function createSkillNunjucksEnv(configRoot, profileDir, trace, pool) {
+    if (pool && !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(pool))
+        throw new Error('Invalid skill pool');
+    const roots = [path.join(configRoot, 'global', 'skills'), path.join(profileDir, 'skills'), ...(pool ? [path.join(configRoot, 'pools', pool, 'skills')] : [])];
     class SkillLoader extends nunjucks.Loader {
         getSource(name) {
             const target = path.resolve(configRoot, name);

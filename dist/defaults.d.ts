@@ -1,0 +1,12 @@
+import { AgentRunManifest, RenderContext } from './model';
+export declare function defaultManifest(profile: string): AgentRunManifest;
+export declare function stringifyRootDefaults(): string;
+export declare function defaultLocalTemplate(): string;
+export declare function defaultProjectMemoryIndex(): string;
+export declare function defaultGlobalTemplates(): Map<string, string>;
+export declare function defaultToolInstructionsTemplate(isClaude: boolean): string;
+export declare function defaultCodexConfigContent(context: RenderContext): string;
+export declare function defaultClaudeSettingsContent(context: RenderContext): string;
+export declare function defaultGeminiSettingsContent(_context: RenderContext): string;
+export declare function defaultGrokConfigContent(): string;
+export declare function legacyDefaultClaudeSettingsContent(context: RenderContext, agentDir: string): string;

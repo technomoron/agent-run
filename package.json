@@ -3,8 +3,7 @@
   "version": "0.99.45",
   "packageManager": "pnpm@10.34.5",
   "bin": {
-    "agent-run": "dist/agent-run.js",
-    "agent-brain": "dist/agent-brain.js"
+    "agent-run": "dist/agent-run.js"
   },
   "engines": {
     "node": ">=24"
@@ -34,13 +33,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "postbuild": "node -e \"for (const bin of ['agent-run', 'agent-brain']) require('node:fs').chmodSync('dist/' + bin + '.js', 0o755)\"",
+    "postbuild": "node -e \"require('node:fs').chmodSync('dist/agent-run.js', 0o755)\"",
     "clean:dist": "rimraf ./dist/",
     "cleanbuild": "run-s clean:dist build",
     "prepack": "run-s build",
     "test": "run-s build test:codex-profiles test:integration test:release",
     "test:codex-profiles": "node --test scripts/test-codex-profiles.cjs scripts/test-session-cleanup.cjs scripts/test-windows-cleanup.cjs",
-    "test:brain": "node --test scripts/test-brain.cjs",
     "test:integration": "bash ./scripts/test.sh",
     "test:release": "bash ./scripts/test-release.sh",
     "release": "bash ./scripts/release.sh",
@@ -65,7 +63,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@technomoron/apicore-server": "^1.0.0",
     "cross-spawn": "^7.0.6",
     "jsonc-parser": "^3.3.1",
     "nunjucks": "^3.2.4",

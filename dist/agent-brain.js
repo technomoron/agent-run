@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const cli_1 = require("./brain/cli");
+// Compatibility entry for scripts that used the old package-relative path.
+const brain_client_1 = require("./brain-client");
 if (require.main === module)
-    void (0, cli_1.brainMain)(process.argv.slice(2)).catch(cli_1.reportBrainError);
+    (0, brain_client_1.brainCommand)(process.argv.slice(2));

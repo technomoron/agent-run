@@ -1,0 +1,14 @@
+export declare function isSamePathOrDescendant(candidatePath: string, parentPath: string): boolean;
+export declare function parseBooleanEnv(value: string | undefined): boolean;
+export declare function localDateString(): string;
+export declare function formatError(error: unknown): string;
+export declare function verbose(message: string): void;
+export declare function formatCommand(command: string, args: string[]): string;
+export declare function fail(message: string): never;
+export declare function uniqueSorted(values: string[]): string[];
+export declare function formatPathList(paths: string[]): string[];
+export declare function getExecutableExtensions(tool: string): string[];
+export declare function isExecutable(filePath: string): boolean;
+export declare function findExecutable(command: string): string | null;
+export declare function isSymlink(filePath: string): boolean;
+export declare function nextBackupPath(filePath: string): string;

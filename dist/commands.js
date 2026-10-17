@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.main = main;
+const brain_client_1 = require("./brain-client");
 const fs = require("fs");
 const path = require("path");
 const registry_1 = require("./agents/registry");
@@ -38,8 +39,7 @@ function dispatch(command) {
         case 'mcp':
         case 'create':
         case 'project':
-            void Promise.resolve().then(() => require('./brain/cli')).then(({ brainMain }) => brainMain(command.args, command.command))
-                .catch((error) => { process.stderr.write(`agent-brain: ${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
+            (0, brain_client_1.brainCommand)([command.command, ...command.args]);
             return;
         case 'check':
             runCheck(command);
@@ -68,36 +68,28 @@ function dispatch(command) {
     }
 }
 async function runCompress(command) {
-    const { BrainStore } = await Promise.resolve().then(() => require('./brain/store'));
     const { readBrainConfig } = await Promise.resolve().then(() => require('./brain/config'));
-    const { getSkills } = await Promise.resolve().then(() => require('./brain/skills'));
-    const { consolidationSkill } = await Promise.resolve().then(() => require('./brain/consolidation-skill'));
     const projectRoot = (0, project_1.findProjectRoot)(process.cwd());
     const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
     if (!readBrainConfig(configRoot)?.enabled)
         throw new Error('Compression requires agent-brain. Run agent-brain init with this configuration directory first.');
     if ((0, project_1.isIgnoredDir)(projectRoot))
         throw new Error('Compression is unavailable in an ignored directory.');
-    const store = new BrainStore(configRoot, process.cwd());
-    let agent;
-    let prompt;
-    try {
-        const scope = command.scope ?? (store.profile ? 'project' : 'default');
-        store.scopeDirectory(scope);
-        const profile = store.profile ?? 'default';
-        const manifest = (0, manifest_1.normalizeManifest)((0, manifest_1.loadManifest)(configRoot, path.join(configRoot, profile), profile), profile);
-        agent = command.agent ?? manifest.agent.default;
-        const skill = getSkills(store).find((item) => item.name === 'brain-consolidate') ?? consolidationSkill;
-        prompt = [
-            `Run brain knowledge consolidation in ${scope} scope only for the current environment.`,
-            command.dryRun ? 'Dry run: inspect and propose changes only; do not write, archive, or delete knowledge.' : 'Apply the consolidation, including verified archival of replaced records. This request authorizes the knowledge changes in this scope.',
-            'Do not commit, push, or change repository code. Follow the brain-consolidate skill below. Stop and report missing required brain capabilities instead of editing storage files directly.',
-            skill.content
-        ].join('\n\n');
-    }
-    finally {
-        store.close();
-    }
+    const options = ['--configdir', configRoot, '--cwd', process.cwd()];
+    const status = (0, brain_client_1.brainQuery)(['status', ...options]);
+    const scope = command.scope ?? (status.profile ? 'project' : 'default');
+    if (!status.scopes.some((entry) => entry.scope === scope))
+        throw new Error(`Scope ${scope} is not available in this environment`);
+    const profile = status.profile ?? 'default';
+    const manifest = (0, manifest_1.normalizeManifest)((0, manifest_1.loadManifest)(configRoot, path.join(configRoot, profile), profile), profile);
+    const agent = command.agent ?? manifest.agent.default;
+    const skill = (0, brain_client_1.brainQuery)(['consolidation-skill', ...options]);
+    let prompt = [
+        `Run brain knowledge consolidation in ${scope} scope only for the current environment.`,
+        command.dryRun ? 'Dry run: inspect and propose changes only; do not write, archive, or delete knowledge.' : 'Apply the consolidation, including verified archival of replaced records. This request authorizes the knowledge changes in this scope.',
+        'Do not commit, push, or change repository code. Follow the brain-consolidate skill below. Stop and report missing required brain capabilities instead of editing storage files directly.',
+        skill.content
+    ].join('\n\n');
     // cmd.exe terminates a .cmd launch at a literal newline, even inside quotes.
     // Keep this generated prose prompt in one argument through Windows npm shims.
     if (process.platform === 'win32')

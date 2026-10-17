@@ -1,3 +1,4 @@
+import { brainCommand, brainQuery } from './brain-client';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getAgentAdapter, listAgentAdapters } from './agents/registry';
@@ -85,8 +86,7 @@ function dispatch(command: ParsedInvocation): void {
 		case 'mcp':
 		case 'create':
 		case 'project':
-			void import('./brain/cli').then(({ brainMain }) => brainMain(command.args, command.command))
-				.catch((error: unknown) => { process.stderr.write(`agent-brain: ${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
+			brainCommand([command.command, ...command.args]);
 			return;
 		case 'check':
 			runCheck(command);
@@ -116,31 +116,25 @@ function dispatch(command: ParsedInvocation): void {
 }
 
 async function runCompress(command: Extract<ParsedInvocation, { command: 'compress' }>): Promise<void> {
-	const { BrainStore } = await import('./brain/store');
 	const { readBrainConfig } = await import('./brain/config');
-	const { getSkills } = await import('./brain/skills');
-	const { consolidationSkill } = await import('./brain/consolidation-skill');
 	const projectRoot = findProjectRoot(process.cwd());
 	const configRoot = defaultConfigRoot(projectRoot);
 	if (!readBrainConfig(configRoot)?.enabled) throw new Error('Compression requires agent-brain. Run agent-brain init with this configuration directory first.');
 	if (isIgnoredDir(projectRoot)) throw new Error('Compression is unavailable in an ignored directory.');
-	const store = new BrainStore(configRoot, process.cwd());
-	let agent: ToolName;
-	let prompt: string;
-	try {
-		const scope = command.scope ?? (store.profile ? 'project' : 'default');
-		store.scopeDirectory(scope);
-		const profile = store.profile ?? 'default';
-		const manifest = normalizeManifest(loadManifest(configRoot, path.join(configRoot, profile), profile), profile);
-		agent = command.agent ?? manifest.agent.default;
-		const skill = getSkills(store).find((item) => item.name === 'brain-consolidate') ?? consolidationSkill;
-		prompt = [
-			`Run brain knowledge consolidation in ${scope} scope only for the current environment.`,
-			command.dryRun ? 'Dry run: inspect and propose changes only; do not write, archive, or delete knowledge.' : 'Apply the consolidation, including verified archival of replaced records. This request authorizes the knowledge changes in this scope.',
-			'Do not commit, push, or change repository code. Follow the brain-consolidate skill below. Stop and report missing required brain capabilities instead of editing storage files directly.',
-			skill.content
-		].join('\n\n');
-	} finally { store.close(); }
+	const options = ['--configdir', configRoot, '--cwd', process.cwd()];
+	const status = brainQuery<{ profile: string | null; scopes: Array<{ scope: string }> }>(['status', ...options]);
+	const scope = command.scope ?? (status.profile ? 'project' : 'default');
+	if (!status.scopes.some((entry) => entry.scope === scope)) throw new Error(`Scope ${scope} is not available in this environment`);
+	const profile = status.profile ?? 'default';
+	const manifest = normalizeManifest(loadManifest(configRoot, path.join(configRoot, profile), profile), profile);
+	const agent = command.agent ?? manifest.agent.default;
+	const skill = brainQuery<{ content: string }>(['consolidation-skill', ...options]);
+	let prompt = [
+		`Run brain knowledge consolidation in ${scope} scope only for the current environment.`,
+		command.dryRun ? 'Dry run: inspect and propose changes only; do not write, archive, or delete knowledge.' : 'Apply the consolidation, including verified archival of replaced records. This request authorizes the knowledge changes in this scope.',
+		'Do not commit, push, or change repository code. Follow the brain-consolidate skill below. Stop and report missing required brain capabilities instead of editing storage files directly.',
+		skill.content
+	].join('\n\n');
 	// cmd.exe terminates a .cmd launch at a literal newline, even inside quotes.
 	// Keep this generated prose prompt in one argument through Windows npm shims.
 	if (process.platform === 'win32') prompt = prompt.replace(/\r?\n/g, ' ');

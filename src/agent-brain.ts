@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { brainMain, reportBrainError } from './brain/cli';
-
-if (require.main === module) void brainMain(process.argv.slice(2)).catch(reportBrainError);
+// Compatibility entry for scripts that used the old package-relative path.
+import { brainCommand } from './brain-client';
+if (require.main === module) brainCommand(process.argv.slice(2));

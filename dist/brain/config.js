@@ -43,6 +43,7 @@ function readBrainConfig(root) {
 exports.projectConfigSchema = zod_1.z.object({
     name: zod_1.z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/),
     display_name: zod_1.z.string().optional(),
+    pool: zod_1.z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
     roots: zod_1.z.array(zod_1.z.string().refine(path.isAbsolute, 'Source roots must be absolute paths')).min(1),
     description: zod_1.z.string().default(''),
     repository: zod_1.z.object({ url: zod_1.z.string() }).optional(),
@@ -77,7 +78,7 @@ function registeredBrainProfile(configRoot, cwd) {
 function registeredBrainProject(configRoot, cwd) {
     const matches = listBrainProjects(configRoot).flatMap((project) => project.roots
         .filter((root) => (0, utils_1.isSamePathOrDescendant)(path.resolve(cwd), path.resolve(root)))
-        .map((root) => ({ profile: project.profile, root: path.resolve(root), length: path.resolve(root).length }))).sort((a, b) => b.length - a.length);
+        .map((root) => ({ profile: project.profile, pool: project.pool, root: path.resolve(root), length: path.resolve(root).length }))).sort((a, b) => b.length - a.length);
     if (matches[0] && matches[1] && matches[0].length === matches[1].length && matches[0].profile !== matches[1].profile) {
         throw new Error(`More than one project is configured for ${cwd}`);
     }

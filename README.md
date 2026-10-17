@@ -2,7 +2,7 @@
 
 **Config once. Run with any native coding agent.**
 
-For persistent knowledge, shared skills, and tasks, use the bundled
+For persistent knowledge, shared skills, and tasks, install the separate
 [`agent-brain` MCP server](#persistent-context-with-agent-brain). It runs as a per-user service
 hosted by `@technomoron/apicore-server` on a private Unix socket. Native agents
 connect through a stdio-to-socket bridge.
@@ -561,6 +561,10 @@ run. Omit `--yes` to review and confirm tracked moves interactively. The
 command stages moves but never commits them.
 
 ## Persistent context with agent-brain
+
+The MCP server now lives in the separate `agent-mcp` repository. Install it separately: it provides `agent-mcp` and the compatible `agent-brain` executable. Agent-run no longer ships the server. Its `mcp`, `create`, and `project` commands delegate to `agent-mcp` on PATH, and compression queries that executable for the active scope and skill. Existing configuration and knowledge directories remain in place.
+
+For local development, build this checkout, install dependencies in `../agent-mcp`, then run `node scripts/link-agent-run.cjs` there. The launcher’s `pnpm test` checks launcher behavior; `pnpm test` in agent-mcp runs server and cross-package integration coverage. Shared catalog sources live in the private `agent-mcp-skills` repository; automatic catalog syncing is not implemented yet.
 
 `agent-brain` gives the native agents the same project knowledge, skills, and
 tasks through MCP. It uses the official Node MCP SDK. The persistent
@@ -1187,7 +1191,7 @@ Node 24 or newer must be installed at `/usr/local/bin/node` before running the
 updater. `AI_TOOLS_AGENT_RUN_PACKAGE` can select a package version or a
 root-owned local package archive while testing an unpublished build; it defaults
 to `@technomoron/agent-run@latest`. The updater's `--agent-brain` option installs
-only this package and manages the selected services. The settings file is read
+only agent-run and manages the selected services. Install or update agent-mcp separately before restarting those services; updating agent-run no longer installs the MCP server. The settings file is read
 by the systemd job; when invoking the script directly, pass these environment
 variables explicitly.
 

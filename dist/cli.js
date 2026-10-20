@@ -65,6 +65,12 @@ function extractCommand(args) {
 }
 function parseCommand(command, args) {
     switch (command) {
+        case 'brain-login':
+            if (args.some(isHelpFlag))
+                printHelp('general');
+            if (args.length)
+                (0, utils_1.fail)('brain-login accepts only --configdir');
+            return { command };
         case 'mcp':
         case 'create':
         case 'project':
@@ -409,6 +415,7 @@ function renderHelp(topic) {
         '  status                                Show native agent capabilities',
         '  create <name> [--quick|--guided]       Create a project with persistent context',
         '  project list|info|bootstrap           Inspect brain projects or propose initial context',
+        '  brain-login [--configdir PATH]        Sign in to the configured remote Brain',
         '  mcp [--socket PATH]                   Bridge MCP to the per-user brain service',
         '  generate [path]                       Create a sparse profile marker and render output',
         '  edit [path]                           Create or open local.md.njk',
@@ -444,7 +451,7 @@ function normalizeCommandName(value) {
     if (base === 'agent-run') {
         return null;
     }
-    return [...types_1.AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project', 'compress'].includes(base)
+    return [...types_1.AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project', 'compress', 'brain-login'].includes(base)
         ? base
         : null;
 }

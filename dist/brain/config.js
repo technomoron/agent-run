@@ -24,6 +24,12 @@ function defaultSocketPath(configRoot) {
 }
 exports.brainConfigSchema = zod_1.z.object({
     enabled: zod_1.z.boolean().default(true),
+    remote: zod_1.z.object({
+        url: zod_1.z.string().url().refine(value => { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.search && !u.hash; }, 'Use an HTTPS MCP URL without credentials'),
+        clientId: zod_1.z.string().min(1),
+        redirectUrl: zod_1.z.string().url().default('http://127.0.0.1:8123/callback'),
+        scope: zod_1.z.string().default('read write review repo:*')
+    }).strict().optional(),
     contextBudget: zod_1.z.number().int().min(1000).max(100000).default(16000),
     connectors: zod_1.z.record(zod_1.z.string().regex(/^[a-zA-Z0-9_-]+$/), zod_1.z.discriminatedUnion('type', [
         zod_1.z.object({ type: zod_1.z.literal('github'), repository: zod_1.z.string().regex(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/), tokenEnv: zod_1.z.string().regex(/^[A-Z_][A-Z0-9_]*$/).default('GITHUB_TOKEN') }).strict(),

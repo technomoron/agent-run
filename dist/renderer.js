@@ -4,6 +4,7 @@ exports.renderProfile = renderProfile;
 exports.syncAgentProfile = syncAgentProfile;
 exports.syncRenderedProfile = syncRenderedProfile;
 exports.checkRenderedProfile = checkRenderedProfile;
+const project_1 = require("./project");
 const fs = require("fs");
 const path = require("path");
 const registry_1 = require("./agents/registry");
@@ -14,14 +15,14 @@ const config_tree_1 = require("./config-tree");
 const defaults_1 = require("./defaults");
 const guards_1 = require("./guards");
 const manifest_1 = require("./manifest");
-const project_1 = require("./project");
+const project_2 = require("./project");
 const templates_1 = require("./templates");
 const utils_1 = require("./utils");
 const config_1 = require("./brain/config");
 const codex_profile_1 = require("./runtime/codex-profile");
 function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = null, trace, options) {
-    const configRoot = options?.configRoot ?? (0, project_1.defaultConfigRoot)(projectRoot);
-    const profile = options?.profile ?? (0, project_1.resolveProfile)(projectRoot);
+    const configRoot = options?.configRoot ?? (0, project_2.defaultConfigRoot)(projectRoot);
+    const profile = options?.profile ?? (0, project_2.resolveProfile)(projectRoot);
     const env = (0, templates_1.createNunjucksEnv)(configRoot);
     const manifest = (0, manifest_1.normalizeManifest)((0, manifest_1.loadManifest)(configRoot, agentDir, profile, trace), profile);
     validateManifestProfile(manifest.profile, profile, agentDir);
@@ -29,11 +30,15 @@ function renderProfile(projectRoot, agentDir, checkOnly = false, targetTool = nu
         (0, config_tree_1.ensureConfigRootGitignore)(configRoot);
     }
     const context = (0, templates_1.buildRenderContext)(projectRoot, agentDir, configRoot, manifest, env);
-    const brainEnabled = (0, config_1.readBrainConfig)(configRoot)?.enabled === true;
+    const brainConfig = (0, config_1.readBrainConfig)(configRoot);
+    const brainEnabled = brainConfig?.enabled === true;
+    const remoteRepository = brainConfig?.remote ? (0, project_1.resolveGitHubProfile)(projectRoot)?.toLowerCase() ?? (profile.startsWith('projects/') ? profile.slice('projects/'.length) : undefined) : undefined;
     if (brainEnabled && !context.mcpServers['agent-brain']) {
         context.mcpServers['agent-brain'] = {
-            transport: 'stdio', enabled: true, command: 'agent-brain',
-            args: ['mcp', '--configdir', configRoot, '--cwd', projectRoot],
+            transport: 'stdio', enabled: true, command: brainConfig?.remote ? process.execPath : 'agent-brain',
+            args: brainConfig?.remote
+                ? [path.join(__dirname, 'brain-remote.js'), '--configdir', configRoot, ...(remoteRepository ? ['--repository', remoteRepository] : [])]
+                : ['mcp', '--configdir', configRoot, '--cwd', projectRoot],
             env: {}, headers: {}
         };
     }
@@ -82,7 +87,7 @@ function validateManifestProfile(manifestProfile, inferredProfile, agentDir) {
     if (manifestProfile === inferredProfile) {
         return;
     }
-    const parsed = (0, project_1.parseProfile)(manifestProfile, `${path.join(agentDir, constants_1.MANIFEST_FILE_NAME)} profile`);
+    const parsed = (0, project_2.parseProfile)(manifestProfile, `${path.join(agentDir, constants_1.MANIFEST_FILE_NAME)} profile`);
     if (parsed.profile === null) {
         throw new Error(parsed.reason);
     }
@@ -211,7 +216,7 @@ function removeLegacyGeneratedClaudeSettings(context) {
 }
 function checkRenderedProfile(projectRoot, agentDir) {
     const findings = [];
-    const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
+    const configRoot = (0, project_2.defaultConfigRoot)(projectRoot);
     try {
         const rendered = renderProfile(projectRoot, agentDir, true);
         checkRenderedFiles(rendered, findings);

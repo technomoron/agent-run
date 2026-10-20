@@ -26,7 +26,8 @@ async function requireBrain(context) {
         transport.stderr?.on('data', (chunk) => { diagnostics = (diagnostics + chunk.toString()).slice(-8192); });
     try {
         await client.connect(transport, { timeout: 10000 });
-        const status = await client.callTool({ name: 'brain_status', arguments: {} }, undefined, { timeout: 10000 });
+        const discoveryOnly = (0, config_1.readBrainConfig)(context.configRoot)?.remote && server.args.some((arg) => arg.endsWith('brain-remote.js')) && !server.args.includes('--repository');
+        const status = await client.callTool({ name: discoveryOnly ? 'list_repositories' : 'brain_status', arguments: {} }, undefined, { timeout: 10000 });
         if (status.isError)
             throw new Error(JSON.stringify(status.content));
     }

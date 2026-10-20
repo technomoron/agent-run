@@ -75,6 +75,9 @@ export function main(invokedTool: string, argv: string[]): void {
 
 function dispatch(command: ParsedInvocation): void {
 	switch (command.command) {
+		case 'brain-login':
+			void import('./brain-remote').then(({ loginRemoteBrain }) => loginRemoteBrain(defaultConfigRoot(process.cwd()))).catch((error: unknown) => { process.stderr.write(`agent-run: ${formatError(error)}\n`); process.exitCode = 1; });
+			return;
 		case 'clean': {
 			const root = defaultConfigRoot(process.cwd());
 			reportCleanup(cleanSessions(root, command.agents, !command.olderOnly, Date.now(), command.olderOnly ? sessionRetentionDays(root) : 7), true);
@@ -119,6 +122,16 @@ async function runCompress(command: Extract<ParsedInvocation, { command: 'compre
 	const { readBrainConfig } = await import('./brain/config');
 	const projectRoot = findProjectRoot(process.cwd());
 	const configRoot = defaultConfigRoot(projectRoot);
+	if (readBrainConfig(configRoot)?.remote) {
+		const { connectRemoteBrain } = await import('./brain-remote');
+		const { resolveGitHubProfile } = await import('./project');
+		const client = await connectRemoteBrain(configRoot, resolveGitHubProfile(projectRoot)?.toLowerCase() ?? undefined);
+		try {
+			const tools = await client.listTools();
+			if (!tools.tools.some((tool) => tool.name === 'archive_knowledge')) throw new Error('The remote Brain does not enable knowledge archival; compression is unavailable. No local knowledge was changed.');
+			throw new Error('Remote knowledge compression is not supported by this launcher yet.');
+		} finally { await client.close(); }
+	}
 	if (!readBrainConfig(configRoot)?.enabled) throw new Error('Compression requires agent-brain. Run agent-brain init with this configuration directory first.');
 	if (isIgnoredDir(projectRoot)) throw new Error('Compression is unavailable in an ignored directory.');
 	const options = ['--configdir', configRoot, '--cwd', process.cwd()];

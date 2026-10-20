@@ -562,9 +562,9 @@ command stages moves but never commits them.
 
 ## Persistent context with agent-brain
 
-The MCP server now lives in the separate `agent-mcp` repository. Install it separately: it provides `agent-mcp` and the compatible `agent-brain` executable. Agent-run no longer ships the server. Its `mcp`, `create`, and `project` commands delegate to `agent-mcp` on PATH, and compression queries that executable for the active scope and skill. Existing configuration and knowledge directories remain in place.
+The MCP server now lives in the separate `agent-brain` repository. Install it separately: it provides `agent-brain` with `agent-mcp` as a compatibility alias. Agent-run no longer ships the server. Its `mcp`, `create`, and `project` commands delegate to `agent-brain` on PATH, and compression queries that executable for the active scope and skill. Existing configuration and knowledge directories remain in place.
 
-For local development, build this checkout, install dependencies in `../agent-mcp`, then run `node scripts/link-agent-run.cjs` there. The launcher’s `pnpm test` checks launcher behavior; `pnpm test` in agent-mcp runs server and cross-package integration coverage. Shared catalog sources live in the private `agent-mcp-skills` repository; automatic catalog syncing is not implemented yet.
+For local development, build this checkout, install dependencies in `../agent-brain`, then run `node scripts/link-agent-run.cjs` there. The launcher’s `pnpm test` checks launcher behavior; `pnpm test` in agent-brain runs server and cross-package integration coverage. Shared catalog sources live in the private `agent-mcp-skills` repository; automatic catalog syncing is not implemented yet.
 
 `agent-brain` gives the native agents the same project knowledge, skills, and
 tasks through MCP. It uses the official Node MCP SDK. The persistent
@@ -1191,7 +1191,7 @@ Node 24 or newer must be installed at `/usr/local/bin/node` before running the
 updater. `AI_TOOLS_AGENT_RUN_PACKAGE` can select a package version or a
 root-owned local package archive while testing an unpublished build; it defaults
 to `@technomoron/agent-run@latest`. The updater's `--agent-brain` option installs
-only agent-run and manages the selected services. Install or update agent-mcp separately before restarting those services; updating agent-run no longer installs the MCP server. The settings file is read
+only agent-run and manages the selected services. Install or update agent-brain separately before restarting those services; updating agent-run no longer installs the MCP server. The settings file is read
 by the systemd job; when invoking the script directly, pass these environment
 variables explicitly.
 
@@ -1235,3 +1235,41 @@ tests and build, packs, publishes to npm, and creates the GitHub release.
 `pnpm run release:preflight` is the local gate to run first: a clean build and
 the full test suite. Update `package.json` and `CHANGES` yourself; nothing
 checks them for you.
+
+### Connect launched agents to a remote Brain
+
+Set `remote` in your external configuration root's `brain.jsonc`:
+
+```json
+{
+  "enabled": true,
+  "remote": {
+    "url": "https://brain.yesmedia.no/mcp",
+    "clientId": "bjornjac-desktop",
+    "redirectUrl": "http://127.0.0.1:8123/callback",
+    "scope": "read write review repo:*"
+  }
+}
+```
+
+Run `agent-run brain-login` once, using `--configdir PATH` for another root.
+Sign in through the browser; the registered loopback callback uses PKCE and a
+validated OAuth state. Tokens live only under private `runtime/brain-remote/`
+files, excluded from configuration Git. Concurrent agents share refresh state.
+Generated Codex, Claude, Gemini and Grok configuration invokes the same stdio
+bridge; no bearer token is embedded in generated files. The bridge selects the
+repository from its GitHub origin, then its registered project name if needed.
+Outside a mapped repository it exposes authenticated repository discovery.
+A denied or unavailable remote Brain prevents launch; it does not silently use
+local knowledge. Existing explicit MCP overrides still take precedence.
+Remove `remote` to return to the local Brain service. Existing local configuration
+requires no migration. Manual `agent-run create/project/mcp` administration still
+uses the separately installed `agent-brain` executable.
+
+Configuration push automation should validate a private repository revision,
+fetch it into a staging directory on the server, and activate it atomically.
+Only restart Brain when endpoint, repository storage, or client registration
+changes require it; ordinary knowledge/skill edits are read on subsequent calls.
+Do not overwrite live MCP-authored knowledge with an older Git checkout. Reconcile
+or save those writes first. A GitHub push workflow should trigger this deployment
+step with a restricted credential rather than expose a public reload URL.

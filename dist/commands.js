@@ -28,6 +28,9 @@ function main(invokedTool, argv) {
 }
 function dispatch(command) {
     switch (command.command) {
+        case 'brain-login':
+            void Promise.resolve().then(() => require('./brain-remote')).then(({ loginRemoteBrain }) => loginRemoteBrain((0, project_1.defaultConfigRoot)(process.cwd()))).catch((error) => { process.stderr.write(`agent-run: ${(0, utils_1.formatError)(error)}\n`); process.exitCode = 1; });
+            return;
         case 'clean': {
             const root = (0, project_1.defaultConfigRoot)(process.cwd());
             (0, clean_sessions_1.reportCleanup)((0, clean_sessions_1.cleanSessions)(root, command.agents, !command.olderOnly, Date.now(), command.olderOnly ? (0, clean_sessions_1.sessionRetentionDays)(root) : 7), true);
@@ -71,6 +74,20 @@ async function runCompress(command) {
     const { readBrainConfig } = await Promise.resolve().then(() => require('./brain/config'));
     const projectRoot = (0, project_1.findProjectRoot)(process.cwd());
     const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
+    if (readBrainConfig(configRoot)?.remote) {
+        const { connectRemoteBrain } = await Promise.resolve().then(() => require('./brain-remote'));
+        const { resolveGitHubProfile } = await Promise.resolve().then(() => require('./project'));
+        const client = await connectRemoteBrain(configRoot, resolveGitHubProfile(projectRoot)?.toLowerCase() ?? undefined);
+        try {
+            const tools = await client.listTools();
+            if (!tools.tools.some((tool) => tool.name === 'archive_knowledge'))
+                throw new Error('The remote Brain does not enable knowledge archival; compression is unavailable. No local knowledge was changed.');
+            throw new Error('Remote knowledge compression is not supported by this launcher yet.');
+        }
+        finally {
+            await client.close();
+        }
+    }
     if (!readBrainConfig(configRoot)?.enabled)
         throw new Error('Compression requires agent-brain. Run agent-brain init with this configuration directory first.');
     if ((0, project_1.isIgnoredDir)(projectRoot))

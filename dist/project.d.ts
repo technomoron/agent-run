@@ -12,6 +12,7 @@ export declare function resolveProfileResult(projectRoot: string, configRoot?: s
     profile: string | null;
     reason: string;
 };
+export declare function resolveGitHubProfile(projectRoot: string): string | null;
 export declare function parseProfile(profile: string, source: string): {
     profile: string | null;
     reason: string;

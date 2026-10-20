@@ -256,7 +256,7 @@ function parsePackageRepositoryProfile(repository: unknown): string | null {
 	return shorthand?.[1] && shorthand[2] ? `${shorthand[1]}/${shorthand[2]}` : null;
 }
 
-function resolveGitHubProfile(projectRoot: string): string | null {
+export function resolveGitHubProfile(projectRoot: string): string | null {
 	const result = childProcess.spawnSync('git', ['-C', projectRoot, 'config', '--get', 'remote.origin.url'], {
 		encoding: 'utf8',
 		shell: false,

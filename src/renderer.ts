@@ -1,3 +1,4 @@
+import { resolveGitHubProfile } from './project';
 import * as fs from 'fs';
 import * as path from 'path';
 import { enabledAgentAdapters, getAgentAdapter, listAgentAdapters } from './agents/registry';
@@ -51,11 +52,15 @@ export function renderProfile(
 	}
 
 	const context = buildRenderContext(projectRoot, agentDir, configRoot, manifest, env);
-	const brainEnabled = readBrainConfig(configRoot)?.enabled === true;
+	const brainConfig = readBrainConfig(configRoot);
+	const brainEnabled = brainConfig?.enabled === true;
+	const remoteRepository = brainConfig?.remote ? resolveGitHubProfile(projectRoot)?.toLowerCase() ?? (profile.startsWith('projects/') ? profile.slice('projects/'.length) : undefined) : undefined;
 	if (brainEnabled && !context.mcpServers['agent-brain']) {
 		context.mcpServers['agent-brain'] = {
-			transport: 'stdio', enabled: true, command: 'agent-brain',
-			args: ['mcp', '--configdir', configRoot, '--cwd', projectRoot],
+			transport: 'stdio', enabled: true, command: brainConfig?.remote ? process.execPath : 'agent-brain',
+			args: brainConfig?.remote
+				? [path.join(__dirname, 'brain-remote.js'), '--configdir', configRoot, ...(remoteRepository ? ['--repository', remoteRepository] : [])]
+				: ['mcp', '--configdir', configRoot, '--cwd', projectRoot],
 			env: {}, headers: {}
 		};
 	}

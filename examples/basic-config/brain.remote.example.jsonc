@@ -1,0 +1,10 @@
+// Merge into your external configuration root's brain.jsonc, then run agent-run brain-login.
+{
+  "enabled": true,
+  "remote": {
+    "url": "https://brain.example.com/mcp",
+    "clientId": "registered-desktop-client",
+    "redirectUrl": "http://127.0.0.1:8123/callback",
+    "scope": "read write review repo:*"
+  }
+}

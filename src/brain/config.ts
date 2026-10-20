@@ -17,6 +17,12 @@ export function defaultSocketPath(configRoot: string): string {
 
 export const brainConfigSchema = z.object({
 	enabled: z.boolean().default(true),
+	remote: z.object({
+		url: z.string().url().refine(value => { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.search && !u.hash; }, 'Use an HTTPS MCP URL without credentials'),
+		clientId: z.string().min(1),
+		redirectUrl: z.string().url().default('http://127.0.0.1:8123/callback'),
+		scope: z.string().default('read write review repo:*')
+	}).strict().optional(),
 	contextBudget: z.number().int().min(1000).max(100000).default(16000),
 	connectors: z.record(z.string().regex(/^[a-zA-Z0-9_-]+$/), z.discriminatedUnion('type', [
 		z.object({ type: z.literal('github'), repository: z.string().regex(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/), tokenEnv: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).default('GITHUB_TOKEN') }).strict(),

@@ -10,6 +10,7 @@ exports.failForLocalAiFiles = failForLocalAiFiles;
 exports.findProjectRoot = findProjectRoot;
 exports.resolveProfile = resolveProfile;
 exports.resolveProfileResult = resolveProfileResult;
+exports.resolveGitHubProfile = resolveGitHubProfile;
 exports.parseProfile = parseProfile;
 exports.projectRootForProfile = projectRootForProfile;
 exports.parseEnvFile = parseEnvFile;

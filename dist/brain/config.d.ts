@@ -2,6 +2,12 @@ import { z } from 'zod';
 export declare function defaultSocketPath(configRoot: string): string;
 export declare const brainConfigSchema: z.ZodObject<{
     enabled: z.ZodDefault<z.ZodBoolean>;
+    remote: z.ZodOptional<z.ZodObject<{
+        url: z.ZodString;
+        clientId: z.ZodString;
+        redirectUrl: z.ZodDefault<z.ZodString>;
+        scope: z.ZodDefault<z.ZodString>;
+    }, z.core.$strict>>;
     contextBudget: z.ZodDefault<z.ZodNumber>;
     connectors: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodDiscriminatedUnion<[z.ZodObject<{
         type: z.ZodLiteral<"github">;

@@ -1,7 +1,7 @@
 import type { AgentId, AgentRuntime } from './agents/types';
 
 export type ToolName = AgentId;
-export type CommandName = ToolName | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config' | 'mcp' | 'create' | 'project' | 'compress' | 'clean';
+export type CommandName = ToolName | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config' | 'mcp' | 'create' | 'project' | 'compress' | 'clean' | 'brain-login';
 export type SandboxMode = 'danger' | 'sandboxed';
 
 export type WrapperArgs = {
@@ -63,6 +63,7 @@ export type MigrateConfigCommand = {
 };
 
 export type ParsedInvocation =
+	| { command: 'brain-login' }
 	| { command: 'clean'; agents: ToolName[]; olderOnly?: boolean }
 	| { command: 'mcp' | 'create' | 'project'; args: string[] }
 	| { command: 'compress'; agent?: ToolName; scope?: 'global' | 'project' | 'default'; dryRun: boolean }

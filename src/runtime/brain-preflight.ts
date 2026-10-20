@@ -23,7 +23,8 @@ export async function requireBrain(context: RenderContext): Promise<void> {
 	if (transport instanceof StdioClientTransport) transport.stderr?.on('data', (chunk: Buffer) => { diagnostics = (diagnostics + chunk.toString()).slice(-8192); });
 	try {
 		await client.connect(transport, { timeout: 10000 });
-		const status = await client.callTool({ name: 'brain_status', arguments: {} }, undefined, { timeout: 10000 });
+		const discoveryOnly = readBrainConfig(context.configRoot)?.remote && server.args.some((arg) => arg.endsWith('brain-remote.js')) && !server.args.includes('--repository');
+		const status = await client.callTool({ name: discoveryOnly ? 'list_repositories' : 'brain_status', arguments: {} }, undefined, { timeout: 10000 });
 		if (status.isError) throw new Error(JSON.stringify(status.content));
 	} catch (error) {
 		throw new Error(`Cannot start agent: agent-brain MCP check failed: ${error instanceof Error ? error.message : String(error)}${diagnostics.trim() ? `\n${diagnostics.trim()}` : ''}`);

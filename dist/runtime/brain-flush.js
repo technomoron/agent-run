@@ -1,0 +1,38 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.flushBrainOnExit = flushBrainOnExit;
+const config_1 = require("../brain/config");
+const brain_remote_1 = require("../brain-remote");
+/** Exit synchronization never hides an unsynced result or changes the agent's exit code. */
+async function flushBrainOnExit(context) {
+    const config = (0, config_1.readBrainConfig)(context.configRoot);
+    const server = context.mcpServers['agent-brain'];
+    if (!config?.enabled || !config.remote || !server?.enabled)
+        return;
+    const position = server.args.indexOf('--repository');
+    if (position < 0)
+        return; // Discovery sessions have no writable project scope.
+    let client;
+    try {
+        process.stderr.write('agent-run: syncing Brain changes to GitHub…\n');
+        client = await (0, brain_remote_1.connectRemoteBrain)(context.configRoot, server.args[position + 1]);
+        const result = await client.callTool({ name: 'brain_flush', arguments: {} }, undefined, { timeout: 200000 });
+        if (result.isError)
+            throw new Error(JSON.stringify(result.content));
+        const content = result.content;
+        const text = Array.isArray(content) ? content.find(item => item.type === 'text') : undefined;
+        const status = text && text.type === 'text' ? JSON.parse(text.text) : undefined;
+        if (status?.state !== 'synced')
+            throw new Error('Brain did not confirm a successful sync.');
+        process.stderr.write(`agent-run: ${status.files ? `Brain changes pushed (${status.files} files).` : 'Brain is up to date.'}\n`);
+    }
+    catch (error) {
+        process.stderr.write(`agent-run: WARNING: Brain sync failed; changes remain on the server. Retry "brain sync" or "brain flush" in chat. ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+    finally {
+        try {
+            await client?.close();
+        }
+        catch { }
+    }
+}

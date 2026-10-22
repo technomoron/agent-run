@@ -36,7 +36,7 @@ export type SpawnSpec = {
     args: string[];
     cwd: string;
     env: Record<string, string | undefined>;
-    onExit?: (code: number) => number;
+    onExit?: (code: number) => number | Promise<number>;
 };
 export interface AgentAdapter {
     id: AgentId;

@@ -152,3 +152,27 @@ test('revoked refresh credentials are cleared so a fresh login can recover', asy
  };
  await assert.rejects(credentials.refresh(),/brain-login/);assert.equal(credentials.tokens(),undefined);
 });
+test('exit flush confirms pushes and warns on failures without throwing', async t => {
+ const {root}=setup(t);
+ fs.writeFileSync(path.join(root,'brain.jsonc'),JSON.stringify({enabled:true,remote:{url:'https://brain.example/mcp',clientId:'desktop',redirectUrl:'http://127.0.0.1:8123/callback',scope:'read write repo:*'}}));
+ const remote=require('../dist/brain-remote'), original=remote.connectRemoteBrain;
+ let closed=0, calls=0, output='';const write=process.stderr.write;
+ t.after(()=>{remote.connectRemoteBrain=original;process.stderr.write=write;});
+ process.stderr.write=(s)=>{output+=s;return true;};
+ remote.connectRemoteBrain=async(configRoot,repo)=>{assert.equal(configRoot,root);assert.equal(repo,'owner/repo');return {callTool:async input=>{calls++;assert.equal(input.name,'brain_flush');return {content:[{type:'text',text:JSON.stringify({state:'synced',files:1})}]};},close:async()=>closed++};};
+ const {flushBrainOnExit}=require('../dist/runtime/brain-flush');
+ const context={configRoot:root,mcpServers:{'agent-brain':{enabled:true,args:['--repository','owner/repo']}}};
+ await flushBrainOnExit(context);assert.equal(calls,1);assert.equal(closed,1);assert.match(output,/pushed/);
+ remote.connectRemoteBrain=async()=>{throw Error('offline');};await flushBrainOnExit(context);assert.match(output,/WARNING.*changes remain on the server.*offline/);
+ context.mcpServers['agent-brain'].args=[];await flushBrainOnExit(context);assert.equal(calls,1);
+});
+test('launcher awaits asynchronous exit cleanup and preserves nonzero status', t => {
+ const {spawnSync}=require('node:child_process');const {root}=setup(t);const marker=path.join(root,'flushed');
+ const code=`require(${JSON.stringify(path.resolve(__dirname,'../dist/process'))}).execCommand(process.execPath,['-e','process.exit(7)'],process.env,undefined,async code=>{await new Promise(r=>setTimeout(r,30));require('fs').writeFileSync(${JSON.stringify(marker)},'done');return code;});`;
+ const result=spawnSync(process.execPath,['-e',code],{encoding:'utf8',timeout:10000});assert.equal(result.status,7,result.stderr);assert.equal(fs.readFileSync(marker,'utf8'),'done');
+});
+test('signal exits finish asynchronous cleanup before preserving the signal', {skip:process.platform==='win32'}, t => {
+ const {spawnSync}=require('node:child_process');const {root}=setup(t);const marker=path.join(root,'signal-flushed');
+ const code=`require(${JSON.stringify(path.resolve(__dirname,'../dist/process'))}).execCommand(process.execPath,['-e',"process.kill(process.pid,'SIGTERM')"],process.env,undefined,async code=>{await new Promise(r=>setTimeout(r,20));require('fs').writeFileSync(${JSON.stringify(marker)},'done');return code;});`;
+ const result=spawnSync(process.execPath,['-e',code],{encoding:'utf8',timeout:10000});assert.equal(result.signal,'SIGTERM',result.stderr);assert.equal(fs.readFileSync(marker,'utf8'),'done');
+});

@@ -83,19 +83,24 @@ export function execCommand(
 	args: string[],
 	env?: Record<string, string | undefined>,
 	cwd?: string,
-	onExit?: (code: number) => number
+	onExit?: (code: number) => number | Promise<number>
 ): void {
 	verbose(`spawn: ${formatCommand(command, args)} cwd=${cwd ?? process.cwd()}`);
 	const child = crossSpawn(command, args, { cwd, env, stdio: 'inherit' });
+	const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+	const handlers = signals.map(signal => ({ signal, handler: () => { if (signal === 'SIGINT' && process.stdin.isTTY) return; if (child.exitCode === null && child.signalCode === null) child.kill(signal); } }));
+	if (onExit) for (const { signal, handler } of handlers) process.on(signal, handler);
+	const cleanup = () => { if (onExit) for (const { signal, handler } of handlers) process.removeListener(signal, handler); };
 	child.on('exit', (code, signal) => {
-		if (signal) {
-			process.kill(process.pid, signal);
-			return;
-		}
-		const originalCode = code === null ? 1 : code;
-		process.exit(onExit ? onExit(originalCode) : originalCode);
+		void (async () => {
+			const originalCode = code === null ? 1 : code;
+			const exitCode = onExit ? await onExit(originalCode) : originalCode;
+			cleanup();
+			if (signal) { process.kill(process.pid, signal); return; }
+			process.exit(exitCode);
+		})().catch((error) => fail(formatError(error)));
 	});
-	child.on('error', (error) => fail(error.message));
+	child.on('error', (error) => { cleanup(); fail(error.message); });
 }
 
 export function openEditor(filePath: string): void {

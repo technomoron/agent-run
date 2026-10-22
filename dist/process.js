@@ -75,15 +75,29 @@ function isAgentRunRedirectShim(filePath) {
 function execCommand(command, args, env, cwd, onExit) {
     (0, utils_1.verbose)(`spawn: ${(0, utils_1.formatCommand)(command, args)} cwd=${cwd ?? process.cwd()}`);
     const child = crossSpawn(command, args, { cwd, env, stdio: 'inherit' });
+    const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+    const handlers = signals.map(signal => ({ signal, handler: () => { if (signal === 'SIGINT' && process.stdin.isTTY)
+            return; if (child.exitCode === null && child.signalCode === null)
+            child.kill(signal); } }));
+    if (onExit)
+        for (const { signal, handler } of handlers)
+            process.on(signal, handler);
+    const cleanup = () => { if (onExit)
+        for (const { signal, handler } of handlers)
+            process.removeListener(signal, handler); };
     child.on('exit', (code, signal) => {
-        if (signal) {
-            process.kill(process.pid, signal);
-            return;
-        }
-        const originalCode = code === null ? 1 : code;
-        process.exit(onExit ? onExit(originalCode) : originalCode);
+        void (async () => {
+            const originalCode = code === null ? 1 : code;
+            const exitCode = onExit ? await onExit(originalCode) : originalCode;
+            cleanup();
+            if (signal) {
+                process.kill(process.pid, signal);
+                return;
+            }
+            process.exit(exitCode);
+        })().catch((error) => (0, utils_1.fail)((0, utils_1.formatError)(error)));
     });
-    child.on('error', (error) => (0, utils_1.fail)(error.message));
+    child.on('error', (error) => { cleanup(); (0, utils_1.fail)(error.message); });
 }
 function openEditor(filePath) {
     const configuredEditor = process.env.VISUAL?.trim() || process.env.EDITOR?.trim();

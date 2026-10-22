@@ -209,7 +209,14 @@ async function runTool(parsed: RunCommand): Promise<void> {
 	if (!runtime) {
 		fail(`no generated ${command} runtime found for profile ${rendered.profile}`);
 	}
-	spawnAgent(adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs }));
+	const spec = adapter.spawn(runtime, { binary: realBinary, passthroughArgs: args, wrapperArgs });
+	const postflight = spec.onExit;
+	spec.onExit = async (code) => {
+		const { flushBrainOnExit } = await import('./runtime/brain-flush');
+		await flushBrainOnExit(runtime.context);
+		return postflight ? postflight(code) : code;
+	};
+	spawnAgent(spec);
 }
 
 function runStatus(): void {

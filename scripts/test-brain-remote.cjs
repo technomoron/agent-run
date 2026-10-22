@@ -176,3 +176,40 @@ test('signal exits finish asynchronous cleanup before preserving the signal', {s
  const code=`require(${JSON.stringify(path.resolve(__dirname,'../dist/process'))}).execCommand(process.execPath,['-e',"process.kill(process.pid,'SIGTERM')"],process.env,undefined,async code=>{await new Promise(r=>setTimeout(r,20));require('fs').writeFileSync(${JSON.stringify(marker)},'done');return code;});`;
  const result=spawnSync(process.execPath,['-e',code],{encoding:'utf8',timeout:10000});assert.equal(result.signal,'SIGTERM',result.stderr);assert.equal(fs.readFileSync(marker,'utf8'),'done');
 });
+test('remote profiles bootstrap from packaged defaults without a configuration checkout and preserve local customizations', t => {
+ const {spawnSync,execFileSync}=require('node:child_process');const {root,config}=setup(t);
+ fs.writeFileSync(path.join(root,'brain.jsonc'),JSON.stringify({enabled:true,remote:config}));
+ const source=path.join(root,'source');fs.mkdirSync(source);execFileSync('git',['init',source],{stdio:'ignore'});execFileSync('git',['-C',source,'remote','add','origin','git@github.com:Acme/Widget.git']);
+ const before=fs.readdirSync(source);
+ const run=()=>{const r=spawnSync(process.execPath,[path.resolve(__dirname,'../dist/agent-run.js'),'--configdir',root,'codex','--generate'],{cwd:source,encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r;};
+ const r=run();assert.match(r.stdout,/projects\/acme\/widget/);
+ const profile=path.join(root,'projects/acme/widget');assert(fs.existsSync(path.join(profile,'agent-run.jsonc')));
+ assert.deepEqual(require('yaml').parse(fs.readFileSync(path.join(profile,'config.yaml'),'utf8')).roots,[source]);
+ assert.equal(fs.existsSync(path.join(root,'.git')),false);
+ assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'agent-run.defaults.jsonc'),'utf8')).skills.install,[]);
+ for(const file of ['memories/codex-home/AGENTS.md','.claude/mcp.json','gemini/settings.json','grok/config.toml'])assert(fs.existsSync(path.join(profile,'live',file)),file);
+ assert.deepEqual(fs.readdirSync(source),before);
+ const manifest=path.join(profile,'agent-run.jsonc'),custom=JSON.stringify({checks:['custom check'],skills:{install:[]}})+'\n';fs.writeFileSync(manifest,custom);
+ const template=path.join(root,'global/agents/code.md.njk');fs.appendFileSync(template,'\nCustom local instruction.\n');const templateText=fs.readFileSync(template,'utf8');
+ const registration=path.join(profile,'config.yaml');fs.appendFileSync(registration,'description: Custom local registration\n');const registrationText=fs.readFileSync(registration,'utf8');
+ run();assert.equal(fs.readFileSync(manifest,'utf8'),custom);assert.equal(fs.readFileSync(template,'utf8'),templateText);assert.equal(fs.readFileSync(registration,'utf8'),registrationText);
+});
+test('remote bootstrap preserves existing legacy profiles and supports repository discovery outside Git', t=>{
+ const {spawnSync,execFileSync}=require('node:child_process');const {root,config}=setup(t);fs.writeFileSync(path.join(root,'brain.jsonc'),JSON.stringify({enabled:true,remote:config}));
+ const source=path.join(root,'source');fs.mkdirSync(source);execFileSync('git',['init',source],{stdio:'ignore'});execFileSync('git',['-C',source,'remote','add','origin','git@github.com:acme/legacy.git']);
+ const legacy=path.join(root,'acme/legacy');fs.mkdirSync(legacy,{recursive:true});fs.writeFileSync(path.join(legacy,'agent-run.jsonc'),JSON.stringify({checks:['legacy check']}));
+ const run=(cwd,args=[])=>{const r=spawnSync(process.execPath,[path.resolve(__dirname,'../dist/agent-run.js'),'--configdir',root,'codex',...args,'--generate'],{cwd,encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r;};
+ assert.match(run(source).stdout,/profile acme\/legacy/);assert(!fs.existsSync(path.join(root,'projects/acme/legacy')));
+ const plain=path.join(root,'plain');fs.mkdirSync(plain);assert.match(run(plain,['--create']).stdout,/profile default/);assert(!fs.existsSync(path.join(root,path.basename(root),'plain')));assert(fs.existsSync(path.join(root,'default/agent-run.jsonc')));
+ assert(!fs.existsSync(path.join(root,'.git')));
+});
+test('remote bootstrap rejects escaping Git origins before creating local profile files', t=>{
+ const {spawnSync,execFileSync}=require('node:child_process');const {root,config}=setup(t);fs.writeFileSync(path.join(root,'brain.jsonc'),JSON.stringify({enabled:true,remote:config}));
+ const source=path.join(root,'source');fs.mkdirSync(source);execFileSync('git',['init',source],{stdio:'ignore'});execFileSync('git',['-C',source,'remote','add','origin','git@github.com:acme/../../escape.git']);
+ const r=spawnSync(process.execPath,[path.resolve(__dirname,'../dist/agent-run.js'),'--configdir',root,'codex','--generate'],{cwd:source,encoding:'utf8'});assert.notEqual(r.status,0);assert.match(r.stderr,/clean relative path/);assert(!fs.existsSync(path.join(root,'projects')));assert(!fs.existsSync(path.join(root,'escape')));
+});
+test('unsupported remote names cannot leave an invalid registration that blocks other local profiles', t=>{
+ const {spawnSync,execFileSync}=require('node:child_process');const {root,config}=setup(t);fs.writeFileSync(path.join(root,'brain.jsonc'),JSON.stringify({enabled:true,remote:config}));
+ const source=path.join(root,'source');fs.mkdirSync(source);execFileSync('git',['init',source],{stdio:'ignore'});execFileSync('git',['-C',source,'remote','add','origin','git@github.com:acme/.github.git']);
+ const r=spawnSync(process.execPath,[path.resolve(__dirname,'../dist/agent-run.js'),'--configdir',root,'codex','--generate'],{cwd:source,encoding:'utf8'});assert.notEqual(r.status,0);assert(!fs.existsSync(path.join(root,'projects/acme/.github/config.yaml')));assert(!fs.existsSync(path.join(root,'projects/acme/.github/agent-run.jsonc')));assert.deepEqual(require('../dist/brain/config').listBrainProjects(root),[]);
+});

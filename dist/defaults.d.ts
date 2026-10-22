@@ -1,6 +1,6 @@
 import { AgentRunManifest, RenderContext } from './model';
 export declare function defaultManifest(profile: string): AgentRunManifest;
-export declare function stringifyRootDefaults(): string;
+export declare function stringifyRootDefaults(remoteBrain?: boolean): string;
 export declare function defaultLocalTemplate(): string;
 export declare function defaultProjectMemoryIndex(): string;
 export declare function defaultGlobalTemplates(): Map<string, string>;

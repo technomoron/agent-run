@@ -41,8 +41,10 @@ function defaultRootManifest(): AgentRunManifest {
 	return manifest;
 }
 
-export function stringifyRootDefaults(): string {
-	return `${JSON.stringify(defaultRootManifest(), null, 2)}\n`;
+export function stringifyRootDefaults(remoteBrain = false): string {
+	const manifest = defaultRootManifest();
+	if (remoteBrain) manifest.skills = { install: [] };
+	return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
 export function defaultLocalTemplate(): string {

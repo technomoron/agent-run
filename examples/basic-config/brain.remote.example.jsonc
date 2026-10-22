@@ -1,4 +1,7 @@
-// Merge into your external configuration root's brain.jsonc, then run agent-run brain-login.
+// Save as ~/.agent-run/brain.jsonc, then run agent-run brain-login.
+// No configuration Git checkout or agent-run setup step is needed.
+// First launch creates projects/<owner>/<repo>/ and its generated live/ files.
+// Existing custom launcher settings and templates are preserved.
 {
   "enabled": true,
   "remote": {

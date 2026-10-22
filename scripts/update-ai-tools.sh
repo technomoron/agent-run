@@ -13,6 +13,7 @@ APT_GET_BIN=/usr/bin/apt-get
 
 AI_TOOLS_APT_PACKAGES="${AI_TOOLS_APT_PACKAGES:-gh}"
 AI_TOOLS_AGENT_RUN_PACKAGE="${AI_TOOLS_AGENT_RUN_PACKAGE:-@technomoron/agent-run@latest}"
+AI_TOOLS_AGENT_BRAIN_PACKAGE="${AI_TOOLS_AGENT_BRAIN_PACKAGE:-}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ensure_brain() {
 	local -a accounts=()
@@ -22,11 +23,16 @@ ensure_brain() {
 	fi
 }
 
+brain_packages=()
+if [ -n "$AI_TOOLS_AGENT_BRAIN_PACKAGE" ]; then
+	brain_packages+=("$AI_TOOLS_AGENT_BRAIN_PACKAGE")
+fi
+
 packages=(
 	npm@latest corepack@latest fallow@latest ripgrep@latest
 	pm2@latest tsx@latest typescript@latest @openai/codex@latest
 	@anthropic-ai/claude-code@latest @google/gemini-cli@latest
-	@xai-official/grok@latest "$AI_TOOLS_AGENT_RUN_PACKAGE"
+	@xai-official/grok@latest "$AI_TOOLS_AGENT_RUN_PACKAGE" "${brain_packages[@]}"
 )
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -46,7 +52,7 @@ if [ "$("$NPM_BIN" prefix -g)" != /usr/local ] || [ "$("$NPM_BIN" root -g)" != /
 fi
 
 if [ "${1:-}" = --agent-brain ]; then
-	"$NPM_BIN" install -g --force "$AI_TOOLS_AGENT_RUN_PACKAGE"
+	"$NPM_BIN" install -g --force "$AI_TOOLS_AGENT_RUN_PACKAGE" "${brain_packages[@]}"
 	ensure_brain
 	exit 0
 fi

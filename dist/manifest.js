@@ -7,6 +7,7 @@ exports.createDefaultLocalFile = createDefaultLocalFile;
 exports.convertLegacyProfileIfNeeded = convertLegacyProfileIfNeeded;
 exports.loadManifest = loadManifest;
 exports.normalizeManifest = normalizeManifest;
+const config_1 = require("./brain/config");
 const types_1 = require("./agents/types");
 const fs = require("fs");
 const path = require("path");
@@ -32,7 +33,8 @@ function ensureRootDefaultsFile(configRoot) {
         return;
     }
     fs.mkdirSync(configRoot, { recursive: true });
-    fs.writeFileSync(defaultsPath, (0, defaults_1.stringifyRootDefaults)(), 'utf8');
+    const brain = (0, config_1.readBrainConfig)(configRoot);
+    fs.writeFileSync(defaultsPath, (0, defaults_1.stringifyRootDefaults)(!!(brain?.enabled && brain.remote)), 'utf8');
     (0, utils_1.verbose)(`created ${defaultsPath}`);
 }
 function createDefaultLocalFile(agentDir) {

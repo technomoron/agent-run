@@ -1,6 +1,8 @@
 import { brainCommand, brainQuery } from './brain-client';
+import { projectConfigSchema, readBrainConfig } from './brain/config';
 import * as fs from 'fs';
 import * as path from 'path';
+import { stringify as stringifyYaml } from 'yaml';
 import { getAgentAdapter, listAgentAdapters } from './agents/registry';
 import { checkProject, checkSourceTree, hasErrors, printBatchReport, printProjectReport } from './checks';
 import { parseInvocation } from './cli';
@@ -119,7 +121,6 @@ function dispatch(command: ParsedInvocation): void {
 }
 
 async function runCompress(command: Extract<ParsedInvocation, { command: 'compress' }>): Promise<void> {
-	const { readBrainConfig } = await import('./brain/config');
 	const projectRoot = findProjectRoot(process.cwd());
 	const configRoot = defaultConfigRoot(projectRoot);
 	if (readBrainConfig(configRoot)?.remote) {
@@ -187,11 +188,15 @@ async function runTool(parsed: RunCommand): Promise<void> {
 		showToolProfile(command, projectRoot, agentDir);
 		return;
 	}
-	if (wrapperArgs.create) {
+	const brain = readBrainConfig(configRoot);
+	if (wrapperArgs.create && !(brain?.enabled && brain.remote)) {
 		runGenerate({ command: 'generate', targetPath: projectRoot });
 	}
 	verbose(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
 	prepareConfigRoot(configRoot);
+	if (brain?.enabled && brain.remote && !isProfileConfigured(agentDir)) {
+		initializeProfileSource(projectRoot, profile);
+	}
 	requireProfile(command, agentDir);
 	migrateProfileOnStart(configRoot, agentDir, false);
 	const preview = renderProfile(projectRoot, agentDir, true);
@@ -548,16 +553,28 @@ function activeProject(targetPath: string, action: 'generate' | 'edit'): string 
 	return null;
 }
 
-function initializeProfileSource(projectRoot: string): string {
+function initializeProfileSource(projectRoot: string, selectedProfile?: string): string {
 	const configRoot = defaultConfigRoot(projectRoot);
 	const resolved = resolveProfileResult(projectRoot, configRoot, false);
-	if (!resolved.profile) throw new Error(resolved.reason);
-	const profile = resolved.profile;
+	const profile = selectedProfile ?? resolved.profile;
+	if (!profile) throw new Error(resolved.reason);
 	const agentDir = path.join(configRoot, profile);
 	prepareConfigRoot(configRoot);
 	ensureRootDefaultsFile(configRoot);
 	fs.mkdirSync(agentDir, { recursive: true });
 	convertLegacyProfileIfNeeded(agentDir);
+	const brain = readBrainConfig(configRoot);
+	if (brain?.enabled && brain.remote && profile.startsWith('projects/')) {
+		const registration = path.join(agentDir, 'config.yaml');
+		if (!fs.existsSync(registration)) {
+			const name = profile.slice('projects/'.length);
+			const project = { name, roots: [path.resolve(projectRoot)] };
+			projectConfigSchema.parse(project);
+			try {
+				fs.writeFileSync(registration, stringifyYaml(project), { flag: 'wx', mode: 0o600 });
+			} catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+		}
+	}
 	createProfileMarker(agentDir);
 	return agentDir;
 }

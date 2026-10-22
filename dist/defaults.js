@@ -50,8 +50,11 @@ function defaultRootManifest() {
     const { profile: _profile, ...manifest } = defaultManifest('default/profile');
     return manifest;
 }
-function stringifyRootDefaults() {
-    return `${JSON.stringify(defaultRootManifest(), null, 2)}\n`;
+function stringifyRootDefaults(remoteBrain = false) {
+    const manifest = defaultRootManifest();
+    if (remoteBrain)
+        manifest.skills = { install: [] };
+    return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 function defaultLocalTemplate() {
     return [

@@ -659,15 +659,18 @@ Node 24 or newer must be installed at `/usr/local/bin/node` before running the
 updater. `AI_TOOLS_AGENT_RUN_PACKAGE` can select a package version or a
 root-owned local package archive while testing an unpublished build; it defaults
 to `@technomoron/agent-run@latest`. The updater's `--agent-brain` option installs
-only agent-run and manages the selected services. Install or update agent-brain separately before restarting those services; updating agent-run no longer installs the MCP server. The settings file is read
+agent-run and manages the selected services. Set
+`AI_TOOLS_AGENT_BRAIN_PACKAGE` to a separately accessible Brain package version
+or a root-owned release archive to update the server in the same operation.
+It is unset by default; remote Brain clients only need agent-run. The settings file is read
 by the systemd job; when invoking the script directly, pass these environment
 variables explicitly.
 
 ## Login Warning
 
 For user-owned machines, `scripts/agent-config-login-warning.sh` can be called
-from a shell startup file to print a large warning when `~/.agent-config` is a
-dirty git checkout:
+from a shell startup file to warn about an optional, deliberately versioned
+local configuration tree at `~/.agent-run`:
 
 ```csh
 if ( -x "$HOME/bin/agent-config-login-warning" ) then
@@ -675,9 +678,10 @@ if ( -x "$HOME/bin/agent-config-login-warning" ) then
 endif
 ```
 
-The helper only reads the git status and exits quietly when the checkout is
-clean or absent. Set `AGENT_CONFIG_TARGET` before calling it to check a
-different config tree.
+Git is optional for local launcher configuration. The helper only reads Git
+status when the local root has its own `.git` directory, and stays quiet for
+plain local profiles. Set `AGENT_CONFIG_TARGET` before calling it to inspect
+another deliberately versioned tree.
 
 ## Install
 
@@ -719,6 +723,30 @@ Set `remote` in your external configuration root's `brain.jsonc`:
   }
 }
 ```
+
+Local launcher files need no configuration Git checkout. Put only the connection
+settings in `~/.agent-run/brain.jsonc`, then launch from a GitHub repository:
+
+```sh
+agent-run brain-login
+cd ~/code/owner/repository
+agent-run codex
+```
+
+On first launch, agent-run creates missing local launcher settings under
+`~/.agent-run/projects/<owner>/<repo>/` and renders native configuration into
+that profile's `live/` directory. Packaged defaults supply the local templates;
+new remote roots retrieve skills through MCP instead of installing local copies.
+Existing manifests, templates, registrations and explicit profile mappings are
+preserved. Outside a mapped Git repository, a local default profile exposes
+remote repository discovery. Server authorization is checked before launching;
+creating a local profile does not register a repository on Brain or grant access.
+
+The old `bjornjac/agent-configs` checkout is unnecessary for this mode. Preserve
+custom local files when retiring its Git metadata. Brain's separate private
+`bjornjac/agent-brain-config` repository still versions server knowledge and
+configuration. OAuth tokens stay in private local runtime files. Existing local
+Brain mode and deliberately Git-managed local profiles remain supported.
 
 Run `agent-run brain-login` once, using `--configdir PATH` for another root.
 Sign in through the browser; the registered loopback callback uses PKCE and a

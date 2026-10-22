@@ -2,8 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.main = main;
 const brain_client_1 = require("./brain-client");
+const config_1 = require("./brain/config");
 const fs = require("fs");
 const path = require("path");
+const yaml_1 = require("yaml");
 const registry_1 = require("./agents/registry");
 const checks_1 = require("./checks");
 const cli_1 = require("./cli");
@@ -71,10 +73,9 @@ function dispatch(command) {
     }
 }
 async function runCompress(command) {
-    const { readBrainConfig } = await Promise.resolve().then(() => require('./brain/config'));
     const projectRoot = (0, project_1.findProjectRoot)(process.cwd());
     const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
-    if (readBrainConfig(configRoot)?.remote) {
+    if ((0, config_1.readBrainConfig)(configRoot)?.remote) {
         const { connectRemoteBrain } = await Promise.resolve().then(() => require('./brain-remote'));
         const { resolveGitHubProfile } = await Promise.resolve().then(() => require('./project'));
         const client = await connectRemoteBrain(configRoot, resolveGitHubProfile(projectRoot)?.toLowerCase() ?? undefined);
@@ -88,7 +89,7 @@ async function runCompress(command) {
             await client.close();
         }
     }
-    if (!readBrainConfig(configRoot)?.enabled)
+    if (!(0, config_1.readBrainConfig)(configRoot)?.enabled)
         throw new Error('Compression requires agent-brain. Run agent-brain init with this configuration directory first.');
     if ((0, project_1.isIgnoredDir)(projectRoot))
         throw new Error('Compression is unavailable in an ignored directory.');
@@ -145,11 +146,15 @@ async function runTool(parsed) {
         showToolProfile(command, projectRoot, agentDir);
         return;
     }
-    if (wrapperArgs.create) {
+    const brain = (0, config_1.readBrainConfig)(configRoot);
+    if (wrapperArgs.create && !(brain?.enabled && brain.remote)) {
         runGenerate({ command: 'generate', targetPath: projectRoot });
     }
     (0, utils_1.verbose)(`profile=${profile} configRoot=${configRoot} agentPath=${agentDir}`);
     prepareConfigRoot(configRoot);
+    if (brain?.enabled && brain.remote && !(0, manifest_1.isProfileConfigured)(agentDir)) {
+        initializeProfileSource(projectRoot, profile);
+    }
     requireProfile(command, agentDir);
     migrateProfileOnStart(configRoot, agentDir, false);
     const preview = (0, renderer_1.renderProfile)(projectRoot, agentDir, true);
@@ -469,17 +474,33 @@ function activeProject(targetPath, action) {
     process.stdout.write(`SKIP ignored ${projectRoot}\n`);
     return null;
 }
-function initializeProfileSource(projectRoot) {
+function initializeProfileSource(projectRoot, selectedProfile) {
     const configRoot = (0, project_1.defaultConfigRoot)(projectRoot);
     const resolved = (0, project_1.resolveProfileResult)(projectRoot, configRoot, false);
-    if (!resolved.profile)
+    const profile = selectedProfile ?? resolved.profile;
+    if (!profile)
         throw new Error(resolved.reason);
-    const profile = resolved.profile;
     const agentDir = path.join(configRoot, profile);
     prepareConfigRoot(configRoot);
     (0, manifest_1.ensureRootDefaultsFile)(configRoot);
     fs.mkdirSync(agentDir, { recursive: true });
     (0, manifest_1.convertLegacyProfileIfNeeded)(agentDir);
+    const brain = (0, config_1.readBrainConfig)(configRoot);
+    if (brain?.enabled && brain.remote && profile.startsWith('projects/')) {
+        const registration = path.join(agentDir, 'config.yaml');
+        if (!fs.existsSync(registration)) {
+            const name = profile.slice('projects/'.length);
+            const project = { name, roots: [path.resolve(projectRoot)] };
+            config_1.projectConfigSchema.parse(project);
+            try {
+                fs.writeFileSync(registration, (0, yaml_1.stringify)(project), { flag: 'wx', mode: 0o600 });
+            }
+            catch (error) {
+                if (error.code !== 'EEXIST')
+                    throw error;
+            }
+        }
+    }
     (0, manifest_1.createProfileMarker)(agentDir);
     return agentDir;
 }

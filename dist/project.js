@@ -170,12 +170,16 @@ function resolveProfileResult(projectRoot, configRoot = defaultConfigRoot(projec
     const named = resolved.profile ? (0, config_1.namedBrainProfile)(configRoot, resolved.profile) : null;
     if (named)
         return { profile: named, reason: '' };
-    if (useDefault && (0, config_1.readBrainConfig)(configRoot)?.enabled) {
-        const configured = resolved.profile !== null && ['agent-run.jsonc', 'local.md.njk', 'AGENTS-MODS.md']
-            .some((name) => fs.existsSync(path.join(configRoot, resolved.profile, name)));
-        if (!configured)
-            return { profile: 'default', reason: '' };
+    const brain = (0, config_1.readBrainConfig)(configRoot);
+    const configured = resolved.profile !== null && ['agent-run.jsonc', 'local.md.njk', 'AGENTS-MODS.md']
+        .some((name) => fs.existsSync(path.join(configRoot, resolved.profile, name)));
+    if (brain?.enabled && brain.remote && !configured) {
+        const repository = resolveGitHubProfile(projectRoot);
+        if (repository)
+            return parseProfile(`projects/${repository.toLowerCase()}`, 'GitHub remote origin');
     }
+    if (useDefault && brain?.enabled && !configured)
+        return { profile: 'default', reason: '' };
     return resolved;
 }
 function resolveLegacyProfileResult(projectRoot) {

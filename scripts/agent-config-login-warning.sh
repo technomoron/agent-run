@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -u
 
-target="${AGENT_CONFIG_TARGET:-$HOME/.agent-config}"
+target="${AGENT_CONFIG_TARGET:-${AGENT_CONFIG_ROOT:-${AGENT_CONFIG_DIR:-$HOME/.agent-run}}}"
 
 [ -d "$target/.git" ] || exit 0
 command -v git >/dev/null 2>&1 || exit 0
@@ -14,7 +14,7 @@ cat <<'BANNER'
 ###############################################################################
 ###############################################################################
 ##                                                                           ##
-##        WARNING: ~/.agent-config HAS UNCOMMITTED LOCAL CHANGES             ##
+##        WARNING: agent-run CONFIG HAS UNCOMMITTED LOCAL CHANGES             ##
 ##                                                                           ##
 ##        agent-run config updates should not pull over this tree.           ##
 ##        Commit, stash, or remove these changes before updating configs.    ##
@@ -24,5 +24,6 @@ cat <<'BANNER'
 
 BANNER
 
+printf '  Optional configuration Git checkout: %s\n\n' "$target"
 printf '%s\n' "$status" | sed 's/^/  /'
 printf '\n'

@@ -91,11 +91,11 @@ printf 'pnpm %s\\n' "$*" >> "$UPDATER_TEST_LOG"`);
 		.replace('\ninstall -d ', `\n${install} -d `);
 	const script = path.join(directory, 'update-ai-tools');
 	fs.writeFileSync(script, source);
-	function run(args = [], uid = '0') {
+	function run(args = [], uid = '0', overrides = {}) {
 		fs.writeFileSync(log, '');
 		return spawnSync('bash', [script, ...args], { encoding: 'utf8', env: {
 			...process.env, SUDO_USER: 'bjorn', UPDATER_TEST_UID: uid,
-			UPDATER_TEST_LOG: log, AI_TOOLS_BRAIN_USERS: 'bjorn', AI_TOOLS_AGENT_RUN_PACKAGE: '@technomoron/agent-run@latest'
+			UPDATER_TEST_LOG: log, AI_TOOLS_BRAIN_USERS: 'bjorn', AI_TOOLS_AGENT_RUN_PACKAGE: '@technomoron/agent-run@latest', AI_TOOLS_AGENT_BRAIN_PACKAGE: '', ...overrides
 		} });
 	}
 	const result = run();
@@ -114,6 +114,10 @@ printf 'pnpm %s\\n' "$*" >> "$UPDATER_TEST_LOG"`);
 	assert.match(brainOnly, /npm sudo=bjorn install -g --force @technomoron\/agent-run@latest/);
 	assert.match(brainOnly, /brain bjorn/);
 	assert.doesNotMatch(brainOnly, /^pnpm /m);
+	assert.equal(run(['--agent-brain'], '0', {AI_TOOLS_AGENT_BRAIN_PACKAGE: '/srv/releases/agent-brain.tgz'}).status, 0);
+	assert.match(fs.readFileSync(log, 'utf8'), /@technomoron\/agent-run@latest \/srv\/releases\/agent-brain.tgz/);
+	assert.equal(run([], '0', {AI_TOOLS_AGENT_BRAIN_PACKAGE: '@technomoron/agent-brain@0.1.0'}).status, 0);
+	assert.match(fs.readFileSync(log, 'utf8'), /@technomoron\/agent-brain@0.1.0/);
 	const nonRoot = run([], '1000');
 	assert.notEqual(nonRoot.status, 0);
 	assert.match(nonRoot.stderr, /must run as root/);

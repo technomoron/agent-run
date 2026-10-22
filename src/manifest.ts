@@ -1,3 +1,4 @@
+import { readBrainConfig } from './brain/config';
 import { AGENT_IDS } from './agents/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -33,7 +34,8 @@ export function ensureRootDefaultsFile(configRoot: string): void {
 		return;
 	}
 	fs.mkdirSync(configRoot, { recursive: true });
-	fs.writeFileSync(defaultsPath, stringifyRootDefaults(), 'utf8');
+	const brain = readBrainConfig(configRoot);
+	fs.writeFileSync(defaultsPath, stringifyRootDefaults(!!(brain?.enabled && brain.remote)), 'utf8');
 	verbose(`created ${defaultsPath}`);
 }
 

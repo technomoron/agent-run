@@ -1,6 +1,17 @@
 CHANGES
 =======
 
+Version 0.99.46 (2026-10-22)
+----------------------------
+* Separate the Brain MCP server into agent-brain and support remote Brain with
+  OAuth login, repository permissions, shared pools and per-project profiles.
+* Flush remote Brain changes when agent sessions end and report sync failures.
+* Create local profiles for remote-backed repositories without a configuration
+  Git checkout; keep generated agent state outside source repositories.
+* Support a separate Brain package or private release archive in the AI tools
+  updater, while allowing remote clients to update only the launcher.
+* Make the optional login warning work with ordinary configuration directories.
+
 Version 0.99.45 (2026-10-14)
 ----------------------------
 * Move automatic session cleanup out of interactive startup and exit into

@@ -44,7 +44,7 @@ function applyGlobalOptions(options) {
 }
 function extractCommand(args) {
     if (args.length === 0) {
-        (0, utils_1.fail)('usage: agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update> [options] (run with --help for details)');
+        (0, utils_1.fail)('usage: agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update|auto-update> [options] (run with --help for details)');
     }
     if (isHelpFlag(args[0])) {
         printHelp('general');
@@ -65,6 +65,8 @@ function extractCommand(args) {
 }
 function parseCommand(command, args) {
     switch (command) {
+        case 'auto-update':
+            return parseAutoUpdateCommand(args);
         case 'brain-login':
             if (args.some(isHelpFlag))
                 printHelp('general');
@@ -299,6 +301,18 @@ function parseSinglePath(inputArgs, command) {
     }
     return path.resolve(targetPath);
 }
+// Parse the opt-in system updater command without accepting project paths.
+function parseAutoUpdateCommand(args) {
+    let dryRun = false;
+    for (const arg of args) {
+        if (isHelpFlag(arg))
+            printHelp('auto-update');
+        if (arg !== '--dry-run')
+            (0, utils_1.fail)(`unknown auto-update option: ${arg}`);
+        dryRun = true;
+    }
+    return { command: 'auto-update', dryRun };
+}
 function parseUpdateCommand(inputArgs) {
     let all = false;
     let targetPath = process.cwd();
@@ -378,6 +392,7 @@ function renderHelp(topic) {
             'With --all, render every profile found under the config root without requiring code checkouts.',
             ''
         ],
+        'auto-update': ['Usage:', '  agent-run auto-update [--dry-run]', '', 'Install and enable hourly system updates for Codex, Claude, Gemini, Grok and Node tooling.', 'Requires Linux with systemd; installation requests sudo when needed.', '--dry-run prints the installation plan without changing system files or services.', 'Settings: /etc/default/ai-tools-update. No accounts are selected by default.', ''],
         'migrate-config': [
             'Usage:',
             '  agent-run migrate-config [--yes] [config-root]',
@@ -396,7 +411,7 @@ function renderHelp(topic) {
         `agent-run ${(0, version_1.packageVersion)()}`,
         '',
         'Usage:',
-        '  agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update> [options]',
+        '  agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update|auto-update> [options]',
         '',
         'Commands:',
         '  codex [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [--network] [args...]',
@@ -420,6 +435,7 @@ function renderHelp(topic) {
         '  generate [path]                       Create a sparse profile marker and render output',
         '  edit [path]                           Create or open local.md.njk',
         '  update [--all] [path]                 Regenerate existing profile output',
+        '  auto-update [--dry-run]               Install optional hourly system tool updates',
         '  migrate-config [--yes] [config-root]   Convert existing config tree layout',
         '',
         'Global options:',
@@ -451,7 +467,7 @@ function normalizeCommandName(value) {
     if (base === 'agent-run') {
         return null;
     }
-    return [...types_1.AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project', 'compress', 'brain-login'].includes(base)
+    return [...types_1.AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project', 'compress', 'brain-login', 'auto-update'].includes(base)
         ? base
         : null;
 }

@@ -597,15 +597,19 @@ Custom source templates and installed skills are preserved.
 ## Systemd Jobs
 
 The repo includes optional systemd units for keeping global AI tooling current.
-Run the installer from the agent-run checkout. Setup, generation, and updates do
+Use `agent-run auto-update` to opt in from the installed package. Setup, generation, and updates do
 not copy systemd units or helper scripts into `.agent-run`. Remove legacy copies
 there once any custom changes have been moved to your maintained scripts.
 
 Install the global AI tools updater:
 
 ```sh
-sudo scripts/install-systemd-jobs.sh --ai-tools
+agent-run auto-update --dry-run
+agent-run auto-update
 ```
+
+The command currently supports Linux with systemd and requests sudo when needed.
+Other platforms report an unsupported-platform error without making changes.
 
 This installs and enables `ai-tools-update.timer`, which runs hourly. The
 updater uses `/usr/local/bin/npm`, `/usr/local/bin/node`, and

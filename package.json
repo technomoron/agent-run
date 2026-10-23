@@ -1,6 +1,6 @@
 {
   "name": "@technomoron/agent-run",
-  "version": "0.99.46",
+  "version": "0.99.47",
   "packageManager": "pnpm@10.34.5",
   "bin": {
     "agent-run": "dist/agent-run.js"
@@ -38,7 +38,7 @@
     "cleanbuild": "run-s clean:dist build",
     "prepack": "run-s build",
     "test": "run-s build test:codex-profiles test:integration test:release",
-    "test:codex-profiles": "node --test scripts/test-codex-profiles.cjs scripts/test-session-cleanup.cjs scripts/test-windows-cleanup.cjs scripts/test-brain-remote.cjs",
+    "test:codex-profiles": "node --test scripts/test-codex-profiles.cjs scripts/test-session-cleanup.cjs scripts/test-windows-cleanup.cjs scripts/test-brain-remote.cjs scripts/test-auto-update.cjs",
     "test:integration": "bash ./scripts/test.sh",
     "test:release": "bash ./scripts/test-release.sh",
     "release": "bash ./scripts/release.sh",

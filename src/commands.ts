@@ -1,3 +1,4 @@
+import { autoUpdate } from './auto-update';
 import { brainCommand, brainQuery } from './brain-client';
 import { projectConfigSchema, readBrainConfig } from './brain/config';
 import * as fs from 'fs';
@@ -77,6 +78,9 @@ export function main(invokedTool: string, argv: string[]): void {
 
 function dispatch(command: ParsedInvocation): void {
 	switch (command.command) {
+		case 'auto-update':
+			autoUpdate(command.dryRun);
+			return;
 		case 'brain-login':
 			void import('./brain-remote').then(({ loginRemoteBrain }) => loginRemoteBrain(defaultConfigRoot(process.cwd()))).catch((error: unknown) => { process.stderr.write(`agent-run: ${formatError(error)}\n`); process.exitCode = 1; });
 			return;

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.main = main;
+const auto_update_1 = require("./auto-update");
 const brain_client_1 = require("./brain-client");
 const config_1 = require("./brain/config");
 const fs = require("fs");
@@ -30,6 +31,9 @@ function main(invokedTool, argv) {
 }
 function dispatch(command) {
     switch (command.command) {
+        case 'auto-update':
+            (0, auto_update_1.autoUpdate)(command.dryRun);
+            return;
         case 'brain-login':
             void Promise.resolve().then(() => require('./brain-remote')).then(({ loginRemoteBrain }) => loginRemoteBrain((0, project_1.defaultConfigRoot)(process.cwd()))).catch((error) => { process.stderr.write(`agent-run: ${(0, utils_1.formatError)(error)}\n`); process.exitCode = 1; });
             return;

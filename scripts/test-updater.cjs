@@ -103,6 +103,8 @@ printf 'pnpm %s\\n' "$*" >> "$UPDATER_TEST_LOG"`);
 	const calls = fs.readFileSync(log, 'utf8');
 	assert.match(calls, /npm sudo=bjorn install -g --force .*--allow-scripts=@anthropic-ai\/claude-code,@xai-official\/grok,esbuild/);
 	assert.match(calls, /pnpm@latest --allow-scripts=pnpm/);
+	assert.match(calls, /@google\/gemini-cli@latest/);
+	assert.match(calls, /@xai-official\/grok@latest/);
 	assert.doesNotMatch(calls, /dangerously-allow-all-scripts|allow-scripts=[^\n]*(?:keytar|node-pty)/);
 	assert.equal(calls.split('\n').filter((line) => line.startsWith('pnpm ')).length, 3);
 	for (const setting of ['global-dir /usr/local/share/pnpm/global', 'global-bin-dir /usr/local/bin', 'store-dir /usr/local/share/pnpm/store']) {

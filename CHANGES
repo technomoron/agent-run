@@ -1,6 +1,10 @@
 CHANGES
 =======
 
+Version 0.99.47 (2026-10-23)
+----------------------------
+* Add agent-run auto-update to install the optional hourly systemd updater, with a dry-run preview.
+
 Version 0.99.46 (2026-10-22)
 ----------------------------
 * Separate the Brain MCP server into agent-brain and support remote Brain with

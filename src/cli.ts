@@ -19,7 +19,7 @@ import {
 import { defaultConfigRoot } from './project';
 import { fail } from './utils';
 
-type HelpTopic = 'general' | 'compress' | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'migrate-config';
+type HelpTopic = 'general' | 'compress' | 'check' | 'status' | 'setup' | 'generate' | 'init' | 'edit' | 'update' | 'auto-update' | 'migrate-config';
 type GlobalOptions = {
 	args: string[];
 	configRootOverride: string | null;
@@ -65,7 +65,7 @@ function applyGlobalOptions(options: GlobalOptions): void {
 
 function extractCommand(args: string[]): CommandName {
 	if (args.length === 0) {
-		fail('usage: agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update> [options] (run with --help for details)');
+		fail('usage: agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update|auto-update> [options] (run with --help for details)');
 	}
 	if (isHelpFlag(args[0])) {
 		printHelp('general');
@@ -87,6 +87,8 @@ function extractCommand(args: string[]): CommandName {
 
 function parseCommand(command: CommandName, args: string[]): ParsedInvocation {
 	switch (command) {
+		case 'auto-update':
+			return parseAutoUpdateCommand(args);
 		case 'brain-login':
 			if (args.some(isHelpFlag)) printHelp('general');
 			if (args.length) fail('brain-login accepts only --configdir');
@@ -314,6 +316,17 @@ function parseSinglePath(inputArgs: string[], command: 'generate' | 'init' | 'ed
 	return path.resolve(targetPath);
 }
 
+// Parse the opt-in system updater command without accepting project paths.
+function parseAutoUpdateCommand(args: string[]): Extract<ParsedInvocation, { command: 'auto-update' }> {
+	let dryRun = false;
+	for (const arg of args) {
+		if (isHelpFlag(arg)) printHelp('auto-update');
+		if (arg !== '--dry-run') fail(`unknown auto-update option: ${arg}`);
+		dryRun = true;
+	}
+	return { command: 'auto-update', dryRun };
+}
+
 function parseUpdateCommand(inputArgs: string[]): UpdateCommand {
 	let all = false;
 	let targetPath = process.cwd();
@@ -395,6 +408,7 @@ function renderHelp(topic: HelpTopic): string {
 			'With --all, render every profile found under the config root without requiring code checkouts.',
 			''
 		],
+		'auto-update': ['Usage:', '  agent-run auto-update [--dry-run]', '', 'Install and enable hourly system updates for Codex, Claude, Gemini, Grok and Node tooling.', 'Requires Linux with systemd; installation requests sudo when needed.', '--dry-run prints the installation plan without changing system files or services.', 'Settings: /etc/default/ai-tools-update. No accounts are selected by default.', ''],
 		'migrate-config': [
 			'Usage:',
 			'  agent-run migrate-config [--yes] [config-root]',
@@ -413,7 +427,7 @@ function renderHelp(topic: HelpTopic): string {
 		`agent-run ${packageVersion()}`,
 		'',
 		'Usage:',
-		'  agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update> [options]',
+		'  agent-run <codex|claude|gemini|grok|compress|check|status|setup|generate|edit|update|auto-update> [options]',
 		'',
 		'Commands:',
 		'  codex [--none] [--create] [--local] [--show] [--generate] [--yolo|--sandboxed] [--network] [args...]',
@@ -437,6 +451,7 @@ function renderHelp(topic: HelpTopic): string {
 		'  generate [path]                       Create a sparse profile marker and render output',
 		'  edit [path]                           Create or open local.md.njk',
 		'  update [--all] [path]                 Regenerate existing profile output',
+		'  auto-update [--dry-run]               Install optional hourly system tool updates',
 		'  migrate-config [--yes] [config-root]   Convert existing config tree layout',
 		'',
 		'Global options:',
@@ -469,7 +484,7 @@ function normalizeCommandName(value: string): CommandName | null {
 	if (base === 'agent-run') {
 		return null;
 	}
-	return [...AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project', 'compress', 'brain-login'].includes(base)
+	return [...AGENT_IDS, 'check', 'status', 'setup', 'generate', 'init', 'edit', 'update', 'migrate-config', 'mcp', 'create', 'project', 'compress', 'brain-login', 'auto-update'].includes(base)
 		? (base as CommandName)
 		: null;
 }
